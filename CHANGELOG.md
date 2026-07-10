@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-07-11
+
 ### Added
 - **Track transforms: `transform` command (retime / mirror / trim)** (closes
   [#48](https://github.com/OpenFaceFX/OpenFaceFX/issues/48)): a new
