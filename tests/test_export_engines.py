@@ -167,10 +167,7 @@ def test_godot_value_track_exact(tmp_path):
         '[gd_resource type="Animation" format=3]\n'
         "\n"
         "[resource]\n"
-        'resource_name = "lipsync"\n'
-        "length = 0.2\n"
-        "loop_mode = 0\n"
-        "step = 0.1\n"
+        "length = 0.2\n"                     # non-default; loop_mode/step/name omitted
         'tracks/0/type = "value"\n'
         "tracks/0/imported = false\n"
         "tracks/0/enabled = true\n"
@@ -180,10 +177,22 @@ def test_godot_value_track_exact(tmp_path):
         "tracks/0/keys = {\n"
         '"times": PackedFloat32Array(0, 0.2),\n'
         '"transitions": PackedFloat32Array(1, 1),\n'
-        '"update": 0,\n'
-        '"values": [0.0, 0.75]\n'
+        '"values": [0.0, 0.75],\n'           # forced decimals; update comes last
+        '"update": 0\n'
         "}\n"
     )
+
+
+def test_godot_omits_default_length(tmp_path):
+    # length == 1.0 is Godot's Animation default, so the text saver omits it;
+    # the [resource] header carries no properties, matching a real re-save.
+    track = FaceTrack(fps=10, channels=[
+        Channel("aa", [Keyframe(0.0, 0.0), Keyframe(1.0, 1.0)])])
+    path = str(tmp_path / "unit.tres")
+    write_godot_anim(track, path, include_all_visemes=False)
+    assert _read(path).startswith(
+        '[gd_resource type="Animation" format=3]\n\n[resource]\ntracks/0/type = "value"\n')
+    assert "length = " not in _read(path)
 
 
 def test_godot_equal_length_key_arrays(tmp_path):

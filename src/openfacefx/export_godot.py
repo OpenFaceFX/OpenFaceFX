@@ -50,9 +50,13 @@ def _fnum(x: float) -> str:
 
 
 def _track_block(index: int, path: str, times, values) -> str:
-    t = ", ".join(_num(t) for t in times)
+    t = ", ".join(_num(x) for x in times)
     trans = ", ".join("1" for _ in times)
     vals = ", ".join(_fnum(v) for v in values)
+    # keys dict entry order matches Godot's own writer: times, transitions,
+    # values, update -- with update last and no trailing comma. The packed
+    # arrays print trimmed (0, 1, 0.1) while the generic values array forces a
+    # decimal (0.0, 1.0) so its entries stay float-typed, not int.
     return (
         f'tracks/{index}/type = "value"\n'
         f"tracks/{index}/imported = false\n"
@@ -63,8 +67,8 @@ def _track_block(index: int, path: str, times, values) -> str:
         f"tracks/{index}/keys = {{\n"
         f'"times": PackedFloat32Array({t}),\n'
         f'"transitions": PackedFloat32Array({trans}),\n'
-        f'"update": 0,\n'
-        f'"values": [{vals}]\n'
+        f'"values": [{vals}],\n'
+        f'"update": 0\n'
         f"}}\n"
     )
 
@@ -76,7 +80,6 @@ def write_godot_anim(
     naming: str = "oculus",
     node: str = "Head",
     names: Optional[Dict[str, str]] = None,
-    anim_name: str = "lipsync",
     include_all_visemes: bool = True,
 ) -> None:
     """Write ``track`` as a Godot 4 ``Animation`` ``.tres``.
@@ -87,6 +90,13 @@ def write_godot_anim(
     an explicit ``viseme -> shape`` map. ``include_all_visemes`` also writes a
     constant-0 track for every viseme the track never fires, clearing any weight
     a previous animation left on that shape.
+
+    Track key times are absolute seconds, so the source fps does not appear in
+    the resource. The ``[resource]`` header follows Godot's text saver, which
+    omits any property left at its class default -- ``loop_mode`` (0),
+    ``step`` (1/30) and ``resource_name`` (empty for animations) never appear,
+    and ``length`` only when it is not the 1.0 default -- so the output matches
+    what the editor would re-save.
     """
     if names is None:
         try:
@@ -109,14 +119,9 @@ def write_godot_anim(
             continue
         tracks.append((names[viseme], times, values))
 
-    header = (
-        '[gd_resource type="Animation" format=3]\n\n'
-        "[resource]\n"
-        f'resource_name = "{anim_name}"\n'
-        f"length = {_fnum(track.duration)}\n"
-        "loop_mode = 0\n"
-        f"step = {_fnum(1.0 / track.fps if track.fps else 0.1)}\n"
-    )
+    header = '[gd_resource type="Animation" format=3]\n\n[resource]\n'
+    if track.duration != 1.0:                       # 1.0 is Animation's default
+        header += f"length = {_fnum(track.duration)}\n"
     blocks = [
         _track_block(i, f"{node}:blend_shapes/{shape}", times, values)
         for i, (shape, times, values) in enumerate(tracks)

@@ -35,7 +35,14 @@ writer (#12).
   track** per active viseme, keyed with the existing RDP-reduced keyframes and
   linear interpolation (`interp = 1`). Tracks drive blend shapes by node path
   (`NodePath("Head:blend_shapes/viseme_aa")`); Godot weights are `0..1` so
-  channel values pass straight through (no ×100 as for Unity). Shape naming
+  channel values pass straight through (no ×100 as for Unity). Byte-formatting
+  follows Godot's own text saver (verified against engine source): packed
+  `times`/`transitions` arrays print trimmed (`0`, `1`, `0.1`) while the generic
+  `values` array forces decimals (`0.0`, `1.0`) to stay float-typed, the keys
+  dict is ordered `times, transitions, values, update`, and default-valued
+  resource properties (`loop_mode 0`, `step 1/30`, empty `resource_name`, and
+  `length` when 1.0) are omitted — so output matches what the editor re-saves.
+  Shape naming
   reuses the Unity exporter's presets (`--godot-naming oculus|vrchat`) or a
   custom `viseme -> shape` map (`--godot-names map.json`); the node name is
   configurable (`--godot-node`, default `Head`). By default it also writes a
