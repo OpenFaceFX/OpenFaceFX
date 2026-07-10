@@ -171,6 +171,38 @@ def test_unity_anim_vrchat_naming():
     os.unlink(out)
 
 
+def test_fuz_container_roundtrip():
+    import tempfile
+    from openfacefx.bethesda import read_fuz, write_fuz
+    lip, audio = b"\x01\x00\x00\x00LIPPAYLOAD", b"RIFFxwma-audio-bytes"
+    out = tempfile.NamedTemporaryFile(suffix=".fuz", delete=False).name
+    write_fuz(out, audio, lip=lip)
+    rl, ra = read_fuz(out)
+    assert (rl, ra) == (lip, audio)
+    # lip-less container: audio starts right after the 12-byte header
+    write_fuz(out, audio)
+    rl, ra = read_fuz(out)
+    assert rl == b"" and ra == audio
+    raw = open(out, "rb").read()
+    assert raw[:4] == b"FUZE" and len(raw) == 12 + len(audio)
+    os.unlink(out)
+
+
+def test_lip_header_parse_and_info():
+    import struct
+    import zlib
+    from openfacefx.bethesda import (parse_lip_header, lip_info,
+                                     LIP_FLAG_COMPRESSED, SKYRIM_TARGETS)
+    payload = zlib.compress(b"fake-facefx-anim-payload")
+    blob = struct.pack("<iii", 4, 24, LIP_FLAG_COMPRESSED) + payload
+    hdr = parse_lip_header(blob)
+    assert (hdr.version, hdr.size) == (4, 24)
+    assert hdr.compressed and not hdr.big_endian and not hdr.has_gestures
+    info = lip_info(blob)
+    assert info["zlib_inflates"] and info["inflated_bytes"] == 24
+    assert len(SKYRIM_TARGETS) == 16
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

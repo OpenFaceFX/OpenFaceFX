@@ -62,6 +62,14 @@ Accurate lip-sync from a Montreal Forced Aligner result:
 python -m openfacefx mfa --textgrid voice.TextGrid -o track.json
 ```
 
+Straight to a Unity AnimationClip, or remapped onto another rig:
+
+```bash
+python -m openfacefx naive --text "..." --wav voice.wav -o clip.anim   # viseme_* curves
+python -m openfacefx naive --text "..." --wav voice.wav -o clip.anim --anim-naming vrchat
+python -m openfacefx mfa --textgrid voice.TextGrid -o track.json --retarget arkit
+```
+
 Library use:
 
 ```python
@@ -139,20 +147,26 @@ artifacts their pipelines consume:
 
 | Ecosystem | Route | Status |
 |---|---|---|
-| Bethesda modding (Nukem9/FaceFXWrapper, xVASynth, Mantella) | OpenFaceFX writes `.LIP` directly — clean-room, no Creation Kit, no `FonixData.cdf` | 🔶 roadmap |
-| Unreal (official FaceFX-UE4/UE5 plugins) | Impossible via the plugins (proprietary `.ffxc` compiler); instead drive UE float curves / morph targets from JSON | ✅ JSON today |
-| Unity (OVRLipSync, lipstick, uLipSync) | Same 15-viseme set 1:1; AnimationClip / `OVRLipSyncSequence` exporter | 🔶 roadmap |
+| Unity / VRChat / Ready Player Me | `-o clip.anim` — AnimationClip with `viseme_*` or `vrc.v_*` blendshape curves | ✅ shipped |
+| ARKit / Rhubarb / VRM / CC4 rigs | `--retarget arkit\|rhubarb\|vrm\|cc4` weighted remaps ([docs](docs/retargeting.md)) | ✅ shipped |
+| Unreal (official FaceFX-UE4/UE5 plugins) | Impossible via the plugins (proprietary `.ffxc` compiler); instead drive UE float curves / morph targets from JSON — the `arkit` remap feeds MetaHuman's ARKit route | ✅ JSON today |
+| Bethesda modding (Nukem9/FaceFXWrapper, xVASynth, Mantella) | `.fuz` container + `.lip` header tools shipped (`openfacefx.bethesda`); the `.lip` payload has **no public spec** — clean-room writer blocked on sample reverse-engineering ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)) | 🔶 partial |
 | Anything else | Trivial JSON/CSV + documented remap | ✅ today |
 
 Full survey with per-tool details: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 ## Roadmap
 
-- [ ] Bethesda `.LIP` exporter (replaces FaceFXWrapper for Skyrim/Fallout pipelines)
-- [ ] Unity `AnimationClip` / OVRLipSync-sequence exporter
-- [ ] Published remap tables: ARKit-52, MetaHuman, Preston-Blair
-- [ ] Gentle & Whisper alignment adapters
-- [ ] Emotion/expression layering on top of speech tracks
+The full backlog lives in the [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues)
+(milestone v0.2.0), distilled from a feature-gap survey against FaceFX.
+
+- [x] Unity `AnimationClip` exporter (`-o clip.anim`, oculus/vrchat naming)
+- [x] Published remap tables: ARKit-52, Rhubarb, Preston-Blair, VRM, CC4
+- [ ] Bethesda `.LIP` exporter — blocked on payload spec ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)); `.fuz`/header tools shipped
+- [ ] Component-based coarticulation with tunable articulator timing ([#1](https://github.com/OpenFaceFX/OpenFaceFX/issues/1))
+- [ ] Data-driven weighted phoneme→target mapping ([#2](https://github.com/OpenFaceFX/OpenFaceFX/issues/2))
+- [ ] Batch directory processing with QA reports ([#3](https://github.com/OpenFaceFX/OpenFaceFX/issues/3))
+- [ ] Prosody, gestures, events, text tags, i18n ([#4](https://github.com/OpenFaceFX/OpenFaceFX/issues/4)–[#8](https://github.com/OpenFaceFX/OpenFaceFX/issues/8))
 
 ## Scope & honesty
 
@@ -171,10 +185,13 @@ src/openfacefx/
   phonemes.py       ARPAbet inventory
   g2p.py            word → phonemes (CMUdict + rule fallback)
   alignment.py      PhonemeSegment, NaiveAligner, MFA TextGrid parser
-  visemes.py        viseme set + phoneme→viseme map        ← retarget here
+  visemes.py        viseme set + phoneme→viseme map
   coarticulation.py dominance-function blending             ← the interesting math
   curves.py         keyframe reduction, FaceTrack
   io_export.py      JSON / CSV writers
+  export_unity.py   Unity .anim AnimationClip writer
+  retarget.py       viseme→rig remapping + presets          ← retarget here
+  bethesda.py       .fuz container / .lip header tools
   pipeline.py       orchestration
   cli.py            command line
 tests/test_core.py  run: pytest

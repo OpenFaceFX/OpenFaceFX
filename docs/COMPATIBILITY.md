@@ -29,9 +29,16 @@ artifact the wrapper would have produced.
   16 kHz 16-bit mono WAV + dialogue text. Windows executable; embeds Creation
   Kit-derived code, so it is not itself clean-room.
 - **Compatibility today:** cannot consume OpenFaceFX output (takes no curve
-  input). **Path to compatibility:** OpenFaceFX writing `.LIP` directly from
-  its phoneme-timing layer — tracked on the roadmap. That would replace the
-  wrapper (cross-platform, no CK code, no `FonixData.cdf`) rather than feed it.
+  input). **Path to compatibility:** OpenFaceFX writing `.LIP` directly —
+  tracked in [issue #12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12).
+  **Format-research finding (Jul 2026):** the `.lip` 12-byte header
+  (version/size/flags), the `.fuz` container, and Skyrim's 16 speech-target
+  names are publicly verified — and shipped in `openfacefx.bethesda` — but
+  the payload itself is a FaceFX facial-animation blob with **no public
+  byte-level spec**: FaceFXWrapper and every other generator execute
+  Bethesda's embedded Creation Kit code rather than writing those bytes. A
+  clean-room writer therefore needs payload reverse-engineering from real
+  samples (in-game verification required) before it can ship.
 
 ### FaceFX/FaceFX-UE4 and FaceFX/FaceFX-UE5 — official Unreal plugins
 - **Repos:** <https://github.com/FaceFX/FaceFX-UE4>, <https://github.com/FaceFX/FaceFX-UE5>
@@ -67,12 +74,12 @@ artifact the wrapper would have produced.
 
 | Tool | What it is | Consumes OpenFaceFX output today? | Route to compatibility |
 |---|---|---|---|
-| Nukem9/FaceFXWrapper | audio+text → Bethesda `.LIP` | No (takes no curve input) | OpenFaceFX `.LIP` exporter (roadmap) — replaces it clean-room |
+| Nukem9/FaceFXWrapper | audio+text → Bethesda `.LIP` | No (takes no curve input) | `.LIP` writer blocked on payload spec ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)); `.fuz` container + `.lip` header tools shipped (`openfacefx.bethesda`) |
 | FaceFX-UE4 / UE5 plugins | load compiled `.ffxc`/`.facefx` | No | None (proprietary compiler required) — drive UE curves directly instead |
 | H3EK-FaceFXWrapper | audio+text → Halo `.FXX` | No | Not a practical target |
-| OVRLipSync / lipstick | Oculus 15-viseme runtime (Unity) | Not as-is (different container) | Sequence/AnimationClip exporter (roadmap) — visemes already match 1:1 |
-| uLipSync | Unity blendshape lipsync | Not as-is | Unity AnimationClip exporter |
-| rhubarb-lip-sync | audio → 2D mouth shapes | n/a (different viseme model) | Documented remap table |
+| OVRLipSync / lipstick | Oculus 15-viseme runtime (Unity) | **Yes, via `.anim` export** (`write_unity_anim`, `-o out.anim`) | Shipped; `OVRLipSyncSequence` .asset deliberately skipped (version-coupled) |
+| uLipSync | Unity blendshape lipsync | Yes, via `.anim` export | Shipped |
+| rhubarb-lip-sync | audio → 2D mouth shapes | n/a (different viseme model) | `rhubarb` retarget preset shipped (docs/retargeting.md) |
 
 ## Consuming OpenFaceFX output yourself
 

@@ -15,7 +15,7 @@ from .export_unity import write_unity_anim, NAMING_PRESETS
 from .retarget import retarget, rename_only, PRESETS
 from .visemes import VISEMES, phoneme_to_viseme
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "G2P", "PhonemeSegment", "NaiveAligner", "load_mfa_textgrid",

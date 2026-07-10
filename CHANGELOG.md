@@ -9,9 +9,35 @@ its `version` field.
 ## [Unreleased]
 
 Planned work is tracked in the
-[issue backlog](https://github.com/OpenFaceFX/OpenFaceFX/issues) and the README
-roadmap: Bethesda `.LIP` exporter, Unity/OVRLipSync exporter, published remap
-tables, Gentle & Whisper adapters, expression layering.
+[issue backlog](https://github.com/OpenFaceFX/OpenFaceFX/issues): the
+FaceFX feature-gap backlog (#1–#11) and the Bethesda `.LIP` writer (#12,
+blocked on payload reverse-engineering).
+
+## [0.2.0] — 2026-07-10
+
+Engine-integration release: the wrapper-compatibility work from the FaceFX
+ecosystem survey.
+
+### Added
+- **Unity `.anim` exporter** (`write_unity_anim`, CLI `-o clip.anim`):
+  AnimationClip text YAML driving `blendShape.*` curves on a
+  SkinnedMeshRenderer; `oculus` (`viseme_*`, Ready Player Me / Meta rigs) and
+  `vrchat` (`vrc.v_*`) naming presets, custom maps via `names=`;
+  `--anim-naming` / `--anim-path` CLI options. (#13)
+- **Viseme retargeting** (`retarget`, `rename_only`, `PRESETS`; CLI
+  `--retarget`): weighted many-to-many remapping onto ARKit-52 (verified
+  met4citizen/TalkingHead weights), Rhubarb, Preston-Blair, VRM and CC4
+  conventions — provenance in `docs/retargeting.md`.
+- **Bethesda tooling** (`openfacefx.bethesda`): verified `.fuz` container
+  reader/writer, `.lip` 12-byte header parser, `lip_info` diagnostics,
+  Skyrim's 16 speech-target names. A full `.lip` *writer* remains blocked:
+  the payload has no public byte-level spec (#12).
+- `pipeline.naive_segments()` exposing the phoneme-timing layer.
+
+### Changed
+- README compatibility matrix and roadmap updated to reflect shipped
+  exporters and the `.lip` payload finding (docs/COMPATIBILITY.md has the
+  full analysis).
 
 ## [0.1.0] — 2026-07-10
 
@@ -39,5 +65,6 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/OpenFaceFX/OpenFaceFX/releases/tag/v0.1.0
