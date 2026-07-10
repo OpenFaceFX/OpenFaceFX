@@ -49,6 +49,30 @@ artifact the wrapper would have produced.
   animation header. No Creation Kit code, `FonixData.cdf`, or game assets are
   used: format facts are derived by analysis and the writer is original code.
 
+#### Calibrating the slot → mouth-target map (help wanted, ~20 min, no tools)
+
+The one unresolved fact is which numbered curve **slot** drives which mouth
+morph — the payload routes by slot index, not name, so `SKYRIM_SLOT_MAP` in
+`openfacefx.export_lip` is a hypothesis (only its jaw guess at slot 22 has any
+evidence). You can resolve it in-game with nothing but a save and your eyes:
+
+    python -m openfacefx lip-calibrate --out calib
+
+writes `calib/slot_00.lip` .. `slot_32.lip` (one per Skyrim grid slot) plus a
+`README.txt`. Each file sweeps exactly one slot 0→1→0 (~2 s) with everything
+else at rest. Then, for each file:
+
+  1. Pick any voiced NPC line you can retrigger in-game.
+  2. Substitute `slot_NN.lip` for that line's lip data (rename it in place, or
+     repack the line's `.fuz` — `openfacefx.bethesda.write_fuz` does this).
+  3. Play the line and note **which** part of the face moves (jaw open, lip
+     closure, lip round, tongue, brow, none…). Record `slot NN → <part>`.
+  4. Repeat across all 33 files, then post your slot→part table on
+     [issue #12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12).
+
+That table is exactly what `SKYRIM_SLOT_MAP` needs; once confirmed, the
+experimental writer's mouth shapes become correct rather than provisional.
+
 ### FaceFX/FaceFX-UE4 and FaceFX/FaceFX-UE5 — official Unreal plugins
 - **Repos:** <https://github.com/FaceFX/FaceFX-UE4>, <https://github.com/FaceFX/FaceFX-UE5>
   (actively maintained; MIT for the plugin interface code only)

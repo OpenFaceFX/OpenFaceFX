@@ -16,7 +16,7 @@ from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_live2d import write_live2d_motion, lipsync_param_ids
 from .export_godot import write_godot_anim
 from .export_lip import (write_lip, lip_bytes, skyrim_mapping,
-                        SKYRIM_SLOT_ORDER)
+                        SKYRIM_SLOT_MAP)
 from .export_cues import (
     dominant_cues, write_rhubarb_tsv, write_rhubarb_xml, write_rhubarb_json,
     write_moho_dat, write_pgo,
@@ -37,7 +37,7 @@ from .anchors import (
     from_kokoro_tokens, google_ssml_with_marks, from_google_timepoints,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 
 __all__ = [
     "G2P", "PhonemeSegment", "NaiveAligner", "load_mfa_textgrid",
@@ -47,7 +47,7 @@ __all__ = [
     "to_dict", "write_json", "write_csv",
     "write_unity_anim", "NAMING_PRESETS",
     "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",
-    "write_lip", "lip_bytes", "skyrim_mapping", "SKYRIM_SLOT_ORDER",
+    "write_lip", "lip_bytes", "skyrim_mapping", "SKYRIM_SLOT_MAP",
     "dominant_cues", "write_rhubarb_tsv", "write_rhubarb_xml",
     "write_rhubarb_json", "write_moho_dat", "write_pgo",
     "Mapping", "Target",

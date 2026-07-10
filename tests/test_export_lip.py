@@ -90,11 +90,12 @@ def _intended_grid(text, dur):
     names = mapping.target_names
     active, col_of = {}, {}
     for c, name in enumerate(names):
-        slot = EL.SKYRIM_SLOT_ORDER[name]
+        slot = EL.SKYRIM_SLOT_MAP[name]
         col_of[slot] = c
         if float(grid[:, c].max()) > EL._EPS:
             active[slot] = c
-    active[EL.SKYRIM_SLOT_ORDER["Aah"]] = col_of[EL.SKYRIM_SLOT_ORDER["Aah"]]
+    # the writer forces the anchor slot (grid origin) active, whatever its target
+    active[EL._ANCHOR_SLOT] = col_of[EL._ANCHOR_SLOT]
     return grid, neg16, count12, active
 
 
@@ -211,13 +212,17 @@ def test_empty_and_bad_duration_raise():
         EL.lip_bytes(naive_segments("hi", 1.0), 0.0)
 
 
-def test_slot_order_is_even_spaced_unique_and_in_range():
-    slots = EL.SKYRIM_SLOT_ORDER
+def test_slot_map_is_even_spaced_unique_and_in_range():
+    slots = EL.SKYRIM_SLOT_MAP
     assert set(slots) == set(SKYRIM_TARGETS)
-    vals = list(slots.values())
-    assert vals == [2 * i for i in range(16)]          # even slots 0,2,..,30
+    vals = sorted(slots.values())
+    assert vals == list(range(0, 32, 2))               # the 16 even slots 0,2,..,30
     assert len(set(vals)) == 16 and max(vals) < 33      # unique, within stride
-    assert slots["Aah"] == 0                            # base curve at grid origin
+    # even spacing is the dup-safety invariant; slot 22 is the evidence-informed
+    # jaw assignment (see SKYRIM_SLOT_MAP), and slot 0 must be a real target
+    assert all(v % 2 == 0 for v in vals)
+    assert slots["Aah"] == 22 and slots["BigAah"] == 24
+    assert EL._ANCHOR_SLOT in vals                      # grid-origin anchor is a target slot
 
 
 def test_mapping_covers_all_arpabet():
@@ -231,22 +236,33 @@ def test_mapping_covers_all_arpabet():
 
 
 def test_lip_calibrate_sweep(tmp_path):
-    """Each calibration file animates exactly its named slot 0->1->0 and
-    decodes exactly through the research codec's grammar."""
-    from openfacefx.export_lip import lip_calibrate, SKYRIM_SLOT_ORDER
-    files = lip_calibrate(str(tmp_path), seconds=1.0)
-    assert len(files) == len(SKYRIM_SLOT_ORDER) == 16
+    """Calibration probes EVERY grid slot: one slot_NN.lip per slot 0..R-1, each
+    animating exactly its own slot 0->1->0, decoding cleanly, starting at grid
+    origin. This is the tool that resolves the slot->morph map in-game."""
+    files = EL.lip_calibrate(str(tmp_path), seconds=1.0)
+    assert len(files) == 33                      # every Skyrim grid slot (R=33)
+    assert os.path.exists(os.path.join(str(tmp_path), "README.txt"))
+    seen = set()
     for path in files:
         name = os.path.basename(path)
-        slot = int(name.split("slot")[1][:2])
+        assert name.startswith("slot_") and name.endswith(".lip")
+        slot = int(name[5:7])
+        seen.add(slot)
         d = open(path, "rb").read()
-        hdr = struct.unpack_from("<IIIHHiHH", d)
-        version, duration, ncur, count12, c14, neg16, u20, u22 = hdr
-        assert version == 1 and u20 == 16 and c14 == 3 and neg16 == 0
+        version, duration, ncur, count12, c14, neg16, u20, u22 = \
+            struct.unpack_from("<IIIHHiHH", d)
+        assert version == 1 and u20 == 16 and c14 == 3 and neg16 == 0 and u22 == 3
         assert duration == 132 * count12 + 28
-        dec = _decode(d)                 # the independent test decoder
+        dec = _decode(d)                         # the independent test decoder
+        assert dec["first_pos"] == 0             # stream begins at grid origin
+        assert dec["endpos"] == 33 * count12     # full-frame end
         animated = {c for c, rows in dec["grid"].items()
                     if max(rows.values()) > 1e-4}
-        assert animated == {slot}, name
-        peak = max(dec["grid"][slot].values())
-        assert abs(peak - 1.0) < 1e-6
+        assert animated == {slot}, name          # only this slot moves
+        assert abs(max(dec["grid"][slot].values()) - 1.0) < 1e-6   # reaches full open
+    assert seen == set(range(33))
+
+
+def test_lip_calibrate_fallout4_not_implemented():
+    with pytest.raises(NotImplementedError):
+        EL.lip_calibrate("/tmp/nowhere", game="fallout4")

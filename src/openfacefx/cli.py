@@ -421,11 +421,15 @@ def main(argv=None) -> int:
     _add_output_options(e)
 
     lc = sub.add_parser("lip-calibrate",
-                        help="EXPERIMENTAL: write one .lip per Skyrim speech "
-                             "target for in-game slot calibration (issue #12)")
-    lc.add_argument("--out", required=True, help="output directory")
-    lc.add_argument("--seconds", type=float, default=2.0)
-    lc.add_argument("--lip-game", default="skyrim", choices=["skyrim"])
+                        help="EXPERIMENTAL: write one .lip per grid slot "
+                             "(slot_NN.lip, single slot swept 0->1->0) to map "
+                             "slots to mouth targets in-game (issue #12)")
+    lc.add_argument("--out", required=True,
+                    help="output directory for slot_NN.lip + README.txt")
+    lc.add_argument("--seconds", type=float, default=2.0,
+                    help="sweep length per slot (default 2.0)")
+    lc.add_argument("--lip-game", default="skyrim", choices=["skyrim"],
+                    help="target game (Skyrim only; #12)")
 
     b = sub.add_parser("batch", help="process a directory tree of voice lines")
     b.add_argument("--dir", required=True, help="input tree of .wav files "

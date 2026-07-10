@@ -32,9 +32,9 @@ run that test yet:
 
 Treat the output as a research artifact whose mouth shapes are uncalibrated. If
 you can test it in-game, please report back on issue #12. Fallout 4 is
-unsupported for authoring (its 43-target vocabulary is undocumented) —
-``game='fallout4'`` raises ``NotImplementedError`` from ``write_lip`` — but the
-calibration set works for any game's raw slots.
+unsupported (its 43-target vocabulary is undocumented) — both ``write_lip`` and
+``lip_calibrate`` raise ``NotImplementedError`` for it; the calibration
+technique would generalize, but only Skyrim's stride/header are wired up.
 
 Input is the phoneme-timing layer (``List[PhonemeSegment]`` from
 ``pipeline.naive_segments`` / ``alignment.load_mfa_textgrid``); we drive the
@@ -73,8 +73,11 @@ _MAX_PREROLL = 9            # observed neg16 range is -2..-9; clamp anticipation
 _U22_SKYRIM = 3
 
 # A resting curve can be written with a sentinel float (~9.6e-16, bytes
-# f9 e8 8a 26); this writer instead emits real 0.0 weights, which the game reads
-# as the same zero opening — simpler and dup-safe (see SKYRIM_SLOT_ORDER).
+# f9 e8 8a 26). The phoneme writer emits real 0.0 weights instead (the game reads
+# both as a zero opening, and even-slot spacing keeps them dup-safe); the
+# calibration writer uses the sentinel for its rest anchor, where its distinct
+# bytes guarantee dup-safety against a 0.0-valued neighbour (see SKYRIM_SLOT_MAP).
+_SENTINEL_F = struct.unpack("<f", b"\xf9\xe8\x8a\x26")[0]
 _EPS = 1e-4  # a target below this is "at rest"; matches the solver's own floor
 
 # --- ARPAbet → Skyrim-16 targets ---------------------------------------------
@@ -231,15 +234,15 @@ def lip_bytes(segments: List[PhonemeSegment], duration_s: float,
     mapping = skyrim_mapping()
     grid, neg16, count12 = _frame_grid(segments, duration_s, mapping, params)
 
-    # Which targets ever fire → curves. Force slot 0 (Aah) on so the stream
+    # Which targets ever fire → curves. Force the anchor slot on so the stream
     # begins at grid origin (0,0), where the decoder's positional walk starts.
     names = mapping.target_names
-    active = {SKYRIM_SLOT_ORDER[names[c]] for c in range(grid.shape[1])
+    active = {SKYRIM_SLOT_MAP[names[c]] for c in range(grid.shape[1])
               if float(grid[:, c].max()) > _EPS}
-    active.add(_ALWAYS_ON_SLOT)
+    active.add(_ANCHOR_SLOT)
     if len(active) <= 1 and float(grid.max()) <= _EPS:
         raise ValueError("input is entirely silent; nothing to animate")
-    slot_to_col = {SKYRIM_SLOT_ORDER[names[c]]: c for c in range(len(names))}
+    slot_to_col = {SKYRIM_SLOT_MAP[names[c]]: c for c in range(len(names))}
     active_slots = sorted(active)
 
     # Dense frame-major cells: every active curve at every row (the game
@@ -270,39 +273,79 @@ def write_lip(segments: List[PhonemeSegment], duration_s: float, path: str,
 
 def lip_calibrate(out_dir: str, game: str = "skyrim",
                   seconds: float = 2.0) -> List[str]:
-    """Write one EXPERIMENTAL ``.lip`` per Skyrim speech target for in-game
-    slot calibration: in each file that target's slot ramps 0→1→0 (triangle,
-    peak mid-clip) while everything else rests. Drop each file on any voiced
-    line in-game; whichever mouth part moves tells you what that slot really
-    drives. ``SKYRIM_SLOT_ORDER`` is the uncalibrated assumption these files
-    exist to test — please report findings on issue #12.
+    """Write one EXPERIMENTAL ``.lip`` per GRID SLOT for in-game slot calibration
+    — the tool that turns the unresolved slot→morph map into a 20-minute
+    eyeballing task. Emits ``slot_00.lip`` .. ``slot_{R-1}.lip`` (R=33 for
+    Skyrim); in each, that one raw slot ramps 0→1→0 (triangle, apex mid-clip)
+    while every other slot rests. Drop each on any voiced NPC line in-game and
+    note which mouth part moves: that reveals what the slot really drives,
+    letting you fill in ``SKYRIM_SLOT_MAP`` (whose current values are a guess).
+
+    Probing EVERY slot, not just the 16 we hypothesize are targets, is the point
+    — the real morph could sit on a slot the guess doesn't use. A ``README.txt``
+    manifest with the procedure and the current hypothesis is written alongside.
+    Please report findings on issue #12. Returns the list of .lip paths written.
     """
     if game == "fallout4":
-        raise NotImplementedError("calibration is Skyrim-only for now "
-                                  "(FO4's 43-target vocabulary is undocumented)")
+        raise NotImplementedError(
+            "calibration is Skyrim-only for now: Fallout 4's header (u20=43, "
+            "R=60, and an unknown u22) is not wired up. The technique is "
+            "identical — only the stride and header constants differ.")
     if game != "skyrim":
         raise ValueError(f"unknown game {game!r}; expected 'skyrim'")
-    # odd frame count => the triangle's apex lands exactly on a row, so the
-    # calibration slot genuinely reaches full-open 1.0
+    R = _STRIDE
+    # Odd frame count => the triangle's apex lands exactly on a row, so the
+    # probed slot genuinely reaches full-open 1.0.
     count12 = max(int(round(seconds * _FPS)), 9) | 1
     os.makedirs(out_dir, exist_ok=True)
     written: List[str] = []
-    for name, slot in sorted(SKYRIM_SLOT_ORDER.items(), key=lambda kv: kv[1]):
+    for slot in range(R):
         cells = []
         for r in range(count12):
             x = r / (count12 - 1)
-            v = round(1.0 - abs(2.0 * x - 1.0), 4)
-            if slot != _ALWAYS_ON_SLOT:
-                # anchor the stream at grid origin (0,0), at rest
-                cells.append({"frame": r, "curve": _ALWAYS_ON_SLOT, "value": 0.0})
+            v = round(1.0 - abs(2.0 * x - 1.0), 4)   # 0 → 1 → 0
+            if slot != _ANCHOR_SLOT:
+                # A resting anchor at grid slot 0 gives the stream its required
+                # pos-0 start. The SENTINEL's bytes differ from any 0.0 triangle
+                # endpoint, so the two never merge into a doubled-value key even
+                # where they land on adjacent slots (slot 1, and slot R-1→0).
+                cells.append({"frame": r, "curve": _ANCHOR_SLOT, "value": _SENTINEL_F})
             cells.append({"frame": r, "curve": slot, "value": v})
-        payload = _encode_cells(cells, _STRIDE, total_slots=_STRIDE * count12)
-        n_curves = 1 if slot == _ALWAYS_ON_SLOT else 2
-        path = os.path.join(out_dir, f"calibrate_slot{slot:02d}_{name}.lip")
+        payload = _encode_cells(cells, R, total_slots=R * count12)
+        n_curves = 1 if slot == _ANCHOR_SLOT else 2
+        path = os.path.join(out_dir, f"slot_{slot:02d}.lip")
         with open(path, "wb") as fh:
             fh.write(_pack_header(n_curves, count12, 0) + payload)
         written.append(path)
+    _write_calibration_readme(out_dir, game, R)
     return written
+
+
+def _write_calibration_readme(out_dir: str, game: str, R: int) -> None:
+    """Manifest for a calibration set: the async in-game procedure plus the
+    current (unverified) slot→target hypothesis to record results against."""
+    hyp = "\n".join(f"    slot {s:2d}  <- {n} (guess)"
+                    for n, s in sorted(SKYRIM_SLOT_MAP.items(), key=lambda kv: kv[1]))
+    text = f"""OpenFaceFX .lip slot calibration set ({game}, {R} slots) — EXPERIMENTAL
+
+Each slot_NN.lip animates exactly one payload curve slot 0->1->0 (~2s) with
+everything else at rest. The slot->morph mapping is UNKNOWN; these files resolve
+it empirically. No modding tools needed beyond loading a voice line.
+
+Procedure:
+  1. Pick any voiced NPC dialogue line you can trigger in-game.
+  2. Swap in slot_00.lip (rename/replace the line's .lip, or repack its .fuz).
+  3. Trigger the line and watch the face: note which mouth part moves (jaw open,
+     lip close, tongue, lip round, brow, none, ...). Record "slot 00 -> <part>".
+  4. Repeat for slot_01.lip .. slot_{R - 1:02d}.lip.
+  5. Post your slot->part table on issue #12 so SKYRIM_SLOT_MAP can be corrected.
+
+Current hypothesis in openfacefx.export_lip.SKYRIM_SLOT_MAP (UNVERIFIED — only
+the jaw guess at slot 22 has any evidence, from the vanilla asset's curve shape):
+{hyp}
+"""
+    with open(os.path.join(out_dir, "README.txt"), "w", encoding="utf-8") as fh:
+        fh.write(text)
 
 
 def _encode_cells(cells, R: int, total_slots: int) -> bytes:

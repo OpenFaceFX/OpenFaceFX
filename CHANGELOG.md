@@ -13,6 +13,27 @@ P2 items (#18 presets/stress, #19, #22 gain/offset, #23), adoption
 infrastructure (#24, #27–#31), and in-game confirmation of the `.lip` writer
 (#12).
 
+## [0.6.1] — 2026-07-11
+
+### Fixed
+- **`import openfacefx` was broken in 0.6.0** (#12): 0.6.0 shipped a half-applied
+  rename — `export_lip.py` defined `SKYRIM_SLOT_MAP` while `__init__.py`,
+  `lip_bytes()` and `lip_calibrate()` still referenced the old
+  `SKYRIM_SLOT_ORDER` / `_ALWAYS_ON_SLOT` names, so importing the package raised
+  `ImportError` and the `.lip` writer never ran. The rename is now complete: the
+  package imports, the writer produces byte-valid output, and the full suite is
+  green again.
+
+### Changed
+- **`lip-calibrate` now probes every grid slot** (#12), not just the 16 slots the
+  provisional `SKYRIM_SLOT_MAP` guesses are speech targets: it writes
+  `slot_00.lip` .. `slot_32.lip` (one per Skyrim payload slot) plus a `README.txt`
+  manifest of the procedure and current hypothesis. Probing all slots is what
+  actually lets an in-game tester discover the slot→morph mapping — the real
+  morph may live on a slot the guess doesn't use. Each file sweeps a single slot
+  0→1→0 with a dup-safe resting anchor; all decode byte-exact. See the
+  calibration procedure in `docs/COMPATIBILITY.md`.
+
 ## [0.6.0] — 2026-07-11
 
 The white whale: a clean-room Bethesda `.lip` writer. The format that every
@@ -353,7 +374,8 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.1...v0.4.0
