@@ -77,7 +77,31 @@ def main(argv=None) -> int:
     m.add_argument("-o", "--out", required=True)
     _add_output_options(m)
 
+    b = sub.add_parser("batch", help="process a directory tree of voice lines")
+    b.add_argument("--dir", required=True, help="input tree of .wav files "
+                   "with same-stem .TextGrid or .txt transcripts")
+    b.add_argument("--out", required=True, help="mirrored output tree")
+    b.add_argument("--recurse", action="store_true")
+    b.add_argument("--modified-only", action="store_true",
+                   help="skip files unchanged since the last run (manifest)")
+    b.add_argument("--jobs", type=int, default=1, help="parallel workers")
+    b.add_argument("--ext", choices=["json", "csv"], default="json")
+    b.add_argument("--mapping", dest="batch_mapping",
+                   help="mapping JSON applied to every file")
+    b.add_argument("--cmudict", dest="batch_cmudict",
+                   help="CMUdict file for better G2P on naive-path files")
+    b.add_argument("--fps", type=float, default=60.0)
+
     args = p.parse_args(argv)
+
+    if args.cmd == "batch":
+        from .batch import run_batch
+        return run_batch(args.dir, args.out, recurse=args.recurse,
+                         modified_only=args.modified_only, jobs=args.jobs,
+                         mapping=args.batch_mapping,
+                         cmudict=args.batch_cmudict,
+                         fps=args.fps, ext=args.ext)
+
     mapping = Mapping.from_json(args.mapping) if args.mapping else None
 
     if args.cmd == "naive":

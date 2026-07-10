@@ -87,6 +87,16 @@ class G2P:
             out.extend(self.word(w))
         return out
 
+    def oov_words(self, text: str) -> List[str]:
+        """Words in ``text`` that would fall through to the rule fallback —
+        the ones worth adding to a pronunciation dictionary (QA reporting)."""
+        oov = []
+        for w in re.findall(r"[A-Za-z']+", text):
+            key = re.sub(r"[^a-z']", "", w.lower())
+            if key and key not in self._dict and key not in oov:
+                oov.append(key)
+        return oov
+
     def _fallback(self, key: str) -> List[str]:
         phones: List[str] = []
         i = 0

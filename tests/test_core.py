@@ -347,6 +347,67 @@ def test_lip_header_parse_and_info():
     assert len(SKYRIM_TARGETS) == 16
 
 
+def _write_wav(path, seconds=0.4, rate=16000):
+    import struct
+    import wave
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(struct.pack("<h", 0) * int(seconds * rate))
+
+
+def test_batch_tree_incremental_and_failure(tmp_path):
+    import json
+    import time
+    from openfacefx.cli import main as cli_main
+
+    src, out = tmp_path / "src", tmp_path / "out"
+    (src / "quests" / "mq01").mkdir(parents=True)
+    lines = {
+        "hello.wav": "hello world",
+        "quests/greet.wav": "this is a test",
+        "quests/mq01/zorblat.wav": "the zorblat awakens",   # OOV word
+    }
+    for rel, text in lines.items():
+        p = src / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        _write_wav(str(p))
+        p.with_suffix(".txt").write_text(text)
+    (src / "broken.wav",)  # no transcript for this one
+    _write_wav(str(src / "broken.wav"))
+
+    rc = cli_main(["batch", "--dir", str(src), "--out", str(out), "--recurse"])
+    assert rc == 1  # broken.wav has no transcript
+    summary = json.loads((out / "batch_summary.json").read_text())
+    assert summary["processed"] == 4 and summary["failed"] == 1
+    # mirrored tree
+    assert (out / "hello.json").exists()
+    assert (out / "quests" / "greet.json").exists()
+    assert (out / "quests" / "mq01" / "zorblat.json").exists()
+    # failures sort first; OOV word surfaced
+    assert summary["rows"][0]["file"].startswith("broken")
+    zrow = [r for r in summary["rows"] if "zorblat" in r["file"]][0]
+    assert "zorblat" in zrow["oov"]
+
+    # incremental: nothing to redo except the broken file
+    rc = cli_main(["batch", "--dir", str(src), "--out", str(out),
+                   "--recurse", "--modified-only"])
+    summary = json.loads((out / "batch_summary.json").read_text())
+    assert summary["skipped_unchanged"] == 3 and summary["processed"] == 1
+
+    # touching one source reprocesses exactly that file (plus broken)
+    time.sleep(0.02)
+    (src / "hello.txt").write_text("hello again world")
+    os.utime(src / "hello.txt")
+    rc = cli_main(["batch", "--dir", str(src), "--out", str(out),
+                   "--recurse", "--modified-only"])
+    summary = json.loads((out / "batch_summary.json").read_text())
+    processed_files = {r["file"] for r in summary["rows"]}
+    assert any("hello" in f for f in processed_files)
+    assert not any("greet" in f for f in processed_files)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

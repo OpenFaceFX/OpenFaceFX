@@ -29,6 +29,7 @@ class PhonemeSegment:
     phoneme: str        # ARPAbet, may carry stress digit
     start: float        # seconds
     end: float          # seconds
+    confidence: Optional[float] = None   # aligner score in [0,1], if provided
 
     @property
     def dur(self) -> float:
