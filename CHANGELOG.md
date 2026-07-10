@@ -13,6 +13,38 @@ the remaining P1/P2 items (#18–#23, #26–#32) and the sample-blocked `.LIP`
 writer (#12).
 
 ### Added
+- **Live2D Cubism `motion3.json` exporter** (#20): `-o mouth.motion3.json`
+  bakes lip-sync as Cubism parameter curves (Version 3, linear segments). Two
+  targeting modes. **Default (zero config)** collapses the whole viseme track to
+  a single `ParamMouthOpenY` curve — the summed weight of every *non-silence*
+  viseme, clamped to `0..1` (an openness/loudness proxy that equals `1 - sil` on
+  normalised output), which is the one mouth-open parameter almost every Cubism
+  model exposes; the target Id is overridable (`--live2d-param`). **Per-parameter**
+  mode (`--live2d-params map.json`, a `viseme -> ParamId` object) emits one curve
+  per distinct Id for rigs with per-vowel parameters — note `ParamA/I/U/E/O` are
+  a VTuber *convention*, not a standard, so they must be supplied, not assumed.
+  `--live2d-model3 model.json` auto-reads the mouth parameter from a model's
+  `Groups: LipSync` entry. Both modes are a `retarget` under the hood (summed,
+  clamped contributions on the union of key times). The `Meta` counts
+  (`CurveCount`/`TotalSegmentCount`/`TotalPointCount`) are **derived from the
+  emitted `Curves` by the same stride a Cubism loader walks**, never guessed — a
+  `Meta` that disagrees with the segment data is the format's #1 gotcha (loaders
+  read past the array). Pure-stdlib JSON, LF newlines (`export_live2d.py`).
+- **Godot 4 `AnimationPlayer` resource exporter** (#21): `-o lipsync.tres`
+  writes a `[gd_resource type="Animation" format=3]` resource with one **value
+  track** per active viseme, keyed with the existing RDP-reduced keyframes and
+  linear interpolation (`interp = 1`). Tracks drive blend shapes by node path
+  (`NodePath("Head:blend_shapes/viseme_aa")`); Godot weights are `0..1` so
+  channel values pass straight through (no ×100 as for Unity). Shape naming
+  reuses the Unity exporter's presets (`--godot-naming oculus|vrchat`) or a
+  custom `viseme -> shape` map (`--godot-names map.json`); the node name is
+  configurable (`--godot-node`, default `Head`). By default it also writes a
+  constant-0 track for every viseme the line never fires, clearing weight a
+  previous animation left on that shape. Value tracks (not the importer-only
+  `blend_shape` track type) keep the resource hand-writable; text serialisation,
+  LF newlines (`export_godot.py`). Runtime nodes/signals stay engine-side and out
+  of scope. The optional audio-playback and 2D sprite-frame tracks from #21 are
+  deferred (not in the byte-verified format spec this pass targeted).
 - **README hero onboarding: quickstart GIF, viseme gallery, literal output**
   (#26). The README now opens with the live-demo link, an animated quickstart
   GIF, and `pip install openfacefx` above the fold; the long-form pipeline

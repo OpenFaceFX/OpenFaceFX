@@ -13,6 +13,8 @@ from .pipeline import (generate_from_alignment, generate_naive,
 from .energy import energy_envelope, generate_from_energy
 from .io_export import to_dict, write_json, write_csv
 from .export_unity import write_unity_anim, NAMING_PRESETS
+from .export_live2d import write_live2d_motion, lipsync_param_ids
+from .export_godot import write_godot_anim
 from .export_cues import (
     dominant_cues, write_rhubarb_tsv, write_rhubarb_xml, write_rhubarb_json,
     write_moho_dat, write_pgo,
@@ -41,6 +43,7 @@ __all__ = [
     "naive_segments", "wav_duration", "energy_envelope", "generate_from_energy",
     "to_dict", "write_json", "write_csv",
     "write_unity_anim", "NAMING_PRESETS",
+    "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",
     "dominant_cues", "write_rhubarb_tsv", "write_rhubarb_xml",
     "write_rhubarb_json", "write_moho_dat", "write_pgo",
     "Mapping", "Target",

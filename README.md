@@ -184,6 +184,17 @@ python -m openfacefx mfa --textgrid voice.TextGrid -o mouth.dat              # M
 python -m openfacefx mfa --textgrid voice.TextGrid -o cues.json --cue-format json-cues
 ```
 
+Or bake into a VTuber/game engine's own animation asset — a Live2D Cubism
+`motion3.json` (a single mouth-open parameter curve by default, or per-vowel
+`ParamA/I/U/E/O` via `--live2d-params`, or read the target from a model's
+`model3.json` LipSync group) and a Godot 4 `AnimationPlayer` resource (`.tres`,
+one blendshape value track per viseme, `--godot-node`/`--godot-naming`):
+
+```bash
+python -m openfacefx naive --text "..." --wav voice.wav -o mouth.motion3.json  # Live2D Cubism
+python -m openfacefx mfa --textgrid voice.TextGrid -o lipsync.tres            # Godot 4
+```
+
 Whole dialogue trees at once, with an OOV/confidence QA report and
 incremental re-runs:
 
@@ -271,6 +282,8 @@ artifacts their pipelines consume:
 | Ecosystem | Route | Status |
 |---|---|---|
 | Unity / VRChat / Ready Player Me | `-o clip.anim` — AnimationClip with `viseme_*` or `vrc.v_*` blendshape curves | ✅ shipped |
+| Live2D Cubism (VTuber 2D) | `-o mouth.motion3.json` — parameter curves; mouth-open by default, per-vowel via `--live2d-params`, or auto-targeted from a `model3.json` LipSync group | ✅ shipped |
+| Godot 4 | `-o lipsync.tres` — `AnimationPlayer` resource, one `blend_shapes/*` value track per viseme (`--godot-node`/`--godot-naming`) | ✅ shipped |
 | ARKit / Rhubarb / VRM / CC4 rigs | `--retarget arkit\|rhubarb\|vrm\|cc4` weighted remaps ([docs](docs/retargeting.md)) | ✅ shipped |
 | Unreal (official FaceFX-UE4/UE5 plugins) | Impossible via the plugins (proprietary `.ffxc` compiler); instead drive UE float curves / morph targets from JSON — the `arkit` remap feeds MetaHuman's ARKit route | ✅ JSON today |
 | Bethesda modding (Nukem9/FaceFXWrapper, xVASynth, Mantella) | `.fuz` container + `.lip` header tools shipped (`openfacefx.bethesda`); the `.lip` payload has **no public spec** — clean-room writer blocked on sample reverse-engineering ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)) | 🔶 partial |
@@ -284,6 +297,7 @@ The full backlog lives in the [issues](https://github.com/OpenFaceFX/OpenFaceFX/
 (milestone v0.2.0), distilled from a feature-gap survey against FaceFX.
 
 - [x] Unity `AnimationClip` exporter (`-o clip.anim`, oculus/vrchat naming)
+- [x] Live2D `motion3.json` ([#20](https://github.com/OpenFaceFX/OpenFaceFX/issues/20)) and Godot `.tres` ([#21](https://github.com/OpenFaceFX/OpenFaceFX/issues/21)) exporters
 - [x] Published remap tables: ARKit-52, Rhubarb, Preston-Blair, VRM, CC4
 - [x] Component-based coarticulation with tunable articulator timing ([#1](https://github.com/OpenFaceFX/OpenFaceFX/issues/1))
 - [x] Data-driven weighted phoneme→target mapping ([#2](https://github.com/OpenFaceFX/OpenFaceFX/issues/2))
@@ -316,6 +330,8 @@ src/openfacefx/
   curves.py         keyframe reduction, FaceTrack
   io_export.py      JSON / CSV writers
   export_unity.py   Unity .anim AnimationClip writer
+  export_live2d.py  Live2D Cubism motion3.json parameter-curve writer
+  export_godot.py   Godot 4 .tres AnimationPlayer resource writer
   export_cues.py    Rhubarb TSV/XML/JSON, Moho/OpenToonz .dat, Papagayo .pgo cues
   retarget.py       viseme→rig remapping + presets          ← retarget rigs here
   bethesda.py       .fuz container / .lip header tools

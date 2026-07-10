@@ -12,6 +12,7 @@ From an MFA alignment (accurate):
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
 
@@ -20,6 +21,8 @@ from .alignment import load_mfa_textgrid
 from .pipeline import generate_naive, generate_from_alignment, wav_duration
 from .io_export import write_json, write_csv
 from .export_unity import write_unity_anim
+from .export_live2d import write_live2d_motion, lipsync_param_ids
+from .export_godot import write_godot_anim
 from .export_cues import (
     write_rhubarb_tsv, write_rhubarb_xml, write_rhubarb_json,
     write_moho_dat, write_pgo, _RHUBARB_SHAPES,
@@ -104,7 +107,63 @@ def _write_cue(track, out: str, fmt: str, args) -> None:
     print(f"wrote {out}: {fmt} cue list, {track.duration:.2f}s")
 
 
+def _load_str_map(path: str, flag: str) -> dict:
+    """Load a JSON object of ``str -> str`` for a mapping flag, validated at
+    this CLI boundary (a clear SystemExit rather than a stray JSON/type error)."""
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in data.items()):
+        raise SystemExit(f"{flag} must be a JSON object mapping strings to strings")
+    return data
+
+
+def _write_live2d(track, out: str, args) -> None:
+    if getattr(args, "retarget", None):
+        raise SystemExit(
+            "--retarget does not apply to Live2D .motion3.json; use "
+            "--live2d-params to map visemes onto parameter Ids")
+    params_file = getattr(args, "live2d_params", None)
+    model3 = getattr(args, "live2d_model3", None)
+    if params_file and model3:
+        raise SystemExit("--live2d-params and --live2d-model3 are mutually exclusive")
+    params = None
+    mouth = getattr(args, "live2d_param", None) or "ParamMouthOpenY"
+    if params_file:
+        params = _load_str_map(params_file, "--live2d-params")
+    elif model3:
+        ids = lipsync_param_ids(model3)
+        if not ids:
+            raise SystemExit(f"no Groups:LipSync entry with Ids found in {model3}")
+        if len(ids) > 1:
+            raise SystemExit(
+                f"{model3} LipSync group declares {len(ids)} parameters {ids}; "
+                "supply --live2d-params to assign visemes to them")
+        mouth = ids[0]
+    write_live2d_motion(track, out, params=params, mouth_param=mouth)
+    print(f"wrote {out}: Live2D motion3.json, {track.duration:.2f}s")
+
+
+def _write_godot(track, out: str, args) -> None:
+    if getattr(args, "retarget", None):
+        raise SystemExit(
+            "--retarget does not apply to Godot .tres; it has its own "
+            "--godot-naming presets (or pass --godot-names)")
+    names_file = getattr(args, "godot_names", None)
+    names = _load_str_map(names_file, "--godot-names") if names_file else None
+    write_godot_anim(track, out,
+                     naming=getattr(args, "godot_naming", "oculus"),
+                     node=getattr(args, "godot_node", "Head"), names=names)
+    print(f"wrote {out}: Godot .tres Animation, {track.duration:.2f}s")
+
+
 def _write(track, out: str, args=None) -> None:
+    if out.endswith(".motion3.json"):
+        _write_live2d(track, out, args)
+        return
+    if out.endswith(".tres"):
+        _write_godot(track, out, args)
+        return
     cue_fmt = _cue_format(out, getattr(args, "cue_format", None))
     if cue_fmt:
         if getattr(args, "retarget", None):
@@ -144,6 +203,25 @@ def _add_output_options(p) -> None:
     p.add_argument("--anim-path", default="Body",
                    help="Animator-to-SkinnedMeshRenderer transform path for "
                         ".anim output (default: Body)")
+    p.add_argument("--live2d-param", default="ParamMouthOpenY",
+                   help="Cubism parameter Id the default single-curve "
+                        ".motion3.json collapses onto (default: ParamMouthOpenY)")
+    p.add_argument("--live2d-params",
+                   help="JSON viseme->ParamId map for .motion3.json per-"
+                        "parameter output (one curve per Id; e.g. per-vowel "
+                        "ParamA/I/U/E/O rigs). Overrides --live2d-param")
+    p.add_argument("--live2d-model3",
+                   help="read the mouth parameter Id from a Cubism model3.json's "
+                        "Groups:LipSync entry (.motion3.json single-curve target)")
+    p.add_argument("--godot-node", default="Head",
+                   help="animated node name for .tres blendshape track paths, "
+                        "relative to the AnimationPlayer root (default: Head)")
+    p.add_argument("--godot-naming", choices=["oculus", "vrchat"],
+                   default="oculus",
+                   help="blendshape naming for .tres output (default: oculus)")
+    p.add_argument("--godot-names",
+                   help="JSON viseme->shape map for .tres output, overriding "
+                        "--godot-naming with an explicit blendshape naming")
     p.add_argument("--cue-format",
                    choices=["tsv", "xml", "json-cues", "dat", "pgo"],
                    help="write a stepped cue list instead of curves: Rhubarb "
