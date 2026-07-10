@@ -8,9 +8,16 @@ its `version` field.
 
 ## [Unreleased]
 
-Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — next up
-the remaining P1/P2 items (#18–#23, #26–#31) and the sample-blocked `.LIP`
-writer (#12).
+Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — the
+remaining P2 items (#18 presets/stress, #19, #22, #23), adoption
+infrastructure (#24, #27–#31) and the sample-blocked `.LIP` writer (#12).
+
+## [0.5.0] — 2026-07-10
+
+The no-transcript-no-problem release: audio-energy fallback, artistic
+dials, a Rhubarb-style README with a CI-rendered quickstart GIF and a
+viseme gallery, Live2D and Godot exporters, and out-of-the-box IPA support
+for TTS timing.
 
 ### Added
 - **Built-in IPA phoneme preset for `from-timing`** (#32): `pho`, `piper` and
@@ -303,7 +310,8 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.2.0...v0.3.0
