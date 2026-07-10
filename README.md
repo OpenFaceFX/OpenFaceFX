@@ -549,6 +549,31 @@ values clamped `[0,1]`, timecode/frame → seconds, and each column RDP-thinned 
 is many-to-one) — it brings the raw channels in to condition and re-export.
 `read_csv(path)` is the library entry; numpy + stdlib, deterministic.
 
+## Re-export or retarget an existing track (`convert`)
+
+Every exporter used to be reachable only as the `-o` sink of a generate command.
+`convert` (issue [#46](https://github.com/OpenFaceFX/OpenFaceFX/issues/46))
+decouples **generation** from **delivery** — load an existing `track.json` and
+emit any other format, or retarget it, **without re-running the solver** (no audio
+or TextGrid needed). It's the natural partner to the importers: `from-cues` /
+`from-csv` → `convert` → Unity/Godot/Live2D.
+
+```bash
+python -m openfacefx convert track.json -o clip.anim                 # to Unity
+python -m openfacefx convert track.json --retarget arkit -o rig.json  # retarget
+python -m openfacefx convert track.json --edits line.edits.json -o final.tres
+```
+
+It routes the loaded track through the **exact same** `--edits` → exporter
+dispatch the generate commands use, so the output is **byte-identical to
+generating that track** by construction — the same `--retarget`/`--adjust`/
+`--retarget-shapes`/`--edits` and format flags apply. (The `openfacefx.track` JSON
+stores keyframe *times* at 4 dp, so an exporter that renders finer time precision
+reflects that quantisation; it's byte-identical for every exporter when the
+track's frame times are 4-dp-representable, and for CSV/cues/JSON always.) Pure
+re-serialisation plus the existing transforms — no solver, no RNG. `.lip` stays
+guarded exactly as in the generate path (it needs phonemes a viseme track lacks).
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that

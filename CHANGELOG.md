@@ -9,6 +9,26 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **`convert` command: re-export or retarget an existing track without the
+  solver** (closes [#46](https://github.com/OpenFaceFX/OpenFaceFX/issues/46)):
+  `convert IN.track.json -o OUT.ext` loads an existing track and emits any
+  exporter format (Unity `.anim`, Godot `.tres`, Live2D `.motion3.json`,
+  Rhubarb/Moho/Papagayo cues, CSV, native JSON) — decoupling **generation** from
+  **delivery** and completing the round trip with the new importers
+  (`from-cues`/`from-csv` → `convert`). It routes the loaded track through the
+  *exact same* `--edits` → `_write` dispatch the four generate commands share, so
+  the output is **byte-identical to generating that track by construction**, with
+  the same passthrough transforms — `--retarget`, `--adjust`, `--retarget-shapes`,
+  `--edits` — and format flags (`--anim-naming`, `--godot-node`/`--godot-naming`,
+  `--live2d-params`, `--cue-format`, `--fps`). Pure re-serialisation plus the
+  existing `retarget`/`apply_adjust`/`apply_edits` transforms — no solver, no
+  audio, no RNG; deterministic and additive (no existing command changes). The
+  native round-trip `convert track.json -o out.track.json` is byte-identical, and
+  `.lip` stays guarded exactly as in the generate path (a viseme track carries no
+  phonemes to fabricate). Note: the track JSON stores keyframe *times* at 4 dp, so
+  an exporter rendering finer time precision (Unity `.anim` at 6 dp) reflects that
+  quantisation unless the track's frame times are 4-dp-representable — byte-identical
+  for CSV/cues/JSON at any rate, and for every exporter at e.g. fps 100.
 - **Import ARKit / Live Link Face blendshape-weight CSV** (closes
   [#45](https://github.com/OpenFaceFX/OpenFaceFX/issues/45)): a new
   `openfacefx.importers_csv` module (`read_csv`, re-exported from `importers`) and

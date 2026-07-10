@@ -986,6 +986,20 @@ def main(argv=None) -> int:
     _add_output_options(cs)
     _add_qa_options(cs)
 
+    cv = sub.add_parser("convert",
+                        help="re-export or retarget an existing track.json to any "
+                             "format (Unity/Godot/Live2D/cues/.lip/CSV/JSON) "
+                             "WITHOUT re-running the solver (issue #46)")
+    cv.add_argument("infile", help="the source .track.json to load")
+    cv.add_argument("-o", "--out", required=True,
+                    help="output; the exporter is chosen by extension, exactly as "
+                         "the generate commands' -o (so behaviour cannot drift)")
+    cv.add_argument("--fps", type=float,
+                    help="re-stamp the track's frame rate before export "
+                         "(default: keep the loaded track's fps)")
+    _add_output_options(cv)
+    _add_edits_options(cv)
+
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
                             "transcript; amplitude fallback, not viseme sync)")
@@ -1176,6 +1190,22 @@ def main(argv=None) -> int:
             _warn(args, w)
         _write(track, args.out, args)
         _emit_summary(args, track)
+        return 0
+
+    if args.cmd == "convert":
+        # Re-serialise an existing track through the SAME edits->_write path the
+        # generate commands use (see naive/mfa/from-timing/energy above), so the
+        # output is byte-identical to generating that track — by construction, no
+        # solver, audio or RNG. Events on the loaded track are preserved as-is.
+        from .io_export import read_json
+        try:
+            track = read_json(args.infile)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"convert: {ex}")
+        if args.fps is not None:
+            track.fps = args.fps
+        track = _apply_edits_layer(track, args)
+        _write(track, args.out, args)
         return 0
 
     mapping = Mapping.from_json(args.mapping) if args.mapping else None
