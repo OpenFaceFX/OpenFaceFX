@@ -20,6 +20,7 @@ from .export_cues import (
     write_moho_dat, write_pgo,
 )
 from .mapping import Mapping, Target
+from .ipa import IPA_MAPPING, is_ipa_vowel, ipa_unknown_symbols
 from .retarget import retarget, rename_only, PRESETS
 from .visemes import VISEMES, phoneme_to_viseme
 from .timing import (
@@ -47,6 +48,7 @@ __all__ = [
     "dominant_cues", "write_rhubarb_tsv", "write_rhubarb_xml",
     "write_rhubarb_json", "write_moho_dat", "write_pgo",
     "Mapping", "Target",
+    "IPA_MAPPING", "is_ipa_vowel", "ipa_unknown_symbols",
     "retarget", "rename_only", "PRESETS",
     "VISEMES", "phoneme_to_viseme",
     "TimingEvent", "resolve_ends", "to_segments", "parse_pho",

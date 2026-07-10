@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from .phonemes import ARPABET, SILENCE, strip_stress
 from .visemes import PHONEME_TO_VISEME, VISEMES
@@ -64,6 +64,13 @@ class Mapping:
     # Set by the timing.py viseme-unit adapters, or by a mapping file with
     # top-level "custom_symbols": true.
     allow_custom_symbols: bool = False
+    # Optional symbol normalizer applied to the lookup key (only with
+    # ``allow_custom_symbols``). It lets a preset key rows by a base alphabet and
+    # match the diacritic-carrying tokens real dumps emit -- the built-in IPA
+    # preset (ipa.py) sets it to fold stress/length/tie-bar/etc. onto the base
+    # symbol on lookup, rather than duplicating a row per diacritic variant.
+    # ``None`` (the default, and every JSON-loaded mapping) matches verbatim.
+    normalize: Optional[Callable[[str], str]] = None
 
     def __post_init__(self):
         names = [t.name for t in self.targets]
@@ -100,9 +107,11 @@ class Mapping:
         """Target-index -> weight for a (possibly stressed) phoneme.
         Unknown phonemes fall back to the silence row, like the built-in map.
         With ``allow_custom_symbols`` the key is matched verbatim (vendor
-        symbols carry no stress digit and are case-significant)."""
+        symbols carry no stress digit and are case-significant), unless a
+        ``normalize`` hook is set, which is applied to the key first."""
         if self.allow_custom_symbols:
-            row = self.rows.get(phoneme)
+            key = self.normalize(phoneme) if self.normalize is not None else phoneme
+            row = self.rows.get(key)
             if row is None:
                 row = self.rows.get(SILENCE) or {}
         else:

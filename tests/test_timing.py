@@ -308,8 +308,16 @@ def _run(tmp_path, name, text, fmt, extra=()):
     return out
 
 
-def test_cli_from_timing_pho_phoneme_path(tmp_path):
-    d = _assert_track_invariants(_run(tmp_path, "a.pho", PHO, "pho"))
+_OCULUS15 = os.path.join(os.path.dirname(__file__), "..", "examples",
+                         "mappings", "oculus15.json")
+
+
+def test_cli_from_timing_pho_explicit_mapping_overrides_ipa(tmp_path):
+    # pho auto-selects the built-in IPA preset (issue #32), but this fixture is
+    # written in ARPABET, so an explicit --mapping to the ARPABET table must win
+    # and still yield PP/aa. (IPA auto-select coverage lives in test_ipa.py.)
+    d = _assert_track_invariants(
+        _run(tmp_path, "a.pho", PHO, "pho", ("--mapping", _OCULUS15)))
     names = {c["name"] for c in d["channels"]}
     assert "PP" in names and "aa" in names          # bilabials seal, vowel opens
     pp = [c for c in d["channels"] if c["name"] == "PP"][0]

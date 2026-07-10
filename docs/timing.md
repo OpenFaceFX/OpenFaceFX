@@ -35,13 +35,49 @@ event's end from the next event's start; the final event is held for
 | `azure` | viseme | audio offset in **100-ns ticks** (÷10000 = ms) | array of `{audio_offset, viseme_id}` |
 | `polly` | viseme | `time` in integer **ms** | NDJSON marks; `type=="viseme"`, `value`, `time` |
 
-`pho`, `piper` and `cartesia` symbols are the source's own alphabet (MBROLA
-SAMPA, and IPA for Piper/Cartesia) — **not** ARPABET. The default mapping expects
-ARPABET, so pass a matching `--mapping` (rows keyed on those symbols, built with
-`allow_custom_symbols`) for meaningful visemes from IPA/SAMPA sources. The
-viseme formats need no mapping: `AZURE_VISEME_TO_TARGET` (22 IDs) and
+`pho`, `piper` and `cartesia` symbols are the source's own alphabet (IPA for
+Piper/Cartesia, a SAMPA variant for MBROLA `.pho`) — **not** ARPABET. So for
+those three formats `from-timing` **auto-selects a built-in IPA preset** when no
+`--mapping` is given (an explicit `--mapping` still wins); see below. The viseme
+formats need no mapping either: `AZURE_VISEME_TO_TARGET` (22 IDs) and
 `POLLY_VISEME_TO_TARGET` remap straight onto the Oculus-15 targets. Symbols
-outside those tables produce a QA warning and relax to silence — never a crash.
+outside the active table produce a QA warning and relax to silence — never a
+crash.
+
+## The built-in IPA preset (pho/piper/cartesia)
+
+`openfacefx.ipa.IPA_MAPPING` keys the Oculus-15 targets by the IPA inventory
+Piper, Cartesia and espeak-ng emit, so those sources produce rich mouth shapes
+out of the box:
+
+```bash
+openfacefx from-timing --file voice.pho --format pho -o track.json   # no --mapping
+```
+
+Rather than one row per diacritic-carrying variant, the preset stores base
+symbols and **normalizes the lookup key** (`_normalize_ipa`):
+
+| Marks | Rule | Example |
+|---|---|---|
+| stress `ˈ` `ˌ` (and ASCII `'`) | dropped | `ˈɑ` → `ɑ` |
+| length `ː` `ˑ` (and ASCII `:`) | dropped | `ɑː` → `ɑ`, `iː` → `i` |
+| affricate **tie bar** `◌͡◌` | dropped → plain digraph | `t͡ʃ` = `tʃ` → CH |
+| MFA secondary articulation `ʰ` `ʲ` `ʷ` | dropped | `pʰ` → `p`, `kʷ` → `k` |
+| any other **combining** mark | dropped | dental `t̪` → `t`, syllabic `n̩` → `n` |
+
+Both diphthong spellings are covered — the `ɪ`/`ʊ`-offglide (`aɪ aʊ eɪ oʊ ɔɪ`,
+espeak/Wikipedia) and the `j`/`w`-offglide (`aj aw ej ow ɔj`, MFA/Cartesia) — as
+are `ɜ ɝ ɚ` (NURSE, r-coloured) and a few non-colliding SAMPA fallbacks (`@ { 3`).
+The IPA→viseme groupings are an articulatory synthesis (like
+`visemes.PHONEME_TO_VISEME`); provenance and the symbol inventory's sources are
+documented in `src/openfacefx/ipa.py`. Full per-voice MBROLA SAMPA varies by
+voice — for a symbol the preset doesn't know (it warns, once per distinct
+symbol, and relaxes to silence) supply your own `--mapping` (rows keyed on those
+symbols with top-level `"custom_symbols": true`).
+
+IPA vowels also feed the coarticulation dominance model (`is_ipa_vowel`), so a
+Piper/Cartesia vowel gets the same broad, jaw-leading bump an ARPABET vowel does
+instead of a consonant-sharp one. The ARPABET default path is unchanged.
 
 ## Capturing the SDK-event sources
 

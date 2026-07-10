@@ -25,18 +25,27 @@ from .alignment import PhonemeSegment
 from .mapping import Mapping, _DEFAULT_CLASSES
 from .visemes import VISEMES, VISEME_INDEX, phoneme_to_viseme
 from .phonemes import SILENCE, is_vowel, strip_stress
+from .ipa import is_ipa_vowel
+
+
+def _seg_is_vowel(seg: PhonemeSegment) -> bool:
+    """Vowel test for the dominance model. ARPABET (``is_vowel``) is checked
+    first so the default path is unchanged; the IPA vowel set is consulted too
+    so Piper/Cartesia/espeak vowels also get the broad vowel dominance (their
+    symbols never satisfy ``is_vowel``, so ARPABET stays byte-identical)."""
+    return is_vowel(seg.phoneme) or is_ipa_vowel(seg.phoneme)
 
 
 # Vowels dominate (mouth opens broadly); consonants are sharper/briefer.
 def _alpha(seg: PhonemeSegment) -> float:
-    return 1.0 if is_vowel(seg.phoneme) else 0.85
+    return 1.0 if _seg_is_vowel(seg) else 0.85
 
 
 def _theta(seg: PhonemeSegment) -> float:
     """Decay rate (1/seconds). Shorter segments decay faster so a quick stop
     does not smear across the whole word."""
     dur = max(seg.dur, 1e-3)
-    base = 6.0 if is_vowel(seg.phoneme) else 11.0
+    base = 6.0 if _seg_is_vowel(seg) else 11.0
     # Scale so very long segments stay broad and very short ones stay tight.
     return base * (0.09 / dur) ** 0.5
 

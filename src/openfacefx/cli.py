@@ -35,6 +35,7 @@ from .timing import (
     parse_polly_marks, resolve_ends, to_segments, viseme_events_to_segments,
     build_vendor_mapping, AZURE_VISEME_TO_TARGET, POLLY_VISEME_TO_TARGET,
 )
+from .ipa import IPA_MAPPING, ipa_unknown_symbols
 from .anchors import (
     anchored_segments, anchors_transcript, parse_srt, parse_word_anchors,
     from_azure_word_boundaries, from_elevenlabs_alignment, from_kokoro_tokens,
@@ -463,7 +464,16 @@ def main(argv=None) -> int:
                                             params=params)
         else:
             segs = to_segments(events)
-            track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
+            active = mapping
+            if active is None:
+                # pho (MBROLA SAMPA) and piper/cartesia (IPA) don't speak
+                # ARPABET, so default them to the built-in IPA preset; an
+                # explicit --mapping still wins. Unknown symbols route to
+                # silence with a QA warning, once per distinct symbol.
+                active = IPA_MAPPING
+                for w in ipa_unknown_symbols(e.symbol for e in events):
+                    print(f"warning: {w}")
+            track = generate_from_alignment(segs, fps=args.fps, mapping=active,
                                             params=params)
         _write(track, args.out, args)
     elif args.cmd == "energy":

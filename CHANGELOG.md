@@ -9,10 +9,29 @@ its `version` field.
 ## [Unreleased]
 
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — next up
-the remaining P1/P2 items (#18–#23, #26–#32) and the sample-blocked `.LIP`
+the remaining P1/P2 items (#18–#23, #26–#31) and the sample-blocked `.LIP`
 writer (#12).
 
 ### Added
+- **Built-in IPA phoneme preset for `from-timing`** (#32): `pho`, `piper` and
+  `cartesia` now **auto-select** a bundled IPA→Oculus-15 mapping when no
+  `--mapping` is given, so Piper/Cartesia (IPA) and espeak-ng MBROLA `.pho`
+  (SAMPA) produce rich mouth shapes out of the box instead of degrading to
+  silence — an explicit `--mapping` still wins. The preset (`openfacefx.ipa.
+  IPA_MAPPING`) is data: it keys the targets by the inventory those engines
+  emit, grounded in the espeak-ng phoneme guide, the Montreal Forced Aligner
+  US-English phone set (which Cartesia's sonic models use), and the Wikipedia
+  English IPA key; the symbol→viseme groupings are an articulatory synthesis,
+  like `visemes.PHONEME_TO_VISEME`. A small `_normalize_ipa` folds the
+  diacritics real dumps carry onto the base symbol **on lookup** (no row
+  duplication): stress `ˈ ˌ`, length `ː ˑ`, the affricate **tie bar** (`t͡ʃ` =
+  `tʃ`), MFA's `ʰ ʲ ʷ`, and any other combining mark (`t̪`→`t`, `n̩`→`n`). Both
+  diphthong spellings (`aɪ…` and MFA's `aj…`), r-coloured `ɜ ɝ ɚ` and
+  non-colliding SAMPA fallbacks (`@ { 3`) are covered; unknown symbols warn once
+  per distinct symbol and relax to silence — never a crash. IPA vowels also feed
+  the coarticulation dominance model (`is_ipa_vowel`), so vendor vowels get the
+  broad vowel bump. The ARPABET default path is byte-for-byte unchanged
+  (`ipa.py`; docs/timing.md).
 - **Live2D Cubism `motion3.json` exporter** (#20): `-o mouth.motion3.json`
   bakes lip-sync as Cubism parameter curves (Version 3, linear segments). Two
   targeting modes. **Default (zero config)** collapses the whole viseme track to
