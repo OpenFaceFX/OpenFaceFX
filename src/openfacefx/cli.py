@@ -18,11 +18,12 @@ import sys
 
 from .g2p import G2P
 from .alignment import load_mfa_textgrid
-from .pipeline import generate_naive, generate_from_alignment, wav_duration
+from .pipeline import generate_from_alignment, wav_duration
 from .io_export import write_json, write_csv
 from .export_unity import write_unity_anim
 from .export_live2d import write_live2d_motion, lipsync_param_ids
 from .export_godot import write_godot_anim
+from .export_lip import write_lip, lip_calibrate
 from .export_cues import (
     write_rhubarb_tsv, write_rhubarb_xml, write_rhubarb_json,
     write_moho_dat, write_pgo, _RHUBARB_SHAPES,
@@ -159,6 +160,11 @@ def _write_godot(track, out: str, args) -> None:
 
 
 def _write(track, out: str, args=None) -> None:
+    if out.endswith(".lip"):
+        raise SystemExit(
+            "-o .lip is only supported by the 'naive' and 'mfa' commands: it "
+            "writes a Bethesda FaceFX payload from phoneme segments, not from "
+            "reduced viseme curves")
     if out.endswith(".motion3.json"):
         _write_live2d(track, out, args)
         return
@@ -245,6 +251,11 @@ def _add_output_options(p) -> None:
                    help="restrict Rhubarb tsv/xml/json to these shape letters "
                         "(e.g. ABCDEF); missing extended shapes G/H/X fall back "
                         "to a basic shape per the documented table")
+    p.add_argument("--lip-game", choices=["skyrim", "fallout4"], default="skyrim",
+                   help="target game for -o out.lip output (naive/mfa only): "
+                        "skyrim (EXPERIMENTAL, unverified in-game — see #12); "
+                        "fallout4 is not supported (undocumented 43-target "
+                        "vocabulary) and raises an error")
 
 
 def _add_coart_options(p) -> None:
@@ -305,10 +316,10 @@ def _coart_params(args):
     return p
 
 
-def _anchored_track(args, dur, g2p, mapping, params):
-    """Build a track from the naive aligner pinned at --anchors. Only `srt` can
-    supply its own transcript (concatenated cue text); every other format needs
-    --text, and `google` needs it up front to resolve its wN marks to words."""
+def _anchored_segments(args, dur, g2p):
+    """Phoneme segments from the naive aligner pinned at --anchors. Only `srt`
+    can supply its own transcript (concatenated cue text); every other format
+    needs --text, and `google` needs it up front to resolve its wN marks."""
     with open(args.anchors, encoding="utf-8") as fh:
         text = fh.read()
     fmt = args.anchors_format
@@ -323,9 +334,31 @@ def _anchored_track(args, dur, g2p, mapping, params):
         transcript = args.text
         anchors = (from_google_timepoints(text, transcript) if fmt == "google"
                    else _ANCHOR_PARSERS[fmt](text))
-    segs = anchored_segments(transcript, dur, anchors, g2p=g2p)
-    return generate_from_alignment(segs, fps=args.fps, mapping=mapping,
-                                   params=params)
+    return anchored_segments(transcript, dur, anchors, g2p=g2p)
+
+
+def _naive_input_segments(args, dur, g2p):
+    """Phoneme segments for the ``naive`` command: anchored if --anchors, else
+    the transcript spread over the duration. The shared entry point for both the
+    curve exporters and the .lip writer (which needs segments, not a track)."""
+    if args.anchors:
+        return _anchored_segments(args, dur, g2p)
+    if not args.text:
+        raise SystemExit(
+            "--text is required (or pass --anchors with --anchors-format)")
+    from .pipeline import naive_segments
+    return naive_segments(args.text, dur, g2p=g2p)
+
+
+def _write_lip(segs, dur, args) -> None:
+    """Dispatch ``-o out.lip`` (naive/mfa). EXPERIMENTAL, unverified in-game."""
+    try:
+        write_lip(segs, dur, args.out, game=getattr(args, "lip_game", "skyrim"))
+    except (NotImplementedError, ValueError) as e:
+        raise SystemExit(str(e))
+    print(f"wrote {args.out}: EXPERIMENTAL Bethesda .lip "
+          f"({getattr(args, 'lip_game', 'skyrim')}), {dur:.2f}s — "
+          "UNVERIFIED in-game, please report on issue #12")
 
 
 def main(argv=None) -> int:
@@ -387,6 +420,13 @@ def main(argv=None) -> int:
     e.add_argument("-o", "--out", required=True)
     _add_output_options(e)
 
+    lc = sub.add_parser("lip-calibrate",
+                        help="EXPERIMENTAL: write one .lip per Skyrim speech "
+                             "target for in-game slot calibration (issue #12)")
+    lc.add_argument("--out", required=True, help="output directory")
+    lc.add_argument("--seconds", type=float, default=2.0)
+    lc.add_argument("--lip-game", default="skyrim", choices=["skyrim"])
+
     b = sub.add_parser("batch", help="process a directory tree of voice lines")
     b.add_argument("--dir", required=True, help="input tree of .wav files "
                    "with same-stem .TextGrid or .txt transcripts")
@@ -403,6 +443,14 @@ def main(argv=None) -> int:
     b.add_argument("--fps", type=float, default=60.0)
 
     args = p.parse_args(argv)
+
+    if args.cmd == "lip-calibrate":
+        written = lip_calibrate(args.out, game=args.lip_game,
+                                seconds=args.seconds)
+        print(f"wrote {len(written)} calibration lips to {args.out} — "
+              f"EXPERIMENTAL: load each on a voiced line in-game and report "
+              f"which mouth part moves on issue #12")
+        return 0
 
     if args.cmd == "batch":
         from .batch import run_batch
@@ -425,20 +473,21 @@ def main(argv=None) -> int:
         if args.cmudict:
             added = g2p.load_cmudict(args.cmudict)
             print(f"loaded {added} CMUdict entries")
-        if args.anchors:
-            track = _anchored_track(args, dur, g2p, mapping, params)
+        segs = _naive_input_segments(args, dur, g2p)
+        if args.out.endswith(".lip"):
+            _write_lip(segs, dur, args)
         else:
-            if not args.text:
-                raise SystemExit(
-                    "--text is required (or pass --anchors with --anchors-format)")
-            track = generate_naive(args.text, dur, fps=args.fps, g2p=g2p,
-                                   mapping=mapping, params=params)
-        _write(track, args.out, args)
+            track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
+                                            params=params)
+            _write(track, args.out, args)
     elif args.cmd == "mfa":
         segs = load_mfa_textgrid(args.textgrid)
-        track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
-                                        params=params)
-        _write(track, args.out, args)
+        if args.out.endswith(".lip"):
+            _write_lip(segs, segs[-1].end if segs else 0.0, args)
+        else:
+            track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
+                                            params=params)
+            _write(track, args.out, args)
     elif args.cmd == "from-timing":
         parser_fn, is_viseme = _TIMING_PARSERS[args.format]
         with open(args.file, encoding="utf-8") as fh:

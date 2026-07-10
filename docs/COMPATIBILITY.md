@@ -28,17 +28,26 @@ artifact the wrapper would have produced.
 - **Inputs:** game type + `FonixData.cdf` (user-supplied, Bethesda-owned) +
   16 kHz 16-bit mono WAV + dialogue text. Windows executable; embeds Creation
   Kit-derived code, so it is not itself clean-room.
-- **Compatibility today:** cannot consume OpenFaceFX output (takes no curve
-  input). **Path to compatibility:** OpenFaceFX writing `.LIP` directly —
-  tracked in [issue #12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12).
-  **Format-research finding (Jul 2026):** the `.lip` 12-byte header
-  (version/size/flags), the `.fuz` container, and Skyrim's 16 speech-target
-  names are publicly verified — and shipped in `openfacefx.bethesda` — but
-  the payload itself is a FaceFX facial-animation blob with **no public
-  byte-level spec**: FaceFXWrapper and every other generator execute
-  Bethesda's embedded Creation Kit code rather than writing those bytes. A
-  clean-room writer therefore needs payload reverse-engineering from real
-  samples (in-game verification required) before it can ship.
+- **Compatibility today:** OpenFaceFX now writes Skyrim `.lip` directly from its
+  phoneme segments (`openfacefx.export_lip.write_lip`, or `-o out.lip` on the
+  `naive`/`mfa` commands) — an **experimental** clean-room writer. **Path to
+  full compatibility:** in-game verification (volunteers welcome on
+  [issue #12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)).
+  **Format-research finding (Jul 2026, updated):** the `.fuz` container and
+  Skyrim's 16 speech-target names were already publicly verified; the `.lip`
+  *payload* — a FaceFX facial-animation blob with no public byte-level spec —
+  has now been reverse-engineered from four real samples (three mod-author
+  placeholders plus one vanilla Creation-Kit asset). It is a frame-major curve
+  grid; our codec (`tools/lip_codec_research.py`) re-serializes all four samples
+  **byte-identically** and the writer's own output round-trips exactly. Shipped,
+  but flagged experimental because **the game has not yet loaded a written file**
+  and two facts stay unverifiable without the engine: the slot→morph assignment
+  (numbered curve slots, not names) and the header `u22` field (we copy the
+  vanilla asset's value). Note the "12-byte version/size/flags header" is
+  FaceFXWrapper's *interface* view — the on-disk payloads (including the
+  `.fuz`-embedded vanilla asset) begin directly with the 24-byte FaceFX
+  animation header. No Creation Kit code, `FonixData.cdf`, or game assets are
+  used: format facts are derived by analysis and the writer is original code.
 
 ### FaceFX/FaceFX-UE4 and FaceFX/FaceFX-UE5 — official Unreal plugins
 - **Repos:** <https://github.com/FaceFX/FaceFX-UE4>, <https://github.com/FaceFX/FaceFX-UE5>
@@ -74,7 +83,7 @@ artifact the wrapper would have produced.
 
 | Tool | What it is | Consumes OpenFaceFX output today? | Route to compatibility |
 |---|---|---|---|
-| Nukem9/FaceFXWrapper | audio+text → Bethesda `.LIP` | No (takes no curve input) | `.LIP` writer blocked on payload spec ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)); `.fuz` container + `.lip` header tools shipped (`openfacefx.bethesda`) |
+| Nukem9/FaceFXWrapper | audio+text → Bethesda `.LIP` | **Experimental** Skyrim `.lip` writer shipped (`-o out.lip`); re-encodes real samples byte-exact, **in-game verification pending** ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)). `.fuz` container + `.lip` header tools also shipped (`openfacefx.bethesda`) | Verify in-game; slot→morph map + header `u22` are documented assumptions |
 | FaceFX-UE4 / UE5 plugins | load compiled `.ffxc`/`.facefx` | No | None (proprietary compiler required) — drive UE curves directly instead |
 | H3EK-FaceFXWrapper | audio+text → Halo `.FXX` | No | Not a practical target |
 | OVRLipSync / lipstick | Oculus 15-viseme runtime (Unity) | **Yes, via `.anim` export** (`write_unity_anim`, `-o out.anim`) | Shipped; `OVRLipSyncSequence` .asset deliberately skipped (version-coupled) |

@@ -9,6 +9,24 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Experimental Bethesda `.lip` writer for Skyrim** (#12): a clean-room writer
+  for the FaceFX facial-animation payload inside a Skyrim `.lip` file —
+  `openfacefx.export_lip.write_lip(segments, duration_s, path)`, and `-o out.lip`
+  on the `naive`/`mfa` commands (with `--lip-game skyrim`, the default). The
+  byte format was reverse-engineered from four real samples (three mod-author
+  placeholders plus one vanilla Creation-Kit asset); the research codec
+  (`tools/lip_codec_research.py`, now with an `encode_curves` inverse)
+  re-serializes all four **byte-identically**, and every track the writer emits
+  round-trips through an independent decoder exactly (`tests/test_export_lip.py`,
+  Oracle B/C). It drives the existing coarticulation solver through an
+  ARPAbet→Skyrim-16 `Mapping` and samples the weight envelopes on Skyrim's 30 fps
+  frame grid. **Flagged EXPERIMENTAL: not yet verified in-game.** Two facts stay
+  unverifiable without the engine and are documented, prominent assumptions —
+  the slot→morph assignment (the payload numbers curve slots, it does not name
+  them) and the header `u22` field (copied from the vanilla asset). Fallout 4 is
+  unsupported (its 43-target vocabulary is undocumented): `game='fallout4'`
+  raises `NotImplementedError` rather than emit a bogus file. In-game testers
+  wanted — please report on [#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12).
 - **More retarget presets and optional-shape fallbacks** (#22): two new
   `--retarget` presets — `vrm0` (VRM 0.x / VRoid Studio uppercase `A I U E O`
   BlendShapePresets, the 0.x-named sibling of `vrm`) and `readyplayerme` (the
@@ -26,7 +44,8 @@ its `version` field.
 
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — the
 remaining P2 items (#18 presets/stress, #19, #22 gain/offset, #23), adoption
-infrastructure (#24, #27–#31) and the sample-blocked `.LIP` writer (#12).
+infrastructure (#24, #27–#31) and in-game verification of the experimental
+`.LIP` writer (#12).
 
 ## [0.5.0] — 2026-07-10
 

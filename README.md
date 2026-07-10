@@ -286,7 +286,7 @@ artifacts their pipelines consume:
 | Godot 4 | `-o lipsync.tres` — `AnimationPlayer` resource, one `blend_shapes/*` value track per viseme (`--godot-node`/`--godot-naming`) | ✅ shipped |
 | ARKit / Rhubarb / VRM / CC4 rigs | `--retarget arkit\|rhubarb\|vrm\|cc4` weighted remaps ([docs](docs/retargeting.md)) | ✅ shipped |
 | Unreal (official FaceFX-UE4/UE5 plugins) | Impossible via the plugins (proprietary `.ffxc` compiler); instead drive UE float curves / morph targets from JSON — the `arkit` remap feeds MetaHuman's ARKit route | ✅ JSON today |
-| Bethesda modding (Nukem9/FaceFXWrapper, xVASynth, Mantella) | `.fuz` container + `.lip` header tools shipped (`openfacefx.bethesda`); the `.lip` payload has **no public spec** — clean-room writer blocked on sample reverse-engineering ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)) | 🔶 partial |
+| Bethesda modding (Nukem9/FaceFXWrapper, xVASynth, Mantella) | `.fuz` container + `.lip` header tools (`openfacefx.bethesda`), plus an **experimental** clean-room Skyrim `.lip` **writer** (`-o out.lip` from `naive`/`mfa`): the payload was reverse-engineered and our codec re-encodes the real samples byte-exact — but it is **not yet verified in-game** ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)) | 🧪 experimental writer shipped — needs in-game confirmation |
 | Anything else | Trivial JSON/CSV + documented remap | ✅ today |
 
 Full survey with per-tool details: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
@@ -302,7 +302,7 @@ The full backlog lives in the [issues](https://github.com/OpenFaceFX/OpenFaceFX/
 - [x] Component-based coarticulation with tunable articulator timing ([#1](https://github.com/OpenFaceFX/OpenFaceFX/issues/1))
 - [x] Data-driven weighted phoneme→target mapping ([#2](https://github.com/OpenFaceFX/OpenFaceFX/issues/2))
 - [x] Batch directory processing with QA reports ([#3](https://github.com/OpenFaceFX/OpenFaceFX/issues/3))
-- [ ] Bethesda `.LIP` exporter — blocked on payload spec ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)); `.fuz`/header tools + research codec shipped
+- [~] Bethesda `.LIP` exporter — **experimental Skyrim writer shipped** (`-o out.lip`; re-encodes the real samples byte-exact, in-game verification pending) ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12))
 - [ ] Prosody, gestures, events, text tags, i18n ([#4](https://github.com/OpenFaceFX/OpenFaceFX/issues/4)–[#8](https://github.com/OpenFaceFX/OpenFaceFX/issues/8))
 
 ## Scope & honesty
@@ -335,6 +335,7 @@ src/openfacefx/
   export_cues.py    Rhubarb TSV/XML/JSON, Moho/OpenToonz .dat, Papagayo .pgo cues
   retarget.py       viseme→rig remapping + presets          ← retarget rigs here
   bethesda.py       .fuz container / .lip header tools
+  export_lip.py     Bethesda Skyrim .lip writer (EXPERIMENTAL, #12) ← unverified in-game
   batch.py          directory batch runner + QA summary
   energy.py         audio-loudness fallback lip-sync (no transcript) ← amplitude-driven
   pipeline.py       orchestration

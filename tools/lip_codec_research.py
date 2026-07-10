@@ -176,6 +176,105 @@ def decode_curves(d, R=None):
     return {"records": records, "grid": grid, "stride": R, "frames": frames}
 
 
+# ---------------------------------------------------------------------------
+# ENCODE side — the exact inverse of decode_curves. Byte-identical re-encode of
+# all four known samples ("re-encode oracle", tools/../scratchpad) proves the
+# grid model captures everything needed to WRITE a payload, not just read one.
+# ---------------------------------------------------------------------------
+
+SENTINEL_BYTES = struct.pack("<f", SENTINEL)  # b"\xf9\xe8\x8a\x26"
+
+
+def pack_header(h):
+    """Inverse of parse_header: the eight header fields back to 24 bytes."""
+    return struct.pack("<IIIHHiHH",
+                       h["version"], h["duration"], h["num_curves"],
+                       h["count12"], h["const14"], h["neg16"],
+                       h["u20"], h["u22"])
+
+
+def decode_cells(d, R=None):
+    """Like decode_curves, but returns the ordered per-token CELLS carrying every
+    attribute needed to re-encode byte-exactly. Returns (cells, R, end_pos) where
+    each cell is dict(pos, frame, curve, value, dup, marker, is_sentinel).
+    encode_curves is its exact inverse."""
+    h = parse_header(d)
+    toks, _ = parse_payload(d)
+    if R is None:
+        R = frame_stride(h)
+    if R is None:
+        raise ValueError("unknown frame stride for u20=%d; pass R" % h["u20"])
+    cells, pos = [], 0
+    for t in toks:
+        cells.append(dict(pos=pos, frame=pos // R, curve=pos % R,
+                          value=t["value"], dup=t["dup"], marker=t["marker"],
+                          is_sentinel=_is_sentinel(t["value"])))
+        pos += (2 if t["dup"] else 1) + (t["marker"] // 4 if t["marker"] is not None else 0)
+    return cells, R, pos
+
+
+def encode_curves(cells, R, total_slots=None, tail_marker=None):
+    """INVERSE of decode_curves/decode_cells: serialize frame-major grid cells to
+    the payload bytes (everything after the 24-byte header).
+
+    ``cells`` is an ordered list walking the grid in stream order; each cell is a
+    mapping with ``frame``, ``curve``, ``value`` (float; pass the resting
+    ``SENTINEL`` float for a rest key) and optional ``dup`` (bool, default
+    False). The resting-slot SKIP markers are DERIVED from the gap between
+    consecutive cell positions (pos = frame*R + curve) — they hold no information
+    the grid does not, which is precisely why a writer can emit this format from
+    a (curve, frame) grid alone.
+
+    The one byte routing does NOT fix is the final token's terminator marker:
+      * pass ``total_slots`` to pad the last token's skip so the stream ends at
+        exactly that many slots (game-authored Skyrim files end on a full frame,
+        R*count12); or
+      * pass ``tail_marker`` (a raw tag byte, or None) to emit verbatim — the
+        re-encode oracle uses this to reproduce tool-written files exactly.
+    Raises ValueError on a >63-slot gap: one marker tag (max 252 = 63*4) cannot
+    span it, so a resting cell must be inserted to bridge (a dense writer never
+    hits this — consecutive rows are < R apart)."""
+    out = bytearray()
+    n = len(cells)
+
+    def _pos(c):
+        return c["frame"] * R + c["curve"]
+
+    for i, c in enumerate(cells):
+        b = SENTINEL_BYTES if _is_sentinel(c["value"]) else struct.pack("<f", c["value"])
+        out += b
+        dup = c.get("dup", False)
+        if dup:
+            out += b
+        numf = 2 if dup else 1
+        if i < n - 1:
+            skip = _pos(cells[i + 1]) - _pos(c) - numf
+        elif total_slots is not None:
+            skip = total_slots - _pos(c) - numf
+        else:
+            skip = (tail_marker // 4) if tail_marker else 0
+        if skip < 0:
+            raise ValueError(f"cell {i}: negative skip {skip} "
+                             "(cells out of order or overlapping)")
+        if skip > 63:
+            raise ValueError(f"cell {i}: skip {skip} > 63 slots exceeds one marker "
+                             "tag; insert a resting cell to bridge the gap")
+        if skip:
+            out += bytes([0, 4 * skip, 0])
+    return bytes(out)
+
+
+def roundtrip_curves(d, R=None):
+    """Decode ``d`` to cells and re-encode to a full file; returns (ok, bytes).
+    Byte-identity is the re-encode oracle — it proves the codec inverts cleanly.
+    Preserves each file's own last-token terminator (tool files vary: some pad,
+    some omit it) so identity holds without assuming the game's full-frame end."""
+    cells, R, _ = decode_cells(d, R)
+    tail = cells[-1]["marker"] if cells else None
+    rebuilt = pack_header(parse_header(d)) + encode_curves(cells, R, tail_marker=tail)
+    return rebuilt == d, rebuilt
+
+
 def report(path):
     d = open(path, "rb").read()
     h = parse_header(d)
@@ -194,6 +293,9 @@ def report(path):
     print(f"  ntok={len(toks)}  EOF: end={end}/{len(d)} (slop={len(d) - end})")
     print(f"  roundtrip_raw    = {'EXACT' if rt_raw == d else 'FAIL'}")
     print(f"  roundtrip_fields = {'EXACT' if rt_fld == d else 'FAIL'}")
+    if frame_stride(h) is not None:
+        ok_curve, _ = roundtrip_curves(d)
+        print(f"  roundtrip_curves = {'EXACT' if ok_curve else 'FAIL'}  (decode_cells -> encode_curves)")
     print(f"  values in [0,1] = {in01}/{len(vals)}   negatives (slopes) = {neg}")
     R = frame_stride(h)
     if R is not None:
