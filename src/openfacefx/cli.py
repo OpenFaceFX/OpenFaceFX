@@ -183,7 +183,7 @@ def _write(track, out: str, args=None) -> None:
         if out.endswith(".anim"):
             raise SystemExit("--retarget applies to JSON/CSV output; "
                              ".anim output has its own --anim-naming presets")
-        track = retarget(track, PRESETS[args.retarget])
+        track = _apply_retarget(track, PRESETS[args.retarget])
     if out.endswith(".csv"):
         write_csv(track, out)
     elif out.endswith(".anim"):
@@ -316,6 +316,63 @@ def _coart_params(args):
     return p
 
 
+def _add_gesture_options(p) -> None:
+    """Opt-in non-verbal gesture layer (issue #5), shared by naive/mfa/energy.
+    OFF by default so existing output stays byte-identical."""
+    p.add_argument("--gestures", action="store_true",
+                   help="append procedural blink/brow/head/eye channels (issue "
+                        "#5): Poisson blinks snapped to pauses/stress, eyebrow "
+                        "flashes and head nods on energy/stress, ambient sway and "
+                        "gaze saccades. Deterministic; OFF by default. Applies to "
+                        "curve outputs (json/csv/anim/godot/live2d), not the "
+                        "mouth-only cue/.lip formats")
+    p.add_argument("--gesture-seed", type=int, default=0,
+                   help="RNG seed for --gestures (default 0); same seed + audio "
+                        "+ params gives identical keyframes")
+    p.add_argument("--blink-rate", type=float,
+                   help="blinks per minute for --gestures (default ~15)")
+    p.add_argument("--no-brows", action="store_true",
+                   help="disable the eyebrow-flash channel in --gestures")
+
+
+def _gesture_params(args):
+    """GestureParams from the --gestures flags, or None when --gestures is absent
+    (the default, byte-identical path)."""
+    if not getattr(args, "gestures", False):
+        return None
+    from .gestures import GestureParams
+    p = GestureParams()
+    p.seed = getattr(args, "gesture_seed", 0)
+    rate = getattr(args, "blink_rate", None)
+    if rate is not None:
+        if not math.isfinite(rate) or rate <= 0.0:
+            raise SystemExit(f"--blink-rate must be a positive blinks-per-minute "
+                             f"value, got {rate}")
+        p.blink_mean_interval = 60.0 / rate
+    if getattr(args, "no_brows", False):
+        p.brow_enable = False
+    return p
+
+
+def _apply_retarget(track, preset):
+    """Retarget the viseme channels onto a rig while passing gesture/pose
+    channels (issue #5) through unchanged -- ``retarget`` drops channels absent
+    from the viseme map by design, which would otherwise delete the gestures."""
+    from .gestures import GESTURE_CHANNELS
+    from .curves import FaceTrack
+    gest = [c for c in track.channels if c.name in GESTURE_CHANNELS]
+    if not gest:
+        return retarget(track, preset)
+    mouth = FaceTrack(track.fps,
+                      [c for c in track.channels if c.name not in GESTURE_CHANNELS],
+                      track.target_set)
+    out = retarget(mouth, preset)
+    out.channels.extend(gest)
+    if out.target_set is not None:
+        out.target_set = list(out.target_set) + [c.name for c in gest]
+    return out
+
+
 def _anchored_segments(args, dur, g2p):
     """Phoneme segments from the naive aligner pinned at --anchors. Only `srt`
     can supply its own transcript (concatenated cue text); every other format
@@ -397,6 +454,7 @@ def main(argv=None) -> int:
                         "previewer's --segments lane (see tools/build_preview.py)")
     _add_output_options(n)
     _add_coart_options(n)
+    _add_gesture_options(n)
 
     m = sub.add_parser("mfa", help="MFA TextGrid -> curves (accurate)")
     m.add_argument("--textgrid", required=True)
@@ -407,6 +465,7 @@ def main(argv=None) -> int:
                         "previewer's --segments lane (see tools/build_preview.py)")
     _add_output_options(m)
     _add_coart_options(m)
+    _add_gesture_options(m)
 
     t = sub.add_parser("from-timing",
                        help="TTS phoneme/viseme timing -> curves (skip the "
@@ -438,6 +497,7 @@ def main(argv=None) -> int:
     e.add_argument("--fps", type=float, default=60.0)
     e.add_argument("-o", "--out", required=True)
     _add_output_options(e)
+    _add_gesture_options(e)
 
     lc = sub.add_parser("lip-calibrate",
                         help="EXPERIMENTAL: write one .lip per grid slot "
@@ -502,7 +562,9 @@ def main(argv=None) -> int:
             _write_lip(segs, dur, args)
         else:
             track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
-                                            params=params)
+                                            params=params,
+                                            gestures=_gesture_params(args),
+                                            wav=args.wav)
             _write(track, args.out, args)
     elif args.cmd == "mfa":
         segs = load_mfa_textgrid(args.textgrid)
@@ -511,7 +573,8 @@ def main(argv=None) -> int:
             _write_lip(segs, segs[-1].end if segs else 0.0, args)
         else:
             track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
-                                            params=params)
+                                            params=params,
+                                            gestures=_gesture_params(args))
             _write(track, args.out, args)
     elif args.cmd == "from-timing":
         parser_fn, is_viseme = _TIMING_PARSERS[args.format]
@@ -553,7 +616,8 @@ def main(argv=None) -> int:
     elif args.cmd == "energy":
         from .energy import generate_from_energy
         track = generate_from_energy(args.wav, fps=args.fps,
-                                     intensity=args.intensity, mapping=mapping)
+                                     intensity=args.intensity, mapping=mapping,
+                                     gestures=_gesture_params(args))
         _write(track, args.out, args)
     return 0
 

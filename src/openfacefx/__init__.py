@@ -11,6 +11,8 @@ from .curves import FaceTrack, Channel, Keyframe, reduce_to_track
 from .pipeline import (generate_from_alignment, generate_naive,
                        naive_segments, wav_duration)
 from .energy import energy_envelope, generate_from_energy
+from .gestures import (GestureParams, generate_gestures, gestures_from_wav,
+                       add_gestures_to_track, GESTURE_CHANNELS)
 from .io_export import to_dict, write_json, write_csv
 from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_live2d import write_live2d_motion, lipsync_param_ids
@@ -44,6 +46,8 @@ __all__ = [
     "build_viseme_curves", "CoartParams", "FaceTrack", "Channel", "Keyframe",
     "reduce_to_track", "generate_from_alignment", "generate_naive",
     "naive_segments", "wav_duration", "energy_envelope", "generate_from_energy",
+    "GestureParams", "generate_gestures", "gestures_from_wav",
+    "add_gestures_to_track", "GESTURE_CHANNELS",
     "to_dict", "write_json", "write_csv",
     "write_unity_anim", "NAMING_PRESETS",
     "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",

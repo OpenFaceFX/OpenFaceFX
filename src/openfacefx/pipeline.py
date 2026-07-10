@@ -34,12 +34,33 @@ def generate_from_alignment(
     epsilon: float = 0.015,
     mapping=None,
     params=None,
+    gestures=None,
+    wav: Optional[str] = None,
 ) -> FaceTrack:
+    """``gestures`` opts into the non-verbal gesture layer (issue #5): pass a
+    ``GestureParams`` (or ``True`` for defaults) to append blink/brow/head/eye
+    channels after viseme reduction. Off (``None``) leaves output byte-identical.
+    ``wav`` supplies the audio those energy-driven brows/nods read; without it
+    they degrade gracefully (stress still comes from the segments)."""
     times, matrix = build_viseme_curves(segments, fps=fps, mapping=mapping,
                                         params=params)
     targets = mapping.targets if mapping is not None else None
-    return reduce_to_track(times, matrix, fps=fps, epsilon=epsilon,
-                           targets=targets)
+    track = reduce_to_track(times, matrix, fps=fps, epsilon=epsilon,
+                            targets=targets)
+    if gestures:
+        _attach_gestures(track, segments, wav, gestures)
+    return track
+
+
+def _attach_gestures(track: FaceTrack, segments, wav, gestures) -> None:
+    from .gestures import GestureParams, add_gestures_to_track
+    gp = gestures if isinstance(gestures, GestureParams) else GestureParams()
+    duration = segments[-1].end if segments else track.duration
+    env_times = env = None
+    if wav:
+        from .energy import energy_envelope
+        env_times, env = energy_envelope(wav, fps=track.fps)
+    add_gestures_to_track(track, duration, env_times, env, segments, gp)
 
 
 def naive_segments(
@@ -66,7 +87,10 @@ def generate_naive(
     g2p: Optional[G2P] = None,
     mapping=None,
     params=None,
+    gestures=None,
+    wav: Optional[str] = None,
 ) -> FaceTrack:
     segs = naive_segments(text, duration, g2p=g2p)
     return generate_from_alignment(segs, fps=fps, epsilon=epsilon,
-                                   mapping=mapping, params=params)
+                                   mapping=mapping, params=params,
+                                   gestures=gestures, wav=wav)

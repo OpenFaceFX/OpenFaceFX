@@ -26,6 +26,7 @@ from typing import List, Optional, Set, Tuple
 from xml.sax.saxutils import escape as _xml_escape
 
 from .curves import FaceTrack
+from .gestures import GESTURE_CHANNELS
 from .retarget import PRESETS, PRESET_FALLBACKS, retarget, _sampler
 from .visemes import VISEMES
 
@@ -100,9 +101,25 @@ def dominant_cues(track: FaceTrack, rest_name: str = "X",
     return cues
 
 
+def _drop_gesture_channels(track: FaceTrack) -> FaceTrack:
+    """Cue formats are mouth-only. A gesture-augmented track (issue #5) carries
+    non-viseme pose channels (blink/brow/head/eye) that must never be treated as
+    a mouth shape in the dominance flatten, so strip them (and from target_set)
+    before coercion. Viseme and custom-vocab channels are left untouched -- this
+    removes ONLY the known gesture names, so a custom mapping still errors the
+    same way if it isn't a cue shape set."""
+    keep = [c for c in track.channels if c.name not in GESTURE_CHANNELS]
+    if len(keep) == len(track.channels):
+        return track
+    ts = (None if track.target_set is None
+          else [n for n in track.target_set if n not in GESTURE_CHANNELS])
+    return FaceTrack(fps=track.fps, channels=keep, target_set=ts)
+
+
 def _coerce(track: FaceTrack, shapes: frozenset, default_preset: str,
             retarget_preset: Optional[str]) -> FaceTrack:
     """Return ``track`` expressed in ``shapes``, retargeting when it is not."""
+    track = _drop_gesture_channels(track)
     present = {c.name for c in track.channels}
     declared = set(track.target_set) if track.target_set is not None else set(VISEMES)
     vocab = present | declared

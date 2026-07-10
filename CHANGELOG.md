@@ -37,6 +37,25 @@ infrastructure (#24, #27–#31), and in-game confirmation of the `.lip` writer
   reference generated from docstrings for every public module, and this changelog.
   Built and deployed by the Pages workflow; the pinned build tools live in a new
   `docs` extra (`pip install -e ".[docs]"`) and never touch the numpy-only runtime.
+- **Procedural non-verbal gestures**
+  ([#5](https://github.com/OpenFaceFX/OpenFaceFX/issues/5)): a new
+  `openfacefx.gestures` module layers eye blinks, eyebrow raises, head nods and
+  idle sway, and gaze saccades onto a finished lip-sync track. Timing is coupled
+  to the speech the way FaceFX/JALI/SmartBody do it — Poisson blinks snap to
+  pauses and stressed syllables (biphasic fast-close/slow-open lid), eyebrow
+  flashes and head nods fire on `energy.py` peaks / primary-stress vowels, and a
+  quasi-periodic sum-of-sines keeps the head from freezing. `GestureParams` is
+  the artistic-dial dataclass (blink rate, amplitudes, degree bounds …);
+  `generate_gestures()` / `gestures_from_wav()` / `add_gestures_to_track()` are
+  the API. Everything is deterministic (seeded from `GestureParams.seed`, each
+  component on its own sub-stream so toggling one never shifts another; identical
+  keyframes on Python 3.9/3.12) and **opt-in**: `generate_from_alignment`,
+  `generate_naive` and `generate_from_energy` gain a `gestures=` argument, and
+  `naive`/`mfa`/`energy` gain `--gestures` (+ `--gesture-seed`, `--blink-rate`,
+  `--no-brows`); with none given, output is byte-identical to prior releases.
+  Blink/brow channels are `[0,1]` weights; head/eye are signed pose channels in
+  degrees (or `[-1,1]`). They pass through `retarget` untouched and are ignored
+  by the mouth-only cue/`.lip` exporters (they are never mistaken for a viseme).
 
 ## [0.6.1] — 2026-07-11
 

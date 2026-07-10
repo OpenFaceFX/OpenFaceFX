@@ -164,6 +164,7 @@ def generate_from_energy(
     window: Optional[float] = None,
     gate: float = 0.06,
     smoothing: Tuple[float, float] = (0.012, 0.09),
+    gestures=None,
 ) -> FaceTrack:
     """Build a ``FaceTrack`` from audio loudness alone — no transcript needed.
 
@@ -192,9 +193,13 @@ def generate_from_energy(
         defaults to the built-in Oculus-15 set.
     epsilon, window, gate, smoothing : forwarded to keyframe reduction and
         :func:`energy_envelope`.
+    gestures : opt-in non-verbal gesture layer (issue #5); a ``GestureParams``
+        (or ``True`` for defaults) appends blink/brow/head/eye channels driven
+        by this same envelope. ``None`` (default) leaves output byte-identical.
 
     Output is deterministic: identical audio and parameters give an identical
-    track (there is no jitter/RNG in this path).
+    track (the mouth path has no RNG; the gesture layer is seeded from
+    ``GestureParams.seed``).
     """
     times, env = energy_envelope(wav_path, fps=fps, window=window, gate=gate,
                                  smoothing=smoothing)
@@ -222,5 +227,12 @@ def generate_from_energy(
     for name, col in channels.items():
         if name in index:
             matrix[:, index[name]] = col
-    return reduce_to_track(times, matrix, fps=fps, epsilon=epsilon,
-                           targets=targets)
+    track = reduce_to_track(times, matrix, fps=fps, epsilon=epsilon,
+                            targets=targets)
+    if gestures:
+        # No phonemes here, so stress/pauses/peaks come from the envelope itself.
+        from .gestures import GestureParams, add_gestures_to_track
+        gp = gestures if isinstance(gestures, GestureParams) else GestureParams()
+        duration = float(times[-1]) if len(times) else 0.0
+        add_gestures_to_track(track, duration, times, env, None, gp)
+    return track

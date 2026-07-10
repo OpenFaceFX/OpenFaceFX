@@ -221,6 +221,45 @@ track = generate_from_alignment(segs)
 write_json(track, "track.json")
 ```
 
+## Non-verbal gestures (blinks, brows, head & eyes)
+
+A mouth that moves but a face that's otherwise frozen reads as a mask. Pass
+`--gestures` to layer the *other* channels a believable performance needs — eye
+blinks, eyebrow raises, head nods and idle sway, and gaze saccades — on top of
+any generated track (issue [#5](https://github.com/OpenFaceFX/OpenFaceFX/issues/5)):
+
+```bash
+python -m openfacefx naive --text "..." --wav voice.wav --gestures -o track.json
+python -m openfacefx mfa   --textgrid voice.TextGrid       --gestures -o track.json
+python -m openfacefx energy --wav voice.wav                --gestures -o track.json
+```
+
+The timing is coupled to the speech the way FaceFX/JALI/SmartBody do it, not
+sprinkled at random: blinks follow a Poisson process (~15/min) but **snap onto
+pauses and stressed syllables**, with a biphasic fast-close/slow-open lid;
+eyebrow flashes and head nods fire on loudness peaks (the same `energy.py`
+envelope the audio fallback uses) and primary-stress vowels; a slow sum-of-sines
+keeps the head alive between nods. Everything is **deterministic** — seeded from
+`--gesture-seed` (default 0), identical keyframes every run and across Python
+versions — and fully **opt-in**: without `--gestures`, output is byte-identical
+to before. Tune it with `--blink-rate` (blinks/min) and `--no-brows`, or the
+`GestureParams` dataclass in the library.
+
+Blink and brow channels are `[0,1]` blendshape weights (like the visemes);
+`headPitch/Yaw/Roll` and `eyePitch/Yaw` are **signed pose channels in degrees**
+(positive `headPitch` = down, positive `eyeYaw` = the subject's left), or a
+signed `[-1,1]` range with `GestureParams(head_eye_in_degrees=False)`. They are
+not visemes: `--retarget` passes them through unchanged, and the mouth-only cue
+(`.tsv`/`.dat`/…) and Bethesda `.lip` exporters ignore them.
+
+```python
+from openfacefx import generate_from_alignment, GestureParams, load_mfa_textgrid
+
+segs  = load_mfa_textgrid("voice.TextGrid")
+track = generate_from_alignment(segs, gestures=GestureParams(seed=0), wav="voice.wav")
+# or add gestures to an existing track: add_gestures_to_track(track, dur, times, env, segs)
+```
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -328,7 +367,7 @@ The full backlog lives in the [issues](https://github.com/OpenFaceFX/OpenFaceFX/
 - [x] Data-driven weighted phoneme→target mapping ([#2](https://github.com/OpenFaceFX/OpenFaceFX/issues/2))
 - [x] Batch directory processing with QA reports ([#3](https://github.com/OpenFaceFX/OpenFaceFX/issues/3))
 - [~] Bethesda `.LIP` exporter — **experimental Skyrim writer shipped** (`-o out.lip`; re-encodes the real samples byte-exact, in-game verification pending) ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12))
-- [ ] Prosody, gestures, events, text tags, i18n ([#4](https://github.com/OpenFaceFX/OpenFaceFX/issues/4)–[#8](https://github.com/OpenFaceFX/OpenFaceFX/issues/8))
+- [~] Prosody, gestures, events, text tags, i18n ([#4](https://github.com/OpenFaceFX/OpenFaceFX/issues/4)–[#8](https://github.com/OpenFaceFX/OpenFaceFX/issues/8)) — **procedural gestures shipped**: opt-in blinks/brows/head/eyes coupled to speech (`--gestures`, [#5](https://github.com/OpenFaceFX/OpenFaceFX/issues/5))
 
 ## Scope & honesty
 
@@ -363,6 +402,7 @@ src/openfacefx/
   export_lip.py     Bethesda Skyrim .lip writer (EXPERIMENTAL, #12) ← unverified in-game
   batch.py          directory batch runner + QA summary
   energy.py         audio-loudness fallback lip-sync (no transcript) ← amplitude-driven
+  gestures.py       procedural blinks/brows/head/eyes, GestureParams (#5) ← opt-in, deterministic
   pipeline.py       orchestration
   cli.py            command line
 tests/test_core.py  run: pytest
