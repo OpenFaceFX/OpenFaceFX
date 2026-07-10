@@ -1,0 +1,73 @@
+name: Release
+
+# Tag-triggered PyPI + GitHub release. Publishing uses PyPI trusted
+# publishing (OIDC) — no tokens. Before the first release, a maintainer must
+# register a pending publisher on pypi.org for project 'openfacefx' with
+# workflow release.yml and environment pypi (see issue #24).
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tag must match pyproject version
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "tag v$TAG != pyproject version $VERSION" >&2; exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Changelog section must exist for this version
+        run: |
+          grep -q "^## \[${{ steps.meta.outputs.version }}\]" CHANGELOG.md \
+            || { echo "CHANGELOG.md has no section for ${{ steps.meta.outputs.version }}" >&2; exit 1; }
+          awk '/^## \[${{ steps.meta.outputs.version }}\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md > release_notes.md
+          test -s release_notes.md
+      - name: Build sdist and wheel
+        run: |
+          pip install build
+          python -m build
+      - name: Test the built wheel (not the checkout)
+        run: |
+          python -m venv /tmp/wheeltest
+          /tmp/wheeltest/bin/pip install dist/*.whl pytest
+          cd tests && /tmp/wheeltest/bin/python -m pytest . -q
+          /tmp/wheeltest/bin/openfacefx naive --text "release smoke" --duration 1.0 -o /tmp/smoke.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/
+            release_notes.md
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+      - name: Publish to PyPI (trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+      - name: GitHub release with artifacts and changelog notes
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: release_notes.md

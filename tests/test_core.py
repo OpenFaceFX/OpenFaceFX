@@ -3,7 +3,12 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+# Prefer an installed openfacefx (so CI can test the built wheel); fall back
+# to the repo source for contributors running pytest without installing.
+try:
+    import openfacefx  # noqa: F401
+except ImportError:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import numpy as np
 

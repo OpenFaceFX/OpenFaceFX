@@ -11,7 +11,10 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+try:
+    import openfacefx  # noqa: F401  (installed wheel wins; see test_core)
+except ImportError:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from openfacefx.cli import main as cli_main
 from openfacefx.visemes import VISEMES
