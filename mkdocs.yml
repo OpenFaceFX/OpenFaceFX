@@ -105,5 +105,6 @@ nav:
       - Exporters: api/exporters.md
       - Importing cue files: api/importers.md
       - Inspect & validate: api/inspect.md
+      - Transforms (retime/mirror/trim): api/transforms.md
       - Batch & CLI: api/batch.md
   - Changelog: changelog.md

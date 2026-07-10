@@ -1021,6 +1021,28 @@ def main(argv=None) -> int:
                      help="emit the deterministic JSON problem list instead of "
                           "the human summary")
 
+    tf = sub.add_parser("transform",
+                        help="retime / mirror / trim an existing track.json "
+                             "without re-running the solver (issue #48)")
+    tf.add_argument("infile", help="the source .track.json to load")
+    tf.add_argument("-o", "--out", required=True)
+    rt = tf.add_mutually_exclusive_group()
+    rt.add_argument("--retime", type=float, metavar="FACTOR",
+                    help="scale all keyframe and event times by FACTOR")
+    rt.add_argument("--duration", type=float, metavar="D",
+                    help="retime so the clip lasts D seconds")
+    rt.add_argument("--wav", metavar="WAV",
+                    help="retime so the clip matches the WAV's duration")
+    tf.add_argument("--anchor", type=float, default=0.0,
+                    help="time pinned fixed by --retime/--duration/--wav "
+                         "(default 0, i.e. scale from the clip start)")
+    tf.add_argument("--mirror", action="store_true",
+                    help="swap *Left/*Right channels and negate the signed "
+                         "lateral pose channels (headYaw/headRoll/eyeYaw)")
+    tf.add_argument("--trim", type=float, nargs=2, metavar=("T0", "T1"),
+                    help="keep [T0, T1] seconds and rebase to 0")
+    _add_output_options(tf)
+
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
                             "transcript; amplitude fallback, not viseme sync)")
@@ -1250,6 +1272,40 @@ def main(argv=None) -> int:
         else:
             print(render_problems(kind, problems))
         return 0 if ok else 1
+
+    if args.cmd == "transform":
+        from .io_export import read_json
+        from . import transforms as _tf
+        try:
+            track = read_json(args.infile)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"transform: {ex}")
+        applied = False
+        try:
+            if args.retime is not None:
+                track = _tf.retime(track, args.retime, anchor=args.anchor)
+                applied = True
+            elif args.duration is not None:
+                track = _tf.retime_to_duration(track, args.duration,
+                                               anchor=args.anchor)
+                applied = True
+            elif args.wav is not None:
+                track = _tf.retime_to_duration(track, wav_duration(args.wav),
+                                               anchor=args.anchor)
+                applied = True
+            if args.mirror:
+                track = _tf.mirror(track)
+                applied = True
+            if args.trim is not None:
+                track = _tf.trim(track, args.trim[0], args.trim[1])
+                applied = True
+        except (ValueError, OSError) as ex:
+            raise SystemExit(f"transform: {ex}")
+        if not applied:
+            raise SystemExit("transform: choose at least one of "
+                             "--retime/--duration/--wav, --mirror, --trim")
+        _write(track, args.out, args)
+        return 0
 
     mapping = Mapping.from_json(args.mapping) if args.mapping else None
     params = (_coart_params(args)

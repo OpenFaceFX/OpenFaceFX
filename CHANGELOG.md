@@ -9,6 +9,30 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Track transforms: `transform` command (retime / mirror / trim)** (closes
+  [#48](https://github.com/OpenFaceFX/OpenFaceFX/issues/48)): a new
+  `openfacefx.transforms` module (`retime`, `retime_to_duration`, `mirror`,
+  `trim`, plus the `MIRROR_PAIRS` / `MIRROR_NEGATE` tables) and a `transform`
+  command for the post-production edits `postprocess.time_shift` can't do (it only
+  slides, never stretches). Deterministic array arithmetic, numpy + stdlib,
+  additive, identical on Python 3.9/3.13; composes with `convert` and the
+  importers.
+  - **retime / stretch** scales every keyframe *and* event time by `--retime
+    FACTOR`, to a `--duration`, or to a `--wav` length, about an optional
+    `--anchor`; channel *values* are unchanged and the track `duration` follows.
+    2× exactly doubles every key time, event time, and the duration; retime-to-WAV
+    matches `wav_duration` within one frame. A uniform scale introduces no
+    redundant keys, so every key is preserved (only an exact time collision under
+    heavy compression is de-duplicated) rather than RDP-resampled.
+  - **mirror** swaps `*Left`/`*Right` channel pairs (an extensible plain-data
+    table, ARKit blendshapes + the gesture-layer `blink_L`/`blink_R`) and negates
+    the signed lateral pose channels (`headYaw`/`headRoll`/`eyeYaw`); centered
+    channels (visemes, `jawOpen`, `headPitch`) pass through untouched. It is a pure
+    relabel + sign flip (no time change, no re-thin, channel order preserved), so
+    **`mirror ∘ mirror` is byte-identical** to the original — verified by a
+    `to_dict` and a CLI `cmp` test.
+  - **trim / slice** keeps `[t0, t1]`, rebases to `0`, and drops/reclamps events to
+    the window; an empty or out-of-range window yields an empty track, not a crash.
 - **`inspect` and `validate` commands: read-only track stats + a CI format
   linter** (closes [#47](https://github.com/OpenFaceFX/OpenFaceFX/issues/47)): a
   new `openfacefx.inspect` module (`inspect_track`, `validate_asset`/

@@ -598,6 +598,35 @@ Library callers get `inspect_track`, `validate_asset`/`validate_file`,
 `detect_kind`; stdlib only, deterministic. See
 [docs/api/inspect.md](docs/api/inspect.md).
 
+## Transform a track (retime / mirror / trim)
+
+Deterministic post-production edits (issue
+[#48](https://github.com/OpenFaceFX/OpenFaceFX/issues/48)) that `postprocess.time_shift`
+can't do — it only *slides*, never stretches. They compose with `convert` and the
+importers (bring a capture in, retime it to the new VO, re-export):
+
+```bash
+python -m openfacefx transform track.json --duration 3.2 -o fit.json    # retime to 3.2 s
+python -m openfacefx transform track.json --wav newvo.wav -o redub.json  # ...or a WAV length
+python -m openfacefx transform track.json --mirror -o flipped.json       # L/R mirror
+python -m openfacefx transform track.json --trim 0.5 2.0 -o slice.json    # keep [0.5, 2.0]
+```
+
+- **retime** scales every keyframe **and** event time (by `--retime FACTOR`, to a
+  `--duration`, or to a `--wav` length, about an optional `--anchor`); channel
+  **values** are unchanged and every key is preserved (a uniform scale adds no
+  redundancy). 2× exactly doubles every time and the duration.
+- **mirror** swaps `*Left`/`*Right` channel pairs (an extensible pair table) and
+  negates the signed lateral pose channels (`headYaw`/`headRoll`/`eyeYaw`), leaving
+  centered channels (visemes, `jawOpen`, `headPitch`) untouched. It's a pure
+  relabel + sign flip, so **`mirror ∘ mirror` is byte-identical** to the original.
+- **trim** keeps `[t0, t1]`, rebases to `0`, and drops/reclamps events to the
+  window; an empty window yields an empty track, not a crash.
+
+Library callers get `retime`, `retime_to_duration`, `mirror`, `trim` and the
+`MIRROR_PAIRS`/`MIRROR_NEGATE` tables; numpy + stdlib, deterministic, additive. See
+[docs/api/transforms.md](docs/api/transforms.md).
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -878,6 +907,7 @@ src/openfacefx/
   importers.py      read Rhubarb/Moho/Papagayo cue files back into a track (#44) ← from-cues command
   importers_csv.py  read ARKit/Live Link Face blendshape-weight CSV into a track (#45) ← from-csv command
   inspect.py        read-only track stats + a CI format/contract linter (#47) ← inspect, validate commands
+  transforms.py     retime/stretch, mirror L/R, trim/slice a track (#48) ← transform command
   gestures_layers.py  gesture event-extraction + per-layer curve synthesis (gestures.py's engine)
   pipeline.py       orchestration
   cli.py            command line
