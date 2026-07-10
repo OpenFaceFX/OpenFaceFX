@@ -1,0 +1,80 @@
+<svg width="1120" height="200" viewBox="0 0 1120 200" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenFaceFX pipeline: audio and transcript, forced alignment, phoneme to viseme, coarticulation, keyframe reduction, JSON or CSV export">
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#10151c"/>
+      <stop offset="100%" stop-color="#0a0e13"/>
+    </linearGradient>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9" stroke="#f4b942" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <style>
+    text { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+    .t  { fill:#e8edf4; font-size:15px; font-weight:600; letter-spacing:.02em; }
+    .s  { fill:#77828f; font-size:11.5px; }
+    .n  { fill:#0a0e13; font-size:11px; font-weight:700; }
+  </style>
+
+  <!-- panel -->
+  <rect x="1" y="1" width="1118" height="198" rx="18" fill="url(#panel)"/>
+  <rect x="1.75" y="1.75" width="1116.5" height="196.5" rx="17.25" stroke="#2a323d" stroke-width="1.5"/>
+
+  <!-- input node (dashed) -->
+  <g>
+    <rect x="26" y="58" width="158" height="84" rx="12" fill="#0d1219" stroke="#3a4452" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <text x="105" y="94" text-anchor="middle" class="t">audio + text</text>
+    <text x="105" y="116" text-anchor="middle" class="s">WAV &#183; transcript</text>
+  </g>
+  <line x1="188" y1="100" x2="206" y2="100" stroke="#f4b942" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- stage 1 -->
+  <g>
+    <rect x="212" y="58" width="158" height="84" rx="12" fill="#141b24" stroke="#39424f" stroke-width="1.5"/>
+    <circle cx="234" cy="80" r="10" fill="#f4b942"/>
+    <text x="234" y="84" text-anchor="middle" class="n">1</text>
+    <text x="291" y="99" text-anchor="middle" class="t">alignment</text>
+    <text x="291" y="121" text-anchor="middle" class="s">MFA &#183; naive G2P</text>
+  </g>
+  <line x1="374" y1="100" x2="392" y2="100" stroke="#f4b942" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- stage 2 -->
+  <g>
+    <rect x="398" y="58" width="158" height="84" rx="12" fill="#141b24" stroke="#39424f" stroke-width="1.5"/>
+    <circle cx="420" cy="80" r="10" fill="#f4b942"/>
+    <text x="420" y="84" text-anchor="middle" class="n">2</text>
+    <text x="477" y="99" text-anchor="middle" class="t">visemes</text>
+    <text x="477" y="121" text-anchor="middle" class="s">Oculus 15-shape set</text>
+  </g>
+  <line x1="560" y1="100" x2="578" y2="100" stroke="#f4b942" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- stage 3 -->
+  <g>
+    <rect x="584" y="58" width="158" height="84" rx="12" fill="#141b24" stroke="#39424f" stroke-width="1.5"/>
+    <circle cx="606" cy="80" r="10" fill="#f4b942"/>
+    <text x="606" y="84" text-anchor="middle" class="n">3</text>
+    <text x="663" y="99" text-anchor="middle" class="t">coarticulation</text>
+    <text x="663" y="121" text-anchor="middle" class="s">Cohen&#8211;Massaro</text>
+  </g>
+  <line x1="746" y1="100" x2="764" y2="100" stroke="#f4b942" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- stage 4 -->
+  <g>
+    <rect x="770" y="58" width="158" height="84" rx="12" fill="#141b24" stroke="#39424f" stroke-width="1.5"/>
+    <circle cx="792" cy="80" r="10" fill="#f4b942"/>
+    <text x="792" y="84" text-anchor="middle" class="n">4</text>
+    <text x="849" y="99" text-anchor="middle" class="t">keyframes</text>
+    <text x="849" y="121" text-anchor="middle" class="s">RDP reduction</text>
+  </g>
+  <line x1="932" y1="100" x2="950" y2="100" stroke="#f4b942" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- output node (amber) -->
+  <g>
+    <rect x="950" y="58" width="146" height="84" rx="12" fill="#1a1607" stroke="#f4b942" stroke-width="1.5"/>
+    <text x="1023" y="94" text-anchor="middle" class="t">JSON / CSV</text>
+    <text x="1023" y="116" text-anchor="middle" class="s" font-size="11">any engine &#183; any rig</text>
+  </g>
+
+  <!-- caption -->
+  <text x="560" y="176" text-anchor="middle" class="s">swap any stage &#8212; every seam is a tiny data contract (PhonemeSegment in, FaceTrack out)</text>
+</svg>

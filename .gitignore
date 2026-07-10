@@ -1,0 +1,20 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# tooling / local state (not part of the library)
+.claude/
+.swarmdo/
+CLAUDE.md
+.DS_Store
+
+# generated artifacts (rebuild with tools/build_preview.py)
+/preview.html
+track.json
+track.csv

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: py${{ matrix.python-version }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.9", "3.12", "3.13"]
+        exclude:
+          # macOS arm64 runners don't ship Python 3.9 builds
+          - os: macos-latest
+            python-version: "3.9"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Unit tests
+        run: pytest tests/ -v
+      - name: CLI smoke test (naive path)
+        run: |
+          python -m openfacefx naive --text "hello world this is a test" --wav examples/voice.wav -o smoke.json
+          python -m openfacefx naive --text "hello world" --duration 1.2 -o smoke.csv
+      - name: Preview builder smoke test
+        run: python tools/build_preview.py smoke.json smoke_preview.html

@@ -1,0 +1,51 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenFaceFX logo">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="47%" r="60%">
+      <stop offset="0%" stop-color="#f4b942" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#f4b942" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#12181f"/>
+      <stop offset="100%" stop-color="#0a0e13"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4.5" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="mouthClip">
+      <path d="M 54 120 Q 128 92 202 120 Q 128 196 54 120 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- badge plate -->
+  <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#plate)"/>
+  <rect x="4.75" y="4.75" width="246.5" height="246.5" rx="55.25" stroke="#2a323d" stroke-width="1.5"/>
+  <circle cx="128" cy="122" r="104" fill="url(#glow)"/>
+
+  <!-- timeline with keyframe diamonds, passing behind the mouth -->
+  <line x1="30" y1="120" x2="226" y2="120" stroke="#465161" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- mouth: dark interior, teeth, tongue -->
+  <g filter="url(#soft)">
+    <path d="M 54 120 Q 128 92 202 120 Q 128 196 54 120 Z" fill="#05070a" fill-opacity="0.92"/>
+  </g>
+  <g clip-path="url(#mouthClip)">
+    <!-- upper teeth -->
+    <path d="M 74 112 Q 128 96 182 112 L 182 132 Q 128 118 74 132 Z" fill="#e7e1d4"/>
+    <!-- tongue hint -->
+    <ellipse cx="128" cy="176" rx="54" ry="32" fill="#a84f3c"/>
+  </g>
+
+  <!-- lips -->
+  <g filter="url(#soft)">
+    <path d="M 54 120 Q 128 92 202 120" stroke="#f4b942" stroke-width="7.5" stroke-linecap="round" fill="none"/>
+    <path d="M 54 120 Q 128 196 202 120" stroke="#f4b942" stroke-width="7.5" stroke-linecap="round" fill="none"/>
+  </g>
+
+  <!-- keyframe diamonds at the timeline ends -->
+  <rect x="33" y="113" width="14" height="14" rx="2.5" transform="rotate(45 40 120)" fill="#f4b942"/>
+  <rect x="209" y="113" width="14" height="14" rx="2.5" transform="rotate(45 216 120)" fill="#f4b942"/>
+</svg>
