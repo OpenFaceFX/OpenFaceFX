@@ -260,6 +260,59 @@ track = generate_from_alignment(segs, gestures=GestureParams(seed=0), wav="voice
 # or add gestures to an existing track: add_gestures_to_track(track, dur, times, env, segs)
 ```
 
+## Events & takes (game-engine notifies)
+
+A track says *how the face moves*; an **event** says *what happened and when* — a
+named, timed, typed record with a freeform JSON payload that a game runtime turns
+into gameplay (play a sound, shake the camera, fire a Blueprint node). It is the
+same payload-only model as FaceFX events, Unreal's `AnimNotify` and Unity's
+`AnimationEvent` (issue [#6](https://github.com/OpenFaceFX/OpenFaceFX/issues/6)).
+The layer is **additive**: without it, every track is byte-identical to before.
+
+Pass `--events` to auto-author a typed layer from the speech itself — `emphasis`
+events on stressed syllables / loudness peaks and `phrase` boundary markers at
+pauses (reusing the same accent detection as `--gestures`, but independent of it):
+
+```bash
+python -m openfacefx naive --text "..." --wav voice.wav --events -o track.json
+python -m openfacefx mfa   --textgrid voice.TextGrid       --events -o track.anim
+```
+
+**Takes** are deterministic variation. Author weighted alternative event-sets per
+group; a **line id** picks one, forever, by hashing the id with SHA-256 (no RNG,
+no wall-clock — the same id resolves to the same take on every machine and Python
+version; the builtin `hash()` is deliberately *not* used because it is salted):
+
+```python
+from openfacefx import (generate_from_alignment, load_mfa_textgrid,
+                        Variants, VariantGroup, Alternative, Event, resolve)
+
+track = generate_from_alignment(load_mfa_textgrid("voice.TextGrid"))
+track.variants = Variants("npc_greet_017", [
+    VariantGroup("headgest", [
+        Alternative(1.0, [Event(0.4, "gesture", "nod_small", payload={"intensity": 0.6})]),
+        Alternative(2.0, [Event(0.4, "gesture", "nod_big")]),   # twice as likely
+    ]),
+])
+events = resolve(track)     # same line id -> same pick, every run
+```
+
+Each group hashes independently, so a head-gesture choice and a gaze choice vary
+independently for one line. On the command line, `--events-file layer.json`
+attaches an authored events/variants block and `--line-id ID` bakes the chosen
+take into concrete events on write.
+
+Events serialize into the track JSON (an optional top-level `events` / `variants`
+array — see [Output format](#output-format)) and into **Unity `.anim`
+AnimationEvents**: each event becomes an `AnimationEvent` Unity SendMessage-invokes
+on the Animator's GameObject (`OnFaceEvent` by default), with the event name and
+payload packed into its single `stringParameter` as `name|{json}`; ranged events
+(`dur > 0`) expand to a `_Begin`/`_End` pair. For **Unreal**, `write_unreal_notifies`
+emits an `AnimNotify` sidecar JSON that a short editor-Python snippet stamps onto a
+`UAnimSequence` (point events → `UAnimNotify`, ranged → `UAnimNotifyState`); the
+snippet ships in that module's docstring. The mouth-only cue/`.lip` exporters
+ignore events.
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -320,6 +373,21 @@ Channel names are blendshape names your rig exposes; linear interpolation
 between keys is the intended playback. See
 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for a ~15-line reference reader.
 
+Two optional top-level keys, `events` and `variants`, carry the
+[event/take layer](#events--takes-game-engine-notifies) — emitted **only when
+present**, so a track without them is byte-identical to the above and `version`
+stays `1`. Readers ignore unknown top-level keys, so this is forward-compatible:
+
+```jsonc
+{ /* … format/version/fps/duration/viseme_set/channels as above … */
+  "events": [
+    { "t": 0.55, "type": "emphasis", "name": "beat", "dur": 0.0,
+      "payload": {"strength": 1.0}, "blend_in": 0.0, "blend_out": 0.0 }
+  ]
+  // "variants": { "line_id": "npc_greet_017", "groups": [ … ] }  // authored takes
+}
+```
+
 ## Plugging in a real aligner (stage 1)
 
 The naive aligner spaces phonemes by duration priors — fine for prototyping,
@@ -345,11 +413,11 @@ artifacts their pipelines consume:
 
 | Ecosystem | Route | Status |
 |---|---|---|
-| Unity / VRChat / Ready Player Me | `-o clip.anim` — AnimationClip with `viseme_*` or `vrc.v_*` blendshape curves | ✅ shipped |
+| Unity / VRChat / Ready Player Me | `-o clip.anim` — AnimationClip with `viseme_*` or `vrc.v_*` blendshape curves, plus optional `m_Events` AnimationEvents from the [event layer](#events--takes-game-engine-notifies) (`--events`) | ✅ shipped |
 | Live2D Cubism (VTuber 2D) | `-o mouth.motion3.json` — parameter curves; mouth-open by default, per-vowel via `--live2d-params`, or auto-targeted from a `model3.json` LipSync group | ✅ shipped |
 | Godot 4 | `-o lipsync.tres` — `AnimationPlayer` resource, one `blend_shapes/*` value track per viseme (`--godot-node`/`--godot-naming`) | ✅ shipped |
 | ARKit / Rhubarb / VRM / CC4 rigs | `--retarget arkit\|rhubarb\|vrm\|cc4` weighted remaps ([docs](docs/retargeting.md)) | ✅ shipped |
-| Unreal (official FaceFX-UE4/UE5 plugins) | Impossible via the plugins (proprietary `.ffxc` compiler); instead drive UE float curves / morph targets from JSON — the `arkit` remap feeds MetaHuman's ARKit route | ✅ JSON today |
+| Unreal (official FaceFX-UE4/UE5 plugins) | Impossible via the plugins (proprietary `.ffxc` compiler); instead drive UE float curves / morph targets from JSON — the `arkit` remap feeds MetaHuman's ARKit route — plus an `AnimNotify` sidecar JSON (`write_unreal_notifies`) an editor-Python snippet stamps onto a `UAnimSequence` | ✅ JSON + AnimNotify sidecar |
 | Bethesda modding (Nukem9/FaceFXWrapper, xVASynth, Mantella) | `.fuz` container + `.lip` header tools (`openfacefx.bethesda`), plus an **experimental** clean-room Skyrim `.lip` **writer** (`-o out.lip` from `naive`/`mfa`): the payload was reverse-engineered and our codec re-encodes the real samples byte-exact — but it is **not yet verified in-game** ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)) | 🧪 experimental writer shipped — needs in-game confirmation |
 | Anything else | Trivial JSON/CSV + documented remap | ✅ today |
 

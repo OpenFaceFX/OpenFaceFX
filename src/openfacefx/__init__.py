@@ -9,12 +9,16 @@ from .alignment import PhonemeSegment, NaiveAligner, load_mfa_textgrid
 from .coarticulation import build_viseme_curves, CoartParams
 from .curves import FaceTrack, Channel, Keyframe, reduce_to_track
 from .pipeline import (generate_from_alignment, generate_naive,
-                       naive_segments, wav_duration)
+                       naive_segments, wav_duration, derive_events)
 from .energy import energy_envelope, generate_from_energy
 from .gestures import (GestureParams, generate_gestures, gestures_from_wav,
                        add_gestures_to_track, GESTURE_CHANNELS)
+from .events import (Event, Alternative, VariantGroup, Variants, EVENT_TYPES,
+                     resolve, choose, add_event, attach_events, read_events,
+                     validate_events)
 from .io_export import to_dict, write_json, write_csv
 from .export_unity import write_unity_anim, NAMING_PRESETS
+from .export_unreal_notifies import write_unreal_notifies, notifies_to_dict
 from .export_live2d import write_live2d_motion, lipsync_param_ids
 from .export_godot import write_godot_anim
 from .export_lip import (write_lip, lip_bytes, skyrim_mapping,
@@ -45,11 +49,16 @@ __all__ = [
     "G2P", "PhonemeSegment", "NaiveAligner", "load_mfa_textgrid",
     "build_viseme_curves", "CoartParams", "FaceTrack", "Channel", "Keyframe",
     "reduce_to_track", "generate_from_alignment", "generate_naive",
-    "naive_segments", "wav_duration", "energy_envelope", "generate_from_energy",
+    "naive_segments", "wav_duration", "derive_events",
+    "energy_envelope", "generate_from_energy",
     "GestureParams", "generate_gestures", "gestures_from_wav",
     "add_gestures_to_track", "GESTURE_CHANNELS",
+    "Event", "Alternative", "VariantGroup", "Variants", "EVENT_TYPES",
+    "resolve", "choose", "add_event", "attach_events", "read_events",
+    "validate_events",
     "to_dict", "write_json", "write_csv",
     "write_unity_anim", "NAMING_PRESETS",
+    "write_unreal_notifies", "notifies_to_dict",
     "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",
     "write_lip", "lip_bytes", "skyrim_mapping", "SKYRIM_SLOT_MAP",
     "dominant_cues", "write_rhubarb_tsv", "write_rhubarb_xml",

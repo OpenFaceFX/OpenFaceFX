@@ -354,6 +354,59 @@ def _gesture_params(args):
     return p
 
 
+def _add_event_options(p) -> None:
+    """Opt-in event/take layer (issue #6), shared by naive/mfa/energy. OFF by
+    default so existing output stays byte-identical."""
+    p.add_argument("--events", action="store_true",
+                   help="auto-author a typed event layer (issue #6): 'emphasis' "
+                        "events on stressed syllables / loudness peaks and "
+                        "'phrase' boundary markers at pauses. Carried into JSON "
+                        "output and Unity .anim AnimationEvents; ignored by the "
+                        "mouth-only cue/.lip formats. Deterministic; composes "
+                        "with --gestures")
+    p.add_argument("--events-file", metavar="JSON",
+                   help="attach an authored events/variants ('takes') layer from "
+                        "a JSON file — same {\"events\":[...],\"variants\":{...}} "
+                        "schema as the track block; merged with --events if both "
+                        "are given")
+    p.add_argument("--line-id", metavar="ID",
+                   help="line id that deterministically resolves variant 'takes' "
+                        "by hashing the id with SHA-256 (same id -> same take, "
+                        "across runs/OSes); bakes variants into concrete events "
+                        "on write")
+
+
+def _event_layer(track, args, segments=None, env_times=None, env=None) -> None:
+    """Attach / auto-derive / bake the issue-#6 event layer per --events /
+    --events-file / --line-id. A no-op (byte-identical output) when none are set.
+    Variant 'takes' are baked into concrete events once a line id is known (from
+    --line-id or embedded in the file); otherwise the authoring form is kept."""
+    want = getattr(args, "events", False)
+    efile = getattr(args, "events_file", None)
+    line_id = getattr(args, "line_id", None)
+    if not (want or efile or line_id):
+        return
+    from .events import attach_events, read_events, resolve, validate_events
+    if want:
+        from .pipeline import derive_events
+        attach_events(track, events=derive_events(segments, env_times, env))
+    if efile:
+        try:
+            with open(efile, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError) as e:
+            raise SystemExit(f"--events-file: cannot read {efile!r}: {e}")
+        events, variants = read_events(data)
+        attach_events(track, events=events, variants=variants)
+    if line_id is not None and track.variants is not None:
+        track.variants.line_id = line_id
+    if track.variants is not None and track.variants.line_id is not None:
+        track.events = resolve(track)          # bake the chosen take into events
+        track.variants = None
+    for w in validate_events(track.events):
+        print(f"warning: {w}")
+
+
 def _apply_retarget(track, preset):
     """Retarget the viseme channels onto a rig while passing gesture/pose
     channels (issue #5) through unchanged -- ``retarget`` drops channels absent
@@ -455,6 +508,7 @@ def main(argv=None) -> int:
     _add_output_options(n)
     _add_coart_options(n)
     _add_gesture_options(n)
+    _add_event_options(n)
 
     m = sub.add_parser("mfa", help="MFA TextGrid -> curves (accurate)")
     m.add_argument("--textgrid", required=True)
@@ -466,6 +520,7 @@ def main(argv=None) -> int:
     _add_output_options(m)
     _add_coart_options(m)
     _add_gesture_options(m)
+    _add_event_options(m)
 
     t = sub.add_parser("from-timing",
                        help="TTS phoneme/viseme timing -> curves (skip the "
@@ -498,6 +553,7 @@ def main(argv=None) -> int:
     e.add_argument("-o", "--out", required=True)
     _add_output_options(e)
     _add_gesture_options(e)
+    _add_event_options(e)
 
     lc = sub.add_parser("lip-calibrate",
                         help="EXPERIMENTAL: write one .lip per grid slot "
@@ -565,6 +621,7 @@ def main(argv=None) -> int:
                                             params=params,
                                             gestures=_gesture_params(args),
                                             wav=args.wav)
+            _event_layer(track, args, segments=segs)
             _write(track, args.out, args)
     elif args.cmd == "mfa":
         segs = load_mfa_textgrid(args.textgrid)
@@ -575,6 +632,7 @@ def main(argv=None) -> int:
             track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
                                             params=params,
                                             gestures=_gesture_params(args))
+            _event_layer(track, args, segments=segs)
             _write(track, args.out, args)
     elif args.cmd == "from-timing":
         parser_fn, is_viseme = _TIMING_PARSERS[args.format]
@@ -618,6 +676,11 @@ def main(argv=None) -> int:
         track = generate_from_energy(args.wav, fps=args.fps,
                                      intensity=args.intensity, mapping=mapping,
                                      gestures=_gesture_params(args))
+        et = ev = None
+        if getattr(args, "events", False):
+            from .energy import energy_envelope
+            et, ev = energy_envelope(args.wav, fps=args.fps)
+        _event_layer(track, args, env_times=et, env=ev)
         _write(track, args.out, args)
     return 0
 

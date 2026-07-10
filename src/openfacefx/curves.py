@@ -9,11 +9,14 @@ their neighbours. This is lossy but perceptually safe and shrinks output a lot.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional, TYPE_CHECKING
 
 import numpy as np
 
 from .visemes import VISEMES
+
+if TYPE_CHECKING:                       # avoid a runtime import cycle; the event
+    from .events import Event, Variants  # layer (events.py) is optional & additive
 
 
 @dataclass
@@ -35,6 +38,11 @@ class FaceTrack:
     # Full target vocabulary the channels are drawn from; None means the
     # built-in Oculus viseme set (visemes.VISEMES).
     target_set: List[str] = None
+    # Optional, additive event/take layer (issue #6). Both default empty, so an
+    # ordinary track is byte-identical: `duration` is deliberately unchanged
+    # (still key-based), so events never stretch the clip. See events.py.
+    events: "List[Event]" = field(default_factory=list)
+    variants: "Optional[Variants]" = None
 
     @property
     def duration(self) -> float:

@@ -63,6 +63,56 @@ def _attach_gestures(track: FaceTrack, segments, wav, gestures) -> None:
     add_gestures_to_track(track, duration, env_times, env, segments, gp)
 
 
+def derive_events(
+    segments: Optional[List[PhonemeSegment]] = None,
+    env_times=None,
+    env=None,
+    emphasis: bool = True,
+    phrase: bool = True,
+    energy_thresh: float = 0.55,
+    min_prominence: float = 0.15,
+    min_spacing: float = 0.40,
+) -> list:
+    """Auto-author a typed event layer from the speech itself (issue #6) --
+    ``emphasis`` events on stressed syllables / loudness peaks and ``phrase``
+    boundary markers at pauses -- WITHOUT touching the gesture *channels*.
+
+    It reuses the exact stress/pause/peak detectors behind
+    :mod:`openfacefx.gestures` (``gestures_layers``), so an emphasis event and a
+    head-nod gesture agree on where the accents are, yet the two layers stay
+    independent and separately opt-in. Determinism is inherited from those
+    numpy detectors (no RNG here): identical inputs give identical events.
+
+    ``segments`` supply ARPABET stress digits and ``sil`` pauses; ``env_times`` /
+    ``env`` are an :func:`openfacefx.energy.energy_envelope` result. With
+    segments, stress drives emphasis and ``sil`` spans drive phrase markers; with
+    only an envelope (energy mode), loudness peaks drive emphasis and quiet runs
+    drive phrase markers. Returns a time-sorted ``list[Event]``."""
+    import numpy as np
+    from . import gestures_layers as _gl
+    from .events import Event
+
+    et = np.asarray(env_times, dtype=float) if env_times is not None else np.zeros(0)
+    ev = np.asarray(env, dtype=float) if env is not None else np.zeros(0)
+    out: list = []
+    if emphasis:
+        stresses = _gl.stress_events(segments, et, ev) if segments else []
+        if stresses:
+            out += [Event(t, "emphasis", "beat",
+                          payload={"strength": round(float(s), 4)})
+                    for t, s in stresses]
+        elif len(ev):
+            peaks = _gl.energy_peaks(et, ev, energy_thresh, min_prominence,
+                                     min_spacing)
+            out += [Event(t, "emphasis", "beat",
+                          payload={"level": round(float(p), 4)})
+                    for t, p in peaks]
+    if phrase:
+        out += [Event(t, "marker", "phrase") for t in _gl.pause_times(segments, et, ev)]
+    out.sort(key=lambda e: e.t)
+    return out
+
+
 def naive_segments(
     text: str,
     duration: float,

@@ -19,7 +19,7 @@ from .visemes import VISEMES
 
 
 def to_dict(track: FaceTrack) -> Dict:
-    return {
+    d = {
         "format": "openfacefx.track",
         "version": 1,
         "fps": track.fps,
@@ -33,6 +33,17 @@ def to_dict(track: FaceTrack) -> Dict:
             for ch in track.channels
         ],
     }
+    # Additive event/take layer (issue #6): appended ONLY when present, and after
+    # the base keys, so `version` stays 1 and an ordinary track serialises
+    # byte-identically to previous releases. Readers ignore unknown top-level
+    # keys, so this is forward-compatible in both directions.
+    if getattr(track, "events", None):
+        from .events import event_to_dict
+        d["events"] = [event_to_dict(e) for e in track.events]
+    if getattr(track, "variants", None) is not None:
+        from .events import variants_to_dict
+        d["variants"] = variants_to_dict(track.variants)
+    return d
 
 
 def write_json(track: FaceTrack, path: str) -> None:

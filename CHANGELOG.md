@@ -8,11 +8,33 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Event & take layer** ([#6](https://github.com/OpenFaceFX/OpenFaceFX/issues/6)):
+  named, timed, typed events with a freeform JSON payload — the game-engine
+  notify layer, mirroring FaceFX events / Unreal `AnimNotify` / Unity
+  `AnimationEvent`. A new numpy-free `openfacefx.events` module adds `Event`,
+  weighted `Variants`/`VariantGroup`/`Alternative` "takes", and `resolve()`;
+  `FaceTrack` gains optional `events`/`variants` fields (both default empty).
+  **Takes are deterministic**: an alternative is chosen by hashing a line id with
+  SHA-256 (FIPS 180-4, no RNG, no wall-clock), so the same `line_id` resolves to
+  the same take on every machine and Python version, and each group hashes
+  independently. `--events` auto-authors an `emphasis`/`phrase` layer from the
+  speech (reusing the `--gestures` accent detection, but independent of the
+  gesture channels); `--events-file` + `--line-id` attach and bake authored
+  takes. Events serialize into the track JSON as **optional** top-level
+  `events`/`variants` keys (emitted only when present, so `version` stays `1`)
+  and fill the Unity `.anim` `m_Events` array (each event an `AnimationEvent`
+  Unity SendMessage-invokes on the Animator, name+payload packed into the single
+  `stringParameter`, ranged events expanding to a `_Begin`/`_End` pair,
+  `DontRequireReceiver` so a missing handler never errors). A new
+  `export_unreal_notifies` writes an `AnimNotify` sidecar JSON an editor-Python
+  snippet stamps onto a `UAnimSequence`. **Fully backward-compatible**: a track
+  with no events is byte-identical to previous releases, in JSON and `.anim`.
+
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — remaining
 P2 items (#18 presets/stress, #19, #22 gain/offset), adoption infrastructure
-(#24, #28–#31), the other feature specs de-risked and ready (#4 prosody, #6
-events, #9 edit-preservation), and in-game confirmation of the `.lip` writer
-(#12).
+(#24, #28–#31), the other feature specs de-risked and ready (#4 prosody, #9
+edit-preservation), and in-game confirmation of the `.lip` writer (#12).
 
 ## [0.7.0] — 2026-07-11
 
