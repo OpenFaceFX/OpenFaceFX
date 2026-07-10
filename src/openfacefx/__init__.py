@@ -58,7 +58,7 @@ from .anchors import (
     from_kokoro_tokens, google_ssml_with_marks, from_google_timepoints,
 )
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 __all__ = [
     "G2P", "PhonemeSegment", "NaiveAligner", "load_mfa_textgrid",

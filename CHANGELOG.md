@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-07-11
+
 ### Added
 - **Import mouth-cue files back into a FaceTrack** (closes
   [#44](https://github.com/OpenFaceFX/OpenFaceFX/issues/44)): a new
