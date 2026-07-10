@@ -57,6 +57,13 @@ class Target:
 class Mapping:
     targets: List[Target]
     rows: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    # When set, ``rows`` keys are opaque vendor symbols (Azure viseme IDs as
+    # strings, Polly viseme letters, SAMPA/IPA) matched verbatim: no ARPABET
+    # validation and no stress-strip/upper-case normalization (which would
+    # corrupt numeric IDs and collapse case-significant symbols like s vs S).
+    # Set by the timing.py viseme-unit adapters, or by a mapping file with
+    # top-level "custom_symbols": true.
+    allow_custom_symbols: bool = False
 
     def __post_init__(self):
         names = [t.name for t in self.targets]
@@ -72,9 +79,10 @@ class Mapping:
                 raise ValueError(
                     f"target {t.name!r}: invalid clamp range [{t.lo}, {t.hi}]")
         for ph, row in self.rows.items():
-            key = strip_stress(ph).upper() if ph != SILENCE else SILENCE
-            if key != SILENCE and key not in ARPABET:
-                raise ValueError(f"unknown phoneme {ph!r} in mapping")
+            if not self.allow_custom_symbols:
+                key = strip_stress(ph).upper() if ph != SILENCE else SILENCE
+                if key != SILENCE and key not in ARPABET:
+                    raise ValueError(f"unknown phoneme {ph!r} in mapping")
             for tname, w in row.items():
                 if tname not in self.index:
                     raise ValueError(
@@ -90,9 +98,16 @@ class Mapping:
 
     def row(self, phoneme: str) -> Dict[int, float]:
         """Target-index -> weight for a (possibly stressed) phoneme.
-        Unknown phonemes fall back to the silence row, like the built-in map."""
-        key = strip_stress(phoneme).upper() if phoneme != SILENCE else SILENCE
-        row = self.rows.get(key) or self.rows.get(SILENCE) or {}
+        Unknown phonemes fall back to the silence row, like the built-in map.
+        With ``allow_custom_symbols`` the key is matched verbatim (vendor
+        symbols carry no stress digit and are case-significant)."""
+        if self.allow_custom_symbols:
+            row = self.rows.get(phoneme)
+            if row is None:
+                row = self.rows.get(SILENCE) or {}
+        else:
+            key = strip_stress(phoneme).upper() if phoneme != SILENCE else SILENCE
+            row = self.rows.get(key) or self.rows.get(SILENCE) or {}
         return {self.index[n]: w for n, w in row.items()}
 
     @classmethod
@@ -120,7 +135,10 @@ class Mapping:
         phonemes = d.get("phonemes")
         if not isinstance(phonemes, dict) or not phonemes:
             raise ValueError(f"{path}: 'phonemes' must be a non-empty object")
-        return cls(targets, phonemes)
+        # "custom_symbols": true lets a mapping file key rows by a non-ARPABET
+        # alphabet (SAMPA/IPA from TTS timing sources) — matched verbatim.
+        return cls(targets, phonemes,
+                   allow_custom_symbols=bool(d.get("custom_symbols", False)))
 
     def to_json(self, path: str) -> None:
         d = {

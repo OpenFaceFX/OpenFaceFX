@@ -15,6 +15,12 @@ from .export_unity import write_unity_anim, NAMING_PRESETS
 from .mapping import Mapping, Target
 from .retarget import retarget, rename_only, PRESETS
 from .visemes import VISEMES, phoneme_to_viseme
+from .timing import (
+    TimingEvent, resolve_ends, to_segments, parse_pho, parse_piper_alignments,
+    parse_cartesia, parse_azure_visemes, parse_polly_marks,
+    viseme_events_to_segments, build_vendor_mapping,
+    AZURE_VISEME_TO_TARGET, POLLY_VISEME_TO_TARGET,
+)
 
 __version__ = "0.3.1"
 
@@ -27,4 +33,8 @@ __all__ = [
     "Mapping", "Target",
     "retarget", "rename_only", "PRESETS",
     "VISEMES", "phoneme_to_viseme",
+    "TimingEvent", "resolve_ends", "to_segments", "parse_pho",
+    "parse_piper_alignments", "parse_cartesia", "parse_azure_visemes",
+    "parse_polly_marks", "viseme_events_to_segments", "build_vendor_mapping",
+    "AZURE_VISEME_TO_TARGET", "POLLY_VISEME_TO_TARGET",
 ]

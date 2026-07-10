@@ -62,6 +62,14 @@ Accurate lip-sync from a Montreal Forced Aligner result:
 python -m openfacefx mfa --textgrid voice.TextGrid -o track.json
 ```
 
+Straight from a TTS engine's own timing — skip the aligner (espeak/MBROLA
+`.pho`, Piper, or Cartesia phonemes; Azure or Polly visemes; details and
+capture scripts in [docs/timing.md](docs/timing.md)):
+
+```bash
+python -m openfacefx from-timing --file visemes.json --format azure -o track.json
+```
+
 Straight to a Unity AnimationClip, or remapped onto another rig:
 
 ```bash
@@ -195,6 +203,7 @@ src/openfacefx/
   phonemes.py       ARPAbet inventory
   g2p.py            word → phonemes (CMUdict + rule fallback)
   alignment.py      PhonemeSegment, NaiveAligner, MFA TextGrid parser
+  timing.py         TTS phoneme/viseme timing adapters (from-timing) ← skip the aligner
   visemes.py        viseme set + phoneme→viseme map
   mapping.py        weighted phoneme→target mapping (JSON)  ← remap phonemes here
   coarticulation.py component dominance blending, CoartParams ← the interesting math

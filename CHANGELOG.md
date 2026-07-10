@@ -8,6 +8,24 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **TTS timing ingest** (#14): `openfacefx from-timing` skips the aligner and
+  builds tracks straight from a TTS engine's own timing, through one normalized
+  `TimingEvent(unit, symbol, start, end)` schema (`timing.py`). Parsers for
+  MBROLA `.pho` (espeak-ng), Piper sample-count alignments, Cartesia
+  `phoneme_timestamps`, Azure viseme events (100-ns ticks) and Polly viseme
+  `.marks`, each converting its native time units (ms / sample counts / ticks /
+  seconds) to seconds and rejecting malformed input with a clear error.
+  Phoneme-unit sources feed the existing weighted mapping and coarticulation
+  unchanged; viseme-unit sources (Azure, Polly) remap onto the Oculus-15 targets
+  via built-in presets (`AZURE_VISEME_TO_TARGET`, `POLLY_VISEME_TO_TARGET`), with
+  unknown symbols/IDs downgraded to a QA warning instead of a crash. Missing end
+  times are inferred from the next event's start (`resolve_ends`, configurable
+  `--final-duration`). `Mapping` gains `allow_custom_symbols` so vendor symbols
+  (numeric IDs, case-significant letters, IPA) bypass ARPABET normalization.
+  Capture scripts for Azure and the espeak-ng C API in `docs/timing.md`; GPL
+  engines (espeak-ng, piper1-gpl) run as external processes only, never vendored.
+
 Remaining backlog: prosody/gestures/events/text-tags/i18n (#4–#9), preview
 upgrades (#10–#11), and the Bethesda `.LIP` writer (#12, blocked on payload
 reverse-engineering — research codec in `tools/lip_codec_research.py`).
