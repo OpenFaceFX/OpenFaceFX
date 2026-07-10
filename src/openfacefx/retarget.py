@@ -1,0 +1,169 @@
+"""Retarget viseme channels onto another rig's blendshape convention.
+
+A mapping sends each Oculus-15 viseme to one or more target shapes with a
+weight scale::
+
+    {"PP": [("mouthClose", 0.9), ("mouthPressLeft", 0.35)], ...}
+
+``retarget`` resamples on the union of the contributing channels' key times
+(linear interpolation, matching intended playback), sums the scaled
+contributions per target, clamps to [0, 1], and returns a new ``FaceTrack``.
+Presets for common rigs live in ``PRESETS``; they are plain data — copy and
+tweak for your character.
+"""
+
+from __future__ import annotations
+
+from typing import Dict, List, Sequence, Tuple
+
+from .curves import Channel, FaceTrack, Keyframe
+
+Mapping = Dict[str, Sequence[Tuple[str, float]]]
+
+
+def _sampler(channel: Channel):
+    keys = channel.keys
+
+    def sample(t: float) -> float:
+        if not keys:
+            return 0.0
+        if t <= keys[0].time:
+            return keys[0].value
+        if t >= keys[-1].time:
+            return keys[-1].value
+        lo, hi = 0, len(keys) - 1
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if keys[mid].time <= t:
+                lo = mid
+            else:
+                hi = mid
+        k0, k1 = keys[lo], keys[hi]
+        f = (t - k0.time) / ((k1.time - k0.time) or 1e-9)
+        return k0.value + (k1.value - k0.value) * f
+
+    return sample
+
+
+def retarget(track: FaceTrack, mapping: Mapping) -> FaceTrack:
+    """Return a new FaceTrack with channels renamed/combined per ``mapping``.
+
+    Source channels absent from the mapping are dropped (deliberately: a rig
+    that lacks a shape should not receive its weight).
+    """
+    # target name -> list of (sampler, key times, scale)
+    contributors: Dict[str, List[tuple]] = {}
+    for ch in track.channels:
+        for target, scale in mapping.get(ch.name, ()):
+            times = [k.time for k in ch.keys]
+            contributors.setdefault(target, []).append((_sampler(ch), times, scale))
+
+    channels: List[Channel] = []
+    for target, sources in contributors.items():
+        times = sorted({t for _, ts, _ in sources for t in ts})
+        keys = []
+        for t in times:
+            v = sum(sample(t) * scale for sample, _, scale in sources)
+            keys.append(Keyframe(t, round(min(max(v, 0.0), 1.0), 4)))
+        channels.append(Channel(target, keys))
+    channels.sort(key=lambda c: c.name)
+    return FaceTrack(fps=track.fps, channels=channels)
+
+
+def rename_only(prefix: str = "", names: Dict[str, str] = None) -> Mapping:
+    """Build a 1:1 mapping that renames each viseme, e.g. ``viseme_PP``."""
+    from .visemes import VISEMES
+    names = names or {}
+    return {v: [(names.get(v, prefix + v), 1.0)] for v in VISEMES}
+
+
+# ---------------------------------------------------------------------------
+# Presets. Provenance, quirks and alternatives: docs/retargeting.md.
+# Weighted tables are data, not gospel — copy one and tune it to your mesh.
+# ---------------------------------------------------------------------------
+
+# Apple ARKit 52 blendshapes. Weights reproduced verbatim from
+# met4citizen/TalkingHead (MIT), a shipping viseme->ARKit map. Known quirks
+# kept as-published: CH and RR are identical; PP seals via lip-roll rather
+# than mouthClose.
+_ARKIT = {
+    "PP": (("mouthRollLower", 0.8), ("mouthRollUpper", 0.8),
+           ("mouthUpperUpLeft", 0.3), ("mouthUpperUpRight", 0.3)),
+    "FF": (("mouthPucker", 1.0), ("mouthShrugUpper", 1.0),
+           ("mouthRollLower", 1.0), ("mouthDimpleLeft", 1.0),
+           ("mouthDimpleRight", 1.0), ("mouthLowerDownLeft", 0.2),
+           ("mouthLowerDownRight", 0.2)),
+    "TH": (("mouthRollUpper", 0.6), ("jawOpen", 0.2), ("tongueOut", 0.4)),
+    "DD": (("mouthPressLeft", 0.8), ("mouthPressRight", 0.8),
+           ("mouthFunnel", 0.5), ("jawOpen", 0.2)),
+    "kk": (("mouthLowerDownLeft", 0.4), ("mouthLowerDownRight", 0.4),
+           ("mouthDimpleLeft", 0.3), ("mouthDimpleRight", 0.3),
+           ("mouthFunnel", 0.3), ("mouthPucker", 0.3), ("jawOpen", 0.15)),
+    "CH": (("mouthPucker", 0.5), ("jawOpen", 0.2)),
+    "SS": (("mouthPressLeft", 0.8), ("mouthPressRight", 0.8),
+           ("mouthLowerDownLeft", 0.5), ("mouthLowerDownRight", 0.5),
+           ("jawOpen", 0.1)),
+    "nn": (("mouthLowerDownLeft", 0.4), ("mouthLowerDownRight", 0.4),
+           ("mouthDimpleLeft", 0.3), ("mouthDimpleRight", 0.3),
+           ("mouthFunnel", 0.3), ("mouthPucker", 0.3), ("jawOpen", 0.15),
+           ("tongueOut", 0.2)),
+    "RR": (("mouthPucker", 0.5), ("jawOpen", 0.2)),
+    "aa": (("jawOpen", 0.6),),
+    "E":  (("mouthPressLeft", 0.8), ("mouthPressRight", 0.8),
+           ("mouthDimpleLeft", 1.0), ("mouthDimpleRight", 1.0),
+           ("jawOpen", 0.3)),
+    "I":  (("mouthPressLeft", 0.6), ("mouthPressRight", 0.6),
+           ("mouthDimpleLeft", 0.6), ("mouthDimpleRight", 0.6),
+           ("jawOpen", 0.2)),
+    "O":  (("mouthPucker", 1.0), ("jawForward", 0.6), ("jawOpen", 0.2)),
+    "U":  (("mouthFunnel", 1.0),),
+}
+
+# Rhubarb Lip Sync mouth shapes (A-H + X, extended shapes G/H used).
+# Rhubarb is pose-based: nearest single shape at full weight.
+_RHUBARB = {
+    "sil": (("X", 1.0),), "PP": (("A", 1.0),), "FF": (("G", 1.0),),
+    "TH": (("B", 1.0),), "DD": (("B", 1.0),), "kk": (("B", 1.0),),
+    "CH": (("B", 1.0),), "SS": (("B", 1.0),), "nn": (("H", 1.0),),
+    "RR": (("E", 1.0),), "aa": (("D", 1.0),), "E": (("C", 1.0),),
+    "I": (("B", 1.0),), "O": (("F", 1.0),), "U": (("F", 1.0),),
+}
+
+# Preston-Blair 10-shape series (Papagayo / Moho convention).
+_PRESTON_BLAIR = {
+    "sil": (("rest", 1.0),), "PP": (("MBP", 1.0),), "FF": (("FV", 1.0),),
+    "TH": (("consonants", 1.0),), "DD": (("consonants", 1.0),),
+    "kk": (("consonants", 1.0),), "CH": (("consonants", 1.0),),
+    "SS": (("consonants", 1.0),), "RR": (("consonants", 1.0),),
+    "nn": (("L", 1.0),), "aa": (("AI", 1.0),), "I": (("AI", 1.0),),
+    "E": (("E", 1.0),), "O": (("O", 1.0),), "U": (("U", 1.0),),
+}
+
+# VRM 1.0 expression presets: only five vowel mouths exist in the standard.
+# Vowels map canonically; consonants borrow the nearest vowel mouth (coarse
+# by design — VRM has no consonant visemes). PP/sil rest at zero.
+_VRM = {
+    "aa": (("aa", 1.0),), "I": (("ih", 1.0),), "U": (("ou", 1.0),),
+    "E": (("ee", 1.0),), "O": (("oh", 1.0),),
+    "FF": (("ih", 0.2),), "TH": (("ih", 0.3),), "DD": (("ih", 0.5),),
+    "kk": (("aa", 0.3),), "CH": (("ou", 0.5),), "SS": (("ih", 0.4),),
+    "nn": (("ih", 0.4),), "RR": (("ou", 0.4),),
+}
+
+# Reallusion Character Creator 4 / iClone viseme set (near 1:1 rename).
+_CC4 = {
+    "PP": (("B_M_P", 1.0),), "FF": (("F_V", 1.0),), "TH": (("Th", 1.0),),
+    "DD": (("T_L_D_N", 1.0),), "nn": (("T_L_D_N", 1.0),),
+    "kk": (("K_G_H_NG", 1.0),), "CH": (("Ch_J", 1.0),),
+    "SS": (("S_Z", 1.0),), "RR": (("R", 1.0),), "aa": (("Ah", 1.0),),
+    "E": (("AE", 1.0),), "I": (("EE", 1.0),), "O": (("Oh", 1.0),),
+    "U": (("W_OO", 1.0),),
+}
+
+PRESETS: Dict[str, Mapping] = {
+    "arkit": _ARKIT,
+    "rhubarb": _RHUBARB,
+    "preston_blair": _PRESTON_BLAIR,
+    "vrm": _VRM,
+    "cc4": _CC4,
+}

@@ -19,6 +19,7 @@ from .g2p import G2P
 from .alignment import NaiveAligner, PhonemeSegment
 from .coarticulation import build_viseme_curves
 from .curves import reduce_to_track, FaceTrack
+from .phonemes import SILENCE
 
 
 def wav_duration(path: str) -> float:
@@ -36,6 +37,22 @@ def generate_from_alignment(
     return reduce_to_track(times, matrix, fps=fps, epsilon=epsilon)
 
 
+def naive_segments(
+    text: str,
+    duration: float,
+    g2p: Optional[G2P] = None,
+) -> List[PhonemeSegment]:
+    """Time-stamped phonemes for ``text`` spread over ``duration`` seconds.
+
+    This is the phoneme-timing layer the curve solver consumes; exporters that
+    need phonemes rather than visemes (e.g. Bethesda .LIP) start here.
+    """
+    g2p = g2p or G2P()
+    # Pad with silence at both ends so the mouth starts and ends relaxed.
+    phones = [SILENCE] + g2p.phrase(text) + [SILENCE]
+    return NaiveAligner().align(phones, total_duration=duration)
+
+
 def generate_naive(
     text: str,
     duration: float,
@@ -43,10 +60,5 @@ def generate_naive(
     epsilon: float = 0.015,
     g2p: Optional[G2P] = None,
 ) -> FaceTrack:
-    g2p = g2p or G2P()
-    phones = g2p.phrase(text)
-    # Pad with silence at both ends so the mouth starts and ends relaxed.
-    from .phonemes import SILENCE
-    phones = [SILENCE] + phones + [SILENCE]
-    segs = NaiveAligner().align(phones, total_duration=duration)
+    segs = naive_segments(text, duration, g2p=g2p)
     return generate_from_alignment(segs, fps=fps, epsilon=epsilon)

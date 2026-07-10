@@ -59,6 +59,78 @@ def test_pipeline_produces_valid_track():
     assert "PP" in names or "aa" in names
 
 
+def test_naive_segments_layer():
+    from openfacefx.pipeline import naive_segments
+    segs = naive_segments("hello world", duration=1.5)
+    assert segs[0].phoneme == "sil" and segs[-1].phoneme == "sil"
+    assert abs(segs[0].start - 0.0) < 1e-9
+    assert abs(segs[-1].end - 1.5) < 1e-6
+    # identical timing feeds generate_naive, so both paths must agree
+    from openfacefx import generate_from_alignment
+    assert to_dict(generate_from_alignment(segs)) == to_dict(
+        generate_naive("hello world", duration=1.5))
+
+
+def test_retarget_combines_scales_and_clamps():
+    from openfacefx.curves import Channel, FaceTrack, Keyframe
+    from openfacefx.retarget import retarget
+    track = FaceTrack(fps=60, channels=[
+        Channel("aa", [Keyframe(0.0, 0.8), Keyframe(1.0, 0.0)]),
+        Channel("O",  [Keyframe(0.5, 1.0)]),
+    ])
+    out = retarget(track, {"aa": [("jawOpen", 1.0)], "O": [("jawOpen", 0.5)]})
+    (jaw,) = out.channels
+    assert jaw.name == "jawOpen"
+    # union of key times; a single-key channel holds its value everywhere
+    assert [k.time for k in jaw.keys] == [0.0, 0.5, 1.0]
+    assert jaw.keys[0].value == 1.0          # 0.8 + 1.0*0.5 = 1.3, clamped
+    assert jaw.keys[1].value == 0.9          # aa lerped to 0.4, + 0.5
+    assert jaw.keys[2].value == 0.5          # aa 0.0, + 0.5
+
+
+def test_retarget_presets_integrity():
+    from openfacefx.retarget import PRESETS, retarget
+    # ARKit names the preset may use (mouth/jaw/tongue subset of Apple's 52)
+    arkit_ok = {
+        "jawForward", "jawLeft", "jawRight", "jawOpen", "mouthClose",
+        "mouthFunnel", "mouthPucker", "mouthLeft", "mouthRight",
+        "mouthSmileLeft", "mouthSmileRight", "mouthFrownLeft",
+        "mouthFrownRight", "mouthDimpleLeft", "mouthDimpleRight",
+        "mouthStretchLeft", "mouthStretchRight", "mouthRollLower",
+        "mouthRollUpper", "mouthShrugLower", "mouthShrugUpper",
+        "mouthPressLeft", "mouthPressRight", "mouthLowerDownLeft",
+        "mouthLowerDownRight", "mouthUpperUpLeft", "mouthUpperUpRight",
+        "tongueOut",
+    }
+    for name, mapping in PRESETS.items():
+        assert mapping, name
+        for viseme, targets in mapping.items():
+            assert viseme in VISEMES, (name, viseme)
+            for target, scale in targets:
+                assert 0.0 < scale <= 1.0, (name, viseme, target, scale)
+                if name == "arkit":
+                    assert target in arkit_ok, (viseme, target)
+        # every vowel must land somewhere in every preset
+        for vowel in ("aa", "E", "I", "O", "U"):
+            assert vowel in mapping, (name, vowel)
+
+    track = generate_naive("hello world", duration=1.2)
+    out = retarget(track, PRESETS["arkit"])
+    assert any(c.name == "jawOpen" for c in out.channels)
+    assert all(0.0 <= k.value <= 1.0 for c in out.channels for k in c.keys)
+
+
+def test_retarget_rename_only():
+    from openfacefx.retarget import rename_only, retarget
+    track = generate_naive("hello", duration=0.8)
+    out = retarget(track, rename_only(prefix="viseme_"))
+    assert {c.name for c in out.channels} == {"viseme_" + c.name for c in track.channels}
+    src = {c.name: [(k.time, k.value) for k in c.keys] for c in track.channels}
+    dst = {c.name: [(k.time, k.value) for k in c.keys] for c in out.channels}
+    for name, keys in src.items():
+        assert dst["viseme_" + name] == keys
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:
