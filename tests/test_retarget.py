@@ -334,3 +334,15 @@ if __name__ == "__main__":
         fn()
         print("PASS", fn.__name__)
     print(f"\n{len(fns)} tests passed")
+
+
+def test_retarget_preserves_events(tmp_path):
+    """Retargeting renames mouth channels but must not drop the event/take
+    layer (issue #34) — events are timeline metadata, not visemes."""
+    from openfacefx import generate_naive, retarget, PRESETS
+    from openfacefx.events import Event
+    track = generate_naive("hello world", duration=1.2)
+    track.events = [Event(0.5, "emphasis", name="beat")]
+    out = retarget(track, PRESETS["arkit"])
+    assert [e.name for e in out.events] == ["beat"]
+    assert any(c.name == "jawOpen" for c in out.channels)

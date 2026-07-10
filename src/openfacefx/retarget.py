@@ -127,7 +127,10 @@ def retarget(track: FaceTrack, mapping: Mapping,
     # shapes it emits.
     all_targets = sorted({ft for targets in mapping.values() for t, _ in targets
                           for ft, _ in _resolve_target(t, 1.0, avail, fallbacks)})
-    ft = FaceTrack(fps=track.fps, channels=channels, target_set=all_targets)
+    # Carry the event/take layer through the remap (issue #34): retargeting
+    # renames mouth channels; the events are timeline metadata and survive it.
+    ft = FaceTrack(fps=track.fps, channels=channels, target_set=all_targets,
+                   events=track.events, variants=track.variants)
     return apply_adjust(ft, adjust) if adjust else ft
 
 
