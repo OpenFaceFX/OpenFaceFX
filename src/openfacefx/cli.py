@@ -18,16 +18,39 @@ from .g2p import G2P
 from .alignment import load_mfa_textgrid
 from .pipeline import generate_naive, generate_from_alignment, wav_duration
 from .io_export import write_json, write_csv
+from .export_unity import write_unity_anim
+from .retarget import retarget, PRESETS
 
 
-def _write(track, out: str) -> None:
+def _write(track, out: str, args=None) -> None:
+    if args is not None and args.retarget:
+        if out.endswith(".anim"):
+            raise SystemExit("--retarget applies to JSON/CSV output; "
+                             ".anim output has its own --anim-naming presets")
+        track = retarget(track, PRESETS[args.retarget])
     if out.endswith(".csv"):
         write_csv(track, out)
+    elif out.endswith(".anim"):
+        write_unity_anim(track, out,
+                         naming=args.anim_naming if args else "oculus",
+                         mesh_path=args.anim_path if args else "Body")
     else:
         write_json(track, out)
     print(f"wrote {out}: {len(track.channels)} channels, "
           f"{sum(len(c.keys) for c in track.channels)} keyframes, "
           f"{track.duration:.2f}s")
+
+
+def _add_output_options(p) -> None:
+    p.add_argument("--retarget", choices=sorted(PRESETS),
+                   help="remap viseme channels onto another rig's shapes "
+                        "(JSON/CSV output; see docs/retargeting.md)")
+    p.add_argument("--anim-naming", choices=["oculus", "vrchat"],
+                   default="oculus",
+                   help="blendshape naming for .anim output (default: oculus)")
+    p.add_argument("--anim-path", default="Body",
+                   help="Animator-to-SkinnedMeshRenderer transform path for "
+                        ".anim output (default: Body)")
 
 
 def main(argv=None) -> int:
@@ -42,11 +65,13 @@ def main(argv=None) -> int:
     n.add_argument("--cmudict", help="optional CMUdict file for better G2P")
     n.add_argument("--fps", type=float, default=60.0)
     n.add_argument("-o", "--out", required=True)
+    _add_output_options(n)
 
     m = sub.add_parser("mfa", help="MFA TextGrid -> curves (accurate)")
     m.add_argument("--textgrid", required=True)
     m.add_argument("--fps", type=float, default=60.0)
     m.add_argument("-o", "--out", required=True)
+    _add_output_options(m)
 
     args = p.parse_args(argv)
 
@@ -57,11 +82,11 @@ def main(argv=None) -> int:
             added = g2p.load_cmudict(args.cmudict)
             print(f"loaded {added} CMUdict entries")
         track = generate_naive(args.text, dur, fps=args.fps, g2p=g2p)
-        _write(track, args.out)
+        _write(track, args.out, args)
     elif args.cmd == "mfa":
         segs = load_mfa_textgrid(args.textgrid)
         track = generate_from_alignment(segs, fps=args.fps)
-        _write(track, args.out)
+        _write(track, args.out, args)
     return 0
 
 

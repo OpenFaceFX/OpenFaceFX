@@ -131,6 +131,46 @@ def test_retarget_rename_only():
         assert dst["viseme_" + name] == keys
 
 
+def test_unity_anim_export():
+    import tempfile
+    from openfacefx.curves import Channel, FaceTrack, Keyframe
+    from openfacefx.export_unity import write_unity_anim
+    track = FaceTrack(fps=60, channels=[
+        Channel("aa", [Keyframe(0.0, 0.5), Keyframe(1.25, 0.0)]),
+    ])
+    out = tempfile.NamedTemporaryFile(suffix=".anim", delete=False).name
+    write_unity_anim(track, out)
+    text = open(out, encoding="utf-8").read()
+    assert text.startswith("%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!74 &7400000\n")
+    # 15 curves in m_FloatCurves + duplicated in m_EditorCurves
+    assert text.count("attribute: blendShape.viseme_") == 30
+    assert "attribute: blendShape.viseme_aa" in text
+    assert "value: 50" in text                      # 0.5 -> percent
+    assert "m_StopTime: 1.25" in text
+    assert "classID: 137" in text and "path: Body" in text
+    os.unlink(out)
+
+
+def test_unity_anim_vrchat_naming():
+    import tempfile
+    from openfacefx.export_unity import write_unity_anim
+    track = generate_naive("hello world", duration=1.0)
+    out = tempfile.NamedTemporaryFile(suffix=".anim", delete=False).name
+    write_unity_anim(track, out, naming="vrchat", mesh_path="Armature/Head")
+    text = open(out, encoding="utf-8").read()
+    # lowercase vrc names with the enum's ih/oh/ou spellings
+    for name in ("vrc.v_sil", "vrc.v_pp", "vrc.v_kk", "vrc.v_ih",
+                 "vrc.v_oh", "vrc.v_ou"):
+        assert "attribute: blendShape." + name in text, name
+    assert "viseme_" not in text
+    assert "path: Armature/Head" in text
+    # all emitted percent values stay in [0, 100]
+    vals = [float(l.split(":")[1]) for l in text.splitlines()
+            if l.strip().startswith("value:")]
+    assert vals and all(0.0 <= v <= 100.0 for v in vals)
+    os.unlink(out)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

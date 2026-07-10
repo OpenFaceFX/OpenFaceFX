@@ -11,6 +11,7 @@ from .curves import FaceTrack, Channel, Keyframe, reduce_to_track
 from .pipeline import (generate_from_alignment, generate_naive,
                        naive_segments, wav_duration)
 from .io_export import to_dict, write_json, write_csv
+from .export_unity import write_unity_anim, NAMING_PRESETS
 from .retarget import retarget, rename_only, PRESETS
 from .visemes import VISEMES, phoneme_to_viseme
 
@@ -21,6 +22,7 @@ __all__ = [
     "build_viseme_curves", "FaceTrack", "Channel", "Keyframe",
     "reduce_to_track", "generate_from_alignment", "generate_naive",
     "naive_segments", "wav_duration", "to_dict", "write_json", "write_csv",
+    "write_unity_anim", "NAMING_PRESETS",
     "retarget", "rename_only", "PRESETS",
     "VISEMES", "phoneme_to_viseme",
 ]
