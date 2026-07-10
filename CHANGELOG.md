@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-07-11
+
 ### Added
 - **Layered multi-track export** (closes
   [#39](https://github.com/OpenFaceFX/OpenFaceFX/issues/39)): a new
