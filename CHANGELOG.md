@@ -8,10 +8,35 @@ its `version` field.
 
 ## [Unreleased]
 
-Planned work is tracked in the
-[issue backlog](https://github.com/OpenFaceFX/OpenFaceFX/issues): the
-FaceFX feature-gap backlog (#1–#11) and the Bethesda `.LIP` writer (#12,
-blocked on payload reverse-engineering).
+Remaining backlog: prosody/gestures/events/text-tags/i18n (#4–#9), preview
+upgrades (#10–#11), and the Bethesda `.LIP` writer (#12, blocked on payload
+reverse-engineering — research codec in `tools/lip_codec_research.py`).
+
+## [0.3.0] — 2026-07-10
+
+The three P1 items from the FaceFX feature-gap backlog.
+
+### Added
+- **Component-based coarticulation** (#1): per-articulator-class
+  (basic/jaw/lips/tongue) lead-in/out timing via `CoartParams`,
+  short-silence absorption (0.27 s default), guaranteed ≥0.9 lip closures
+  on bilabials/labiodentals, diphthong splitting, onset pre-roll policy.
+- **Data-driven weighted mapping** (#2): `Mapping`/`Target` model + JSON
+  format (`openfacefx.mapping` v1), per-target articulator class and
+  min/max clamps, strict validation, CLI `--mapping`; ships
+  `examples/mappings/oculus15.json` and `minimal9.json`. Default path is
+  byte-identical to 0.2.0.
+- **Batch processing** (#3): `openfacefx batch` over directory trees with
+  `--recurse/--modified-only/--jobs`, manifest-based incremental re-runs,
+  and a worst-first QA summary (failures, aligner confidence, OOV words).
+- `G2P.oov_words()`, optional `PhonemeSegment.confidence`, and
+  `FaceTrack.target_set` (exports now report the actual target vocabulary).
+
+### Changed
+- Default lip-sync output improves: consonant channels are tighter and lip
+  closures complete (PP peak 0.23 → 0.90 on the example track). Tracks are
+  not byte-identical to 0.2.0 (that guarantee applied to the 0.2.0 mapping
+  change only).
 
 ## [0.2.0] — 2026-07-10
 
@@ -65,6 +90,7 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/OpenFaceFX/OpenFaceFX/releases/tag/v0.1.0

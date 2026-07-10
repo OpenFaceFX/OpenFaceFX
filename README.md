@@ -70,6 +70,16 @@ python -m openfacefx naive --text "..." --wav voice.wav -o clip.anim --anim-nami
 python -m openfacefx mfa --textgrid voice.TextGrid -o track.json --retarget arkit
 ```
 
+Whole dialogue trees at once, with an OOV/confidence QA report and
+incremental re-runs:
+
+```bash
+python -m openfacefx batch --dir voice/ --out tracks/ --recurse --modified-only --jobs 8
+```
+
+Weighted many-to-many phoneme mapping and coarticulation timing are
+data/parameters, not code — see `examples/mappings/` and `CoartParams`.
+
 Library use:
 
 ```python
@@ -162,10 +172,10 @@ The full backlog lives in the [issues](https://github.com/OpenFaceFX/OpenFaceFX/
 
 - [x] Unity `AnimationClip` exporter (`-o clip.anim`, oculus/vrchat naming)
 - [x] Published remap tables: ARKit-52, Rhubarb, Preston-Blair, VRM, CC4
-- [ ] Bethesda `.LIP` exporter — blocked on payload spec ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)); `.fuz`/header tools shipped
-- [ ] Component-based coarticulation with tunable articulator timing ([#1](https://github.com/OpenFaceFX/OpenFaceFX/issues/1))
-- [ ] Data-driven weighted phoneme→target mapping ([#2](https://github.com/OpenFaceFX/OpenFaceFX/issues/2))
-- [ ] Batch directory processing with QA reports ([#3](https://github.com/OpenFaceFX/OpenFaceFX/issues/3))
+- [x] Component-based coarticulation with tunable articulator timing ([#1](https://github.com/OpenFaceFX/OpenFaceFX/issues/1))
+- [x] Data-driven weighted phoneme→target mapping ([#2](https://github.com/OpenFaceFX/OpenFaceFX/issues/2))
+- [x] Batch directory processing with QA reports ([#3](https://github.com/OpenFaceFX/OpenFaceFX/issues/3))
+- [ ] Bethesda `.LIP` exporter — blocked on payload spec ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)); `.fuz`/header tools + research codec shipped
 - [ ] Prosody, gestures, events, text tags, i18n ([#4](https://github.com/OpenFaceFX/OpenFaceFX/issues/4)–[#8](https://github.com/OpenFaceFX/OpenFaceFX/issues/8))
 
 ## Scope & honesty
@@ -186,12 +196,14 @@ src/openfacefx/
   g2p.py            word → phonemes (CMUdict + rule fallback)
   alignment.py      PhonemeSegment, NaiveAligner, MFA TextGrid parser
   visemes.py        viseme set + phoneme→viseme map
-  coarticulation.py dominance-function blending             ← the interesting math
+  mapping.py        weighted phoneme→target mapping (JSON)  ← remap phonemes here
+  coarticulation.py component dominance blending, CoartParams ← the interesting math
   curves.py         keyframe reduction, FaceTrack
   io_export.py      JSON / CSV writers
   export_unity.py   Unity .anim AnimationClip writer
-  retarget.py       viseme→rig remapping + presets          ← retarget here
+  retarget.py       viseme→rig remapping + presets          ← retarget rigs here
   bethesda.py       .fuz container / .lip header tools
+  batch.py          directory batch runner + QA summary
   pipeline.py       orchestration
   cli.py            command line
 tests/test_core.py  run: pytest

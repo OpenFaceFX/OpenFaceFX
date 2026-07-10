@@ -16,7 +16,7 @@ from .mapping import Mapping, Target
 from .retarget import retarget, rename_only, PRESETS
 from .visemes import VISEMES, phoneme_to_viseme
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "G2P", "PhonemeSegment", "NaiveAligner", "load_mfa_textgrid",
