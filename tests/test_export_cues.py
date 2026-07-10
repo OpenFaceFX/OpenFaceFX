@@ -140,11 +140,13 @@ def test_moho_dat_preston_blair_names(tmp_path):
 
 def test_moho_dat_fps_range_errors(tmp_path):
     path = str(tmp_path / "x.dat")
-    for bad in (23, 0, 101, 240):
+    for bad in (23, 0, 101, 240, 23.976):     # Rhubarb rejects, never clamps
         with pytest.raises(ValueError, match="24..100"):
             write_moho_dat(TRACK_A, path, fps=bad, preston_blair=False)
-    write_moho_dat(TRACK_A, path, fps=24, preston_blair=False)   # boundaries valid
-    write_moho_dat(TRACK_A, path, fps=100, preston_blair=False)
+    # boundaries and fractional (NTSC) rates inside the range are valid: the
+    # frame rate is a float, matching Rhubarb's double datFrameRate
+    for good in (24, 100, 29.97):
+        write_moho_dat(TRACK_A, path, fps=good, preston_blair=False)
 
 
 def test_pgo_tree_indentation(tmp_path):

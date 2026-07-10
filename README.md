@@ -10,7 +10,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-f4b942.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-3776ab.svg?logo=python&logoColor=white)](pyproject.toml)
 [![Runtime deps](https://img.shields.io/badge/runtime%20deps-numpy%20only-6e7681.svg)](pyproject.toml)
-[![Status](https://img.shields.io/badge/status-0.1.0%20alpha-e06c5b.svg)](#scope--honesty)
+[![Status](https://img.shields.io/badge/status-alpha-e06c5b.svg)](#scope--honesty)
+[![Release](https://img.shields.io/github/v/release/OpenFaceFX/OpenFaceFX?color=f4b942)](https://github.com/OpenFaceFX/OpenFaceFX/releases)
 
 **[▶ Live demo](https://openfacefx.github.io/OpenFaceFX/demo/)** — no install, regenerated from the current pipeline on every push.
 

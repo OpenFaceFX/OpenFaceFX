@@ -206,7 +206,7 @@ def write_rhubarb_json(track: FaceTrack, path: str, *,
     _write_lines(path, lines)
 
 
-def write_moho_dat(track: FaceTrack, path: str, *, fps: int = 24,
+def write_moho_dat(track: FaceTrack, path: str, *, fps: float = 24,
                    preston_blair: bool = True,
                    retarget_preset: Optional[str] = None) -> None:
     """Moho / OpenToonz switch data. First line ``MohoSwitch1``; then
@@ -215,7 +215,9 @@ def write_moho_dat(track: FaceTrack, path: str, *, fps: int = 24,
 
     ``preston_blair`` (default) emits Preston-Blair drawing names, which
     OpenToonz's "Apply Lip Sync Data" and Moho switch layers match by name;
-    turn it off for Rhubarb's raw A-H/X letters. ``fps`` must be 24..100.
+    turn it off for Rhubarb's raw A-H/X letters. ``fps`` must be 24..100
+    (a float, so NTSC rates like 29.97 are accepted); out of range is a
+    clear error, matching Rhubarb (which rejects rather than clamps).
     """
     if not (_DAT_FPS_MIN <= fps <= _DAT_FPS_MAX):
         raise ValueError(
@@ -236,13 +238,14 @@ def write_moho_dat(track: FaceTrack, path: str, *, fps: int = 24,
     _write_lines(path, lines)
 
 
-def write_pgo(track: FaceTrack, path: str, *, fps: int = 24,
+def write_pgo(track: FaceTrack, path: str, *, fps: float = 24,
               sound_path: str = "openfacefx", voice_name: str = "Voice 1",
               retarget_preset: Optional[str] = None) -> None:
     """Papagayo-NG ``.pgo`` (version 1): the flattened Preston-Blair cues as a
     single voice / phrase / word phoneme stream, TAB-indented. Frames are
-    1-based truncated; ``sound_path`` defaults to a placeholder rather than a
-    local absolute path.
+    1-based truncated; ``fps`` is stored as an integer (Papagayo's rate is
+    ``%d``); ``sound_path`` defaults to a placeholder rather than a local
+    absolute path.
     """
     src = _coerce(track, _PB_SHAPES, "preston_blair", retarget_preset)
     phonemes = _to_frames(dominant_cues(src, "rest"), fps)

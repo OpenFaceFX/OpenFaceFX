@@ -8,6 +8,17 @@ its `version` field.
 
 ## [Unreleased]
 
+Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — next up
+the remaining P1/P2 items (#17–#23, #26–#32) and the sample-blocked `.LIP`
+writer (#12).
+
+## [0.4.0] — 2026-07-10
+
+The adapters-and-interchange release: skip the aligner with TTS timing, pin
+it with subtitles, export to the 2D animation ecosystem, try it in the
+browser. Also ships PyPI release automation (pending the one-time publisher
+registration, #24) and the live demo site.
+
 ### Added
 - **Rhubarb-dialect cue exporters** (#16): flatten a track into a stepped cue
   list (dominant viseme per interval) and serialise the formats the indie 2D
@@ -64,10 +75,23 @@ its `version` field.
   (numeric IDs, case-significant letters, IPA) bypass ARPABET normalization.
   Capture scripts for Azure and the espeak-ng C API in `docs/timing.md`; GPL
   engines (espeak-ng, piper1-gpl) run as external processes only, never vendored.
+- **Live demo site** (#25): https://openfacefx.github.io/OpenFaceFX/ — the
+  previewer autoplays a track regenerated from the current pipeline on every
+  push (`--autoplay` flag on `tools/build_preview.py`, Pages deploy workflow).
+- **PyPI release automation** (#24): tag-triggered `release.yml` — version and
+  changelog gates, sdist + universal wheel, the test suite run against the
+  built wheel, GitHub release with artifacts and notes, OIDC trusted
+  publishing (skipped until the pending publisher is registered). PEP 639
+  metadata and `[project.urls]`.
+- End-to-end test suite (`tests/test_e2e.py`) and a real-world
+  `examples/dialogue/` voice tree covering both alignment paths through
+  `batch`; PNG logo.
 
-Remaining backlog: prosody/gestures/events/text-tags/i18n (#4–#9), preview
-upgrades (#10–#11), and the Bethesda `.LIP` writer (#12, blocked on payload
-reverse-engineering — research codec in `tools/lip_codec_research.py`).
+### Fixed
+- `preston_blair` retarget preset: the consonant catch-all is now `etc` — the
+  exact layer name Moho/OpenToonz match on — instead of `consonants`, which
+  silently never switched the mouth (found by byte-exact format verification
+  against Rhubarb's DAT exporter and the Papagayo phoneme tables).
 
 ## [0.3.1] — 2026-07-10
 
@@ -155,7 +179,8 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.1.0...v0.2.0

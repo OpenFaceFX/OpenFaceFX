@@ -151,9 +151,10 @@ def _add_output_options(p) -> None:
     p.add_argument("--cue-sound", default="openfacefx",
                    help="soundFile/sound-path string embedded in xml/json/pgo "
                         "cue output (default: 'openfacefx' — not your local path)")
-    p.add_argument("--cue-fps", type=int, default=24,
+    p.add_argument("--cue-fps", type=float, default=24,
                    help="frame rate for .dat/.pgo cue quantization "
-                        "(default: 24; .dat requires 24..100)")
+                        "(default: 24; .dat requires 24..100, accepts NTSC "
+                        "29.97; .pgo stores an integer rate)")
     p.add_argument("--dat-preston-blair", action=argparse.BooleanOptionalAction,
                    default=True,
                    help="use Preston-Blair drawing names in .dat (default; "

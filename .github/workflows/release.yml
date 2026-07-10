@@ -62,12 +62,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: dist
-      - name: Publish to PyPI (trusted publishing)
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist
       - name: GitHub release with artifacts and changelog notes
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           body_path: release_notes.md
+      # Skipped until a maintainer registers the PyPI pending publisher and
+      # sets repo variable PYPI_ENABLED=true (issue #24) — keeps tag builds
+      # green in the meantime instead of failing at OIDC exchange.
+      - name: Publish to PyPI (trusted publishing)
+        if: vars.PYPI_ENABLED == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
