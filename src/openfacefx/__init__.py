@@ -8,6 +8,7 @@ from .g2p import G2P
 from .alignment import PhonemeSegment, NaiveAligner, load_mfa_textgrid
 from .coarticulation import build_viseme_curves, CoartParams
 from .curves import FaceTrack, Channel, Keyframe, reduce_to_track
+from .postprocess import smooth_matrix, time_shift
 from .pipeline import (generate_from_alignment, generate_naive,
                        naive_segments, wav_duration, derive_events)
 from .energy import energy_envelope, generate_from_energy
@@ -52,7 +53,8 @@ __version__ = "0.9.0"
 __all__ = [
     "G2P", "PhonemeSegment", "NaiveAligner", "load_mfa_textgrid",
     "build_viseme_curves", "CoartParams", "FaceTrack", "Channel", "Keyframe",
-    "reduce_to_track", "generate_from_alignment", "generate_naive",
+    "reduce_to_track", "smooth_matrix", "time_shift",
+    "generate_from_alignment", "generate_naive",
     "naive_segments", "wav_duration", "derive_events",
     "energy_envelope", "generate_from_energy",
     "ProsodyParams", "ProsodyTrack", "pitch_track", "prosody_features",

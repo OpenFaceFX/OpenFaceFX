@@ -209,6 +209,14 @@ JALI-style artistic dials tune articulation strength without retiming: `--intens
 (master, `<1` mumbles, `>1` hyper-articulates) and repeatable `--gain class=value`
 (e.g. `--gain tongue=0.6 --gain jaw=1.2`); all `1.0` is a byte-identical no-op.
 
+FaceFX-style post-solve curve conditioning smooths and retimes the curves
+without re-solving: `--smooth SECONDS` runs a temporal Gaussian (sigma in
+seconds) over the dense curves before keyframe reduction to soften jitter — lip
+closures are re-sealed *after* the filter, so `/p/ /b/ /m/ /f/ /v/` stay sharp
+— and `--lag MS` slides every viseme curve to trail (`>0`) or lead (`<0`) the
+audio, clamped into the clip. Both default off (byte-identical) and apply to
+`naive`/`mfa`/`from-timing`/`energy`.
+
 Library use:
 
 ```python

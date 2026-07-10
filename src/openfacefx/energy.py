@@ -165,6 +165,8 @@ def generate_from_energy(
     gate: float = 0.06,
     smoothing: Tuple[float, float] = (0.012, 0.09),
     gestures=None,
+    smooth: float = 0.0,
+    lag: float = 0.0,
 ) -> FaceTrack:
     """Build a ``FaceTrack`` from audio loudness alone — no transcript needed.
 
@@ -196,6 +198,12 @@ def generate_from_energy(
     gestures : opt-in non-verbal gesture layer (issue #5); a ``GestureParams``
         (or ``True`` for defaults) appends blink/brow/head/eye channels driven
         by this same envelope. ``None`` (default) leaves output byte-identical.
+    smooth, lag : opt-in post-solve curve conditioning (issue #10). ``smooth`` is
+        a temporal Gaussian sigma in seconds run over the mouth partition before
+        keyframe reduction (the partition ``aa + E + O + sil == 1`` survives it);
+        ``lag`` slides the reduced keyframes in time (seconds; ``>0`` lags, ``<0``
+        leads the audio, clamped into the clip). Both ``0.0`` (default) are a
+        byte-identical no-op. No closures exist here, so nothing is re-sealed.
 
     Output is deterministic: identical audio and parameters give an identical
     track (the mouth path has no RNG; the gesture layer is seeded from
@@ -227,8 +235,14 @@ def generate_from_energy(
     for name, col in channels.items():
         if name in index:
             matrix[:, index[name]] = col
+    if smooth > 0.0:
+        from .postprocess import smooth_matrix
+        matrix = smooth_matrix(matrix, smooth, fps)
     track = reduce_to_track(times, matrix, fps=fps, epsilon=epsilon,
                             targets=targets)
+    if lag:
+        from .postprocess import time_shift
+        time_shift(track, lag)
     if gestures:
         # No phonemes here, so stress/pauses/peaks come from the envelope itself.
         from .gestures import GestureParams, add_gestures_to_track

@@ -278,6 +278,40 @@ def _add_coart_options(p) -> None:
                         "the class). Multiplies with --intensity")
 
 
+def _add_smoothing_options(p) -> None:
+    """Opt-in post-solve curve conditioning (issue #10), shared by naive/mfa/
+    from-timing/energy. Both default to a no-op so existing output stays byte-
+    identical. Unlike --intensity/--gain these also apply in energy mode (they
+    condition the reduced curves, not the coarticulation model)."""
+    p.add_argument("--smooth", type=float, default=0.0, metavar="SECONDS",
+                   help="temporal Gaussian smoothing of the dense curves before "
+                        "keyframe reduction (sigma in seconds, e.g. 0.02). Softens "
+                        "jitter; lip closures are re-sealed afterwards so /p/ /b/ "
+                        "/m/ /f/ /v/ stay sharp. 0 = off (byte-identical)")
+    p.add_argument("--lag", type=float, default=0.0, metavar="MS",
+                   help="slide every viseme curve in time by +/- milliseconds so "
+                        "the mouth trails (positive, lag) or leads (negative) the "
+                        "audio; keys are clamped into the clip so its length is "
+                        "unchanged. 0 = off (byte-identical)")
+
+
+def _smooth_seconds(args) -> float:
+    """Validated --smooth (sigma seconds) at the CLI boundary."""
+    s = getattr(args, "smooth", 0.0)
+    if not math.isfinite(s) or s < 0.0:
+        raise SystemExit(f"--smooth must be a finite, non-negative number of "
+                         f"seconds, got {s}")
+    return s
+
+
+def _lag_seconds(args) -> float:
+    """Validated --lag, converting the CLI's milliseconds to seconds."""
+    ms = getattr(args, "lag", 0.0)
+    if not math.isfinite(ms):
+        raise SystemExit(f"--lag must be a finite number of milliseconds, got {ms}")
+    return ms / 1000.0
+
+
 def _parse_gains(items):
     """``['class=value', ...]`` -> ``{class: float}``, validated at this CLI
     boundary: a clear SystemExit on an unknown class or non-finite/negative
@@ -309,11 +343,15 @@ def _coart_params(args):
     if not math.isfinite(intensity) or intensity < 0.0:
         raise SystemExit(f"--intensity must be finite and >= 0, got {intensity}")
     gains = _parse_gains(getattr(args, "gain", None))
-    if intensity == 1.0 and not gains:
+    smooth = _smooth_seconds(args)
+    lag = _lag_seconds(args)
+    if intensity == 1.0 and not gains and smooth == 0.0 and lag == 0.0:
         return None
     p = CoartParams()
     p.intensity = intensity
     p.gains = {**p.gains, **gains}
+    p.smooth = smooth
+    p.lag = lag
     return p
 
 
@@ -589,6 +627,7 @@ def main(argv=None) -> int:
                         "previewer's --segments lane (see tools/build_preview.py)")
     _add_output_options(n)
     _add_coart_options(n)
+    _add_smoothing_options(n)
     _add_gesture_options(n)
     _add_event_options(n)
     _add_prosody_options(n)
@@ -607,6 +646,7 @@ def main(argv=None) -> int:
                         "previewer's --segments lane (see tools/build_preview.py)")
     _add_output_options(m)
     _add_coart_options(m)
+    _add_smoothing_options(m)
     _add_gesture_options(m)
     _add_event_options(m)
     _add_prosody_options(m)
@@ -629,6 +669,7 @@ def main(argv=None) -> int:
     t.add_argument("-o", "--out", required=True)
     _add_output_options(t)
     _add_coart_options(t)
+    _add_smoothing_options(t)
     _add_edits_options(t)
 
     e = sub.add_parser("energy",
@@ -643,6 +684,7 @@ def main(argv=None) -> int:
     e.add_argument("--fps", type=float, default=60.0)
     e.add_argument("-o", "--out", required=True)
     _add_output_options(e)
+    _add_smoothing_options(e)
     _add_gesture_options(e)
     _add_event_options(e)
     _add_prosody_options(e)
@@ -805,7 +847,9 @@ def main(argv=None) -> int:
         from .energy import generate_from_energy
         track = generate_from_energy(args.wav, fps=args.fps,
                                      intensity=args.intensity, mapping=mapping,
-                                     gestures=_gesture_params(args))
+                                     gestures=_gesture_params(args),
+                                     smooth=_smooth_seconds(args),
+                                     lag=_lag_seconds(args))
         track = _apply_edits_layer(track, args)
         et = ev = None
         if getattr(args, "events", False):

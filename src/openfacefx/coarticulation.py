@@ -26,6 +26,7 @@ from .mapping import Mapping, _DEFAULT_CLASSES
 from .visemes import VISEMES, VISEME_INDEX, phoneme_to_viseme
 from .phonemes import SILENCE, is_vowel, strip_stress
 from .ipa import is_ipa_vowel
+from .postprocess import smooth_matrix
 
 
 def _seg_is_vowel(seg: PhonemeSegment) -> bool:
@@ -66,6 +67,14 @@ class CoartParams:
     ``sil`` (see ``_apply_intensity``). All ``1.0`` is a byte-identical no-op;
     ``<1`` mumbles / softens a class, ``>1`` hyper-articulates, ``0`` mutes it.
     Enforced lip closures still win afterwards, so a whispered bilabial seals.
+
+    ``smooth`` and ``lag`` are FaceFX-style post-solve curve conditioning
+    (:mod:`openfacefx.postprocess`), both default off. ``smooth`` is the sigma
+    (seconds) of a temporal Gaussian run over the dense matrix before keyframe
+    reduction to soften jitter; closures are re-enforced *after* it, so lip
+    seals stay sharp. ``lag`` slides the reduced keyframes in time (seconds;
+    ``>0`` lags / ``<0`` leads the audio) and is applied by the pipeline once
+    curves are reduced, not here. ``0.0`` for both is a byte-identical no-op.
     """
     lead: Dict[str, Tuple[float, float]] = field(default_factory=lambda: {
         "basic": (0.40, 0.45),
@@ -82,6 +91,8 @@ class CoartParams:
     gains: Dict[str, float] = field(default_factory=lambda: {
         "basic": 1.0, "jaw": 1.0, "lips": 1.0, "tongue": 1.0,
     })
+    smooth: float = 0.0           # Gaussian smoothing sigma in seconds (0 = off)
+    lag: float = 0.0              # keyframe time-shift seconds (>0 lag, <0 lead)
 
 # Diphthong -> component vowels (split at 55% of the segment).
 _DIPHTHONGS = {
@@ -199,11 +210,16 @@ def build_viseme_curves(
         matrix[:, v] = (dom * weights[None, :, v]).sum(axis=1) / denom[:, 0]
 
     # Clean numerical dust and clamp, apply the artistic intensity/gain dials
-    # (a no-op at defaults), then enforce closures so enforced frames end up
-    # summing to exactly 1 (closures win over the dials).
+    # (a no-op at defaults), optionally smooth the dense curves, then enforce
+    # closures LAST so enforced frames end up summing to exactly 1 and the lip
+    # seals stay sharp even when smoothing rounded everything else off (closures
+    # win over the dials and the filter). Smoothing preserves the ~1 row sums, so
+    # the partition-energy invariant holds throughout.
     matrix[matrix < 1e-4] = 0.0
     np.clip(matrix, 0.0, 1.0, out=matrix)
     _apply_intensity(matrix, mapping, params)
+    if params.smooth > 0.0:
+        matrix = smooth_matrix(matrix, params.smooth, fps)
     _enforce_closures(times, matrix, segments, mapping, weights, params)
     return times, matrix
 

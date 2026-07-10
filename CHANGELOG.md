@@ -8,11 +8,31 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Curve smoothing and lag/lead post-processing**
+  ([#10](https://github.com/OpenFaceFX/OpenFaceFX/issues/10)): a new
+  `openfacefx.postprocess` module (numpy + stdlib only) adds FaceFX-style
+  post-solve curve conditioning between the dominance solver and RDP keyframe
+  reduction, where before there was none. `smooth_matrix(matrix, sigma, fps)`
+  runs a normalized temporal **Gaussian** (sigma in seconds) over the dense
+  viseme curves to soften jitter; because the kernel is a unit-sum partition of
+  unity applied uniformly with edge-hold padding, each frame's channels still
+  sum to ~1 (the coarticulation partition-energy invariant is preserved) and
+  values stay in `[0, 1]`. Crucially, lip **closures are re-enforced after
+  smoothing** — mirroring FaceFX's phoneme-influence toggle — so a bilabial or
+  labiodental seal (`/p/ /b/ /m/ /f/ /v/`) the filter would otherwise round off
+  stays sharp (`PP`/`FF` peak ≥ the closure floor). `time_shift(track, seconds)`
+  slides keyframe times to make the visemes **lag** (`>0`) or **lead** (`<0`) the
+  audio, clamped into the clip's `[0, duration]` envelope so a per-channel shift
+  never disturbs other channels or the track length. Both are threaded through
+  `CoartParams` (`smooth`, `lag`) and exposed as `--smooth SECONDS` /
+  `--lag MS` on `naive`/`mfa`/`from-timing`/`energy`. Default off ⇒
+  **byte-identical** output; deterministic across Python 3.9–3.13.
+
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — the
-remaining P2/P3 features are unspecced (#8 i18n, #10 smoothing, #18/#19/#22/#23)
-or distribution (#28–#31); adoption needs the one manual PyPI publisher step
-(#24); and the `.lip` writer + FaceFXWrapper shim await in-game confirmation
-(#12, #33).
+remaining P2/P3 features are unspecced (#8 i18n, #18/#19/#22/#23) or distribution
+(#28–#31); adoption needs the one manual PyPI publisher step (#24); and the
+`.lip` writer + FaceFXWrapper shim await in-game confirmation (#12, #33).
 
 ## [0.9.0] — 2026-07-11
 

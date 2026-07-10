@@ -47,6 +47,12 @@ def generate_from_alignment(
     targets = mapping.targets if mapping is not None else None
     track = reduce_to_track(times, matrix, fps=fps, epsilon=epsilon,
                             targets=targets)
+    # Lag/lead post-process (issue #10): slide the reduced viseme keyframes in
+    # time before the gesture layer is attached, so only the mouth leads/trails
+    # the audio (blinks/brows keep their own timing). Off (lag=0) => untouched.
+    if params is not None and params.lag:
+        from .postprocess import time_shift
+        time_shift(track, params.lag)
     if gestures:
         _attach_gestures(track, segments, wav, gestures)
     return track
