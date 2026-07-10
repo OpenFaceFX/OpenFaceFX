@@ -12,6 +12,14 @@ Remaining backlog: prosody/gestures/events/text-tags/i18n (#4–#9), preview
 upgrades (#10–#11), and the Bethesda `.LIP` writer (#12, blocked on payload
 reverse-engineering — research codec in `tools/lip_codec_research.py`).
 
+## [0.3.1] — 2026-07-10
+
+### Fixed
+- Windows: `openfacefx batch` crashed with "path is on mount 'C:', start on
+  mount 'D:'" when the output tree was on a different drive than the working
+  directory (summary paths are now relative to the output tree). Caught by
+  the CI matrix.
+
 ## [0.3.0] — 2026-07-10
 
 The three P1 items from the FaceFX feature-gap backlog.
@@ -90,7 +98,8 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/OpenFaceFX/OpenFaceFX/releases/tag/v0.1.0

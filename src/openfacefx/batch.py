@@ -48,12 +48,13 @@ def find_jobs(in_dir: str, out_dir: str, recurse: bool, ext: str) -> List[dict]:
             rel = os.path.relpath(wav, in_dir)
             tg = os.path.join(root, stem + ".TextGrid")
             txt = os.path.join(root, stem + ".txt")
-            out = os.path.join(out_dir, os.path.splitext(rel)[0] + "." + ext)
+            out_rel = os.path.splitext(rel)[0] + "." + ext
             jobs.append(dict(
                 rel=rel, wav=wav,
                 textgrid=tg if os.path.exists(tg) else None,
                 txt=txt if os.path.exists(txt) else None,
-                out=out,
+                out=os.path.join(out_dir, out_rel),
+                out_rel=out_rel,
             ))
     return jobs
 
@@ -61,7 +62,9 @@ def find_jobs(in_dir: str, out_dir: str, recurse: bool, ext: str) -> List[dict]:
 def _process_one(args: Tuple[dict, Optional[str], Optional[str], float]) -> dict:
     """Worker (top-level for Windows spawn): returns a summary row."""
     job, mapping_path, cmudict_path, fps = args
-    row = dict(file=job["rel"], status="ok", out=os.path.relpath(job["out"]),
+    # out is reported relative to the output tree: relpath against the CWD
+    # breaks on Windows when they sit on different drives
+    row = dict(file=job["rel"], status="ok", out=job["out_rel"],
                error=None, duration=None, channels=0, keyframes=0,
                oov=[], min_confidence=None, mode=None)
     try:
