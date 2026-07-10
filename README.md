@@ -403,6 +403,7 @@ src/openfacefx/
   batch.py          directory batch runner + QA summary
   energy.py         audio-loudness fallback lip-sync (no transcript) ← amplitude-driven
   gestures.py       procedural blinks/brows/head/eyes, GestureParams (#5) ← opt-in, deterministic
+  gestures_layers.py  gesture event-extraction + per-layer curve synthesis (gestures.py's engine)
   pipeline.py       orchestration
   cli.py            command line
 tests/test_core.py  run: pytest
