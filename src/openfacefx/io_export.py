@@ -20,11 +20,15 @@ from .curves import Channel, FaceTrack, Keyframe
 from .visemes import VISEMES
 
 
-def to_dict(track: FaceTrack, source_id: Optional[str] = None) -> Dict:
+def to_dict(track: FaceTrack, source_id: Optional[str] = None,
+            layers=None) -> Dict:
     """Serialise a track to the canonical dict. ``source_id`` (issue #9) is an
     optional stable id for the source audio/alignment; when given it is embedded
-    so an ``openfacefx.edits`` sidecar can be keyed to it. Omitted by default, so
-    an ordinary track is byte-identical to previous releases."""
+    so an ``openfacefx.edits`` sidecar can be keyed to it. ``layers`` (issue #39)
+    is an optional list of :class:`openfacefx.layers.Layer` (the speech/emotion/
+    gesture decomposition) attached as a top-level ``layers`` block; it falls back
+    to ``track.layers`` if that is set. Both are omitted by default, so an ordinary
+    track is byte-identical to previous releases."""
     d = {
         "format": "openfacefx.track",
         "version": 1,
@@ -52,6 +56,12 @@ def to_dict(track: FaceTrack, source_id: Optional[str] = None) -> Dict:
     if getattr(track, "variants", None) is not None:
         from .events import variants_to_dict
         d["variants"] = variants_to_dict(track.variants)
+    # Layered decomposition (issue #39): appended last and ONLY when non-empty, so
+    # the flat track stays the default and an ordinary track is byte-identical.
+    lyrs = layers if layers is not None else getattr(track, "layers", None)
+    if lyrs:
+        from .layers import layers_to_dict
+        d["layers"] = layers_to_dict(lyrs)
     return d
 
 
@@ -75,6 +85,9 @@ def from_dict(d: Dict) -> FaceTrack:
     track = FaceTrack(fps=float(d["fps"]), channels=channels, target_set=target_set)
     from .events import read_events
     track.events, track.variants = read_events(d)
+    if "layers" in d:                       # issue #39: optional layered block
+        from .layers import layers_from_dict
+        track.layers = layers_from_dict(d["layers"])
     return track
 
 
@@ -84,9 +97,10 @@ def read_json(path: str) -> FaceTrack:
         return from_dict(json.load(fh))
 
 
-def write_json(track: FaceTrack, path: str, source_id: Optional[str] = None) -> None:
+def write_json(track: FaceTrack, path: str, source_id: Optional[str] = None,
+               layers=None) -> None:
     with open(path, "w", encoding="utf-8") as fh:
-        json.dump(to_dict(track, source_id=source_id), fh, indent=2)
+        json.dump(to_dict(track, source_id=source_id, layers=layers), fh, indent=2)
 
 
 def write_csv(track: FaceTrack, path: str) -> None:

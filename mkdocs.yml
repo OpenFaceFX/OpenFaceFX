@@ -108,5 +108,6 @@ nav:
       - Transforms (retime/mirror/trim): api/transforms.md
       - LOD variant export: api/lod.md
       - Channel budget: api/budget.md
+      - Layered export: api/layers.md
       - Batch & CLI: api/batch.md
   - Changelog: changelog.md

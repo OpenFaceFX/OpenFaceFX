@@ -40,6 +40,8 @@ from .lod import (generate_lods, make_lod, lod_metadata, switching_table,
                  LOD_DEFAULT_RDP, LOD_DEFAULT_FPS)
 from .budget import (channel_energy, rank_channels, keep_channels,
                     keep_top_weight, budget_channels, budget_metadata)
+from .layers import (Layer, build_layers, flatten_layers, layers_to_dict,
+                    layers_from_dict)
 from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_unreal_notifies import write_unreal_notifies, notifies_to_dict
 from .export_live2d import write_live2d_motion, lipsync_param_ids
@@ -100,6 +102,8 @@ __all__ = [
     "LOD_DEFAULT_RDP", "LOD_DEFAULT_FPS",
     "channel_energy", "rank_channels", "keep_channels", "keep_top_weight",
     "budget_channels", "budget_metadata",
+    "Layer", "build_layers", "flatten_layers", "layers_to_dict",
+    "layers_from_dict",
     "write_unity_anim", "NAMING_PRESETS",
     "write_unreal_notifies", "notifies_to_dict",
     "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",

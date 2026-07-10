@@ -9,6 +9,27 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Layered multi-track export** (closes
+  [#39](https://github.com/OpenFaceFX/OpenFaceFX/issues/39)): a new
+  `openfacefx.layers` module (`Layer`, `build_layers`, `flatten_layers`,
+  `layers_to_dict`/`layers_from_dict`) and an `export-layers` command that emit a
+  track's **speech / emotion / gesture** contributions as distinct named
+  sub-tracks — each a normal channel list plus a per-layer blend-weight curve and
+  integer priority — so an engine can re-blend or toggle facial layers at runtime
+  (Unreal additive tracks, SALSA priority blending) instead of a single flattened
+  set. `build_layers` decomposes a merged track by channel classification
+  (gesture / emotion / the speech base); because every channel lands in exactly
+  one layer, summing them at weight 1 reproduces the flat merged track exactly (a
+  faithful, lossless decomposition — pinned by a round-trip test). Prosody stays
+  the track's event layer (it drives notifies, not curves). numpy + stdlib,
+  deterministic across Python 3.9/3.13.
+  - `io_export.to_dict(track, ..., layers=None)` / `write_json(..., layers=None)`
+    append an optional top-level `layers` block, and `from_dict`/`read_json`
+    restore it to `track.layers` (names, weights and priorities survive the
+    round-trip). **The default path is byte-identical**: with no layers the block
+    is omitted, so an ordinary track serialises exactly as before — verified by
+    the full existing test suite staying green and an explicit byte-for-byte check.
+    Empty/absent layers are omitted, never emitted as dead channels.
 - **Energy-ranked channel-budget reduction** (closes
   [#37](https://github.com/OpenFaceFX/OpenFaceFX/issues/37)): a new
   `openfacefx.budget` module (`channel_energy`, `rank_channels`, `keep_channels`,

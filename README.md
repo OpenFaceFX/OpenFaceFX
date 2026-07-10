@@ -677,6 +677,27 @@ byte-identical. Library callers get
 `rank_channels`, `budget_channels(track, N)`, `channel_energy`; stdlib,
 deterministic, additive. See [docs/api/budget.md](docs/api/budget.md).
 
+## Export separate animation layers
+
+Engines often re-blend or toggle facial layers at runtime rather than take one
+flattened curve set (Unreal additive tracks, SALSA priority blending). `export-layers`
+(issue [#39](https://github.com/OpenFaceFX/OpenFaceFX/issues/39)) decomposes a
+merged track into named **speech / emotion / gesture** sub-tracks with a per-layer
+blend-weight curve + integer priority:
+
+```bash
+python -m openfacefx export-layers merged.track.json -o layered.track.json
+```
+
+It writes the **same flat track** plus an optional top-level `layers` block, so the
+default output is byte-identical and a reader that ignores the block still gets the
+merged track. Every channel lands in exactly one layer, so summing the layers at
+weight 1 reproduces the flat track exactly — a faithful, lossless decomposition; the
+runtime mix stays the engine's job. Library callers get `build_layers`,
+`flatten_layers`, `layers_to_dict`/`layers_from_dict` and the `Layer` type;
+`to_dict(track, layers=…)`/`from_dict` round-trip the block. numpy + stdlib,
+deterministic, additive. See [docs/api/layers.md](docs/api/layers.md).
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -960,6 +981,7 @@ src/openfacefx/
   transforms.py     retime/stretch, mirror L/R, trim/slice a track (#48) ← transform command
   lod.py            offline LOD variant export (RDP-eps + fps-resample tiers) (#36) ← lod command
   budget.py         energy-ranked channel-budget reduction / morph cap (#37) ← --max-channels
+  layers.py         layered speech/emotion/gesture export + blend/priority (#39) ← export-layers
   gestures_layers.py  gesture event-extraction + per-layer curve synthesis (gestures.py's engine)
   pipeline.py       orchestration
   cli.py            command line

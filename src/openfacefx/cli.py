@@ -1108,6 +1108,15 @@ def main(argv=None) -> int:
                          "channels at each LOD (same length as the tiers, higher "
                          "LODs fewer); nested by the source ranking (issue #37)")
 
+    el = sub.add_parser("export-layers",
+                        help="write a track.json carrying an additive speech / "
+                             "emotion / gesture layer decomposition + blend-weight "
+                             "and priority metadata (issue #39)")
+    el.add_argument("infile", help="the merged .track.json to decompose")
+    el.add_argument("-o", "--out", required=True,
+                    help="output .track.json: the flat channels (unchanged) plus a "
+                         "top-level 'layers' block")
+
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
                             "transcript; amplitude fallback, not viseme sync)")
@@ -1426,6 +1435,20 @@ def main(argv=None) -> int:
         _say(args, f"wrote {len(variants)} LOD variants + {meta_path}: " +
              ", ".join(f"lod{m['index']}={m['keyframes']}kf@{m['fps']}fps"
                        for m in meta["levels"]))
+        return 0
+
+    if args.cmd == "export-layers":
+        from .io_export import read_json, to_dict
+        from .layers import build_layers
+        try:
+            track = read_json(args.infile)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"export-layers: {ex}")
+        layers = build_layers(track)
+        with open(args.out, "w", encoding="utf-8") as fh:
+            json.dump(to_dict(track, layers=layers), fh, indent=2)
+        _say(args, f"wrote {args.out}: flat track + {len(layers)} layer(s) "
+             f"({', '.join(l.name for l in layers)})")
         return 0
 
     mapping = Mapping.from_json(args.mapping) if args.mapping else None
