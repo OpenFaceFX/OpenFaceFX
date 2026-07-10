@@ -130,12 +130,16 @@ _RHUBARB = {
     "I": (("B", 1.0),), "O": (("F", 1.0),), "U": (("F", 1.0),),
 }
 
-# Preston-Blair 10-shape series (Papagayo / Moho convention).
+# Preston-Blair series (Papagayo / Moho / OpenToonz convention). The
+# canonical consonant catch-all layer is named "etc" — OpenToonz's lip-sync
+# import matches layer names exactly, so emitting anything else silently
+# fails to switch. (The full set also has WQ; viseme-level input can't
+# distinguish W from UW, so U stays on U.)
 _PRESTON_BLAIR = {
     "sil": (("rest", 1.0),), "PP": (("MBP", 1.0),), "FF": (("FV", 1.0),),
-    "TH": (("consonants", 1.0),), "DD": (("consonants", 1.0),),
-    "kk": (("consonants", 1.0),), "CH": (("consonants", 1.0),),
-    "SS": (("consonants", 1.0),), "RR": (("consonants", 1.0),),
+    "TH": (("etc", 1.0),), "DD": (("etc", 1.0),),
+    "kk": (("etc", 1.0),), "CH": (("etc", 1.0),),
+    "SS": (("etc", 1.0),), "RR": (("etc", 1.0),),
     "nn": (("L", 1.0),), "aa": (("AI", 1.0),), "I": (("AI", 1.0),),
     "E": (("E", 1.0),), "O": (("O", 1.0),), "U": (("U", 1.0),),
 }
