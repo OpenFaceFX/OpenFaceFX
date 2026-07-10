@@ -66,9 +66,16 @@ jobs:
         # Re-recorded from the committed .tape on every push so it can never
         # drift from the real CLI; openfacefx is already installed above, so the
         # `python -m openfacefx …` line inside the tape runs against this code.
-        uses: charmbracelet/vhs-action@v2.1.0
-        with:
-          path: docs/quickstart.tape
+        # Toolchain installed directly with pinned releases — vhs-action@v2.1.0
+        # broke on "Failed to install ffmpeg" (its internal dependency setup).
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg
+          curl -sL https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 -o /tmp/ttyd
+          sudo install /tmp/ttyd /usr/local/bin/ttyd
+          curl -sL https://github.com/charmbracelet/vhs/releases/download/v0.11.0/vhs_0.11.0_amd64.deb -o /tmp/vhs.deb
+          sudo dpkg -i /tmp/vhs.deb
+          vhs docs/quickstart.tape
       - name: Publish the GIF into the site
         run: cp docs/quickstart.gif site/quickstart.gif
       - uses: actions/upload-pages-artifact@v3
