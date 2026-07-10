@@ -9,9 +9,15 @@ its `version` field.
 ## [Unreleased]
 
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — remaining
-P2 items (#18 presets/stress, #19, #22 gain/offset, #23), adoption
-infrastructure (#24, #27–#31), and in-game confirmation of the `.lip` writer
+P2 items (#18 presets/stress, #19, #22 gain/offset), adoption infrastructure
+(#24, #28–#31), the other feature specs de-risked and ready (#4 prosody, #6
+events, #9 edit-preservation), and in-game confirmation of the `.lip` writer
 (#12).
+
+## [0.7.0] — 2026-07-11
+
+Life beyond the mouth: procedural non-verbal gestures, a previewer that plays
+the audio, and a full documentation site.
 
 ### Added
 - **HTML preview: audio playback, waveform & phoneme lane**
@@ -418,7 +424,8 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.4.0...v0.5.0
