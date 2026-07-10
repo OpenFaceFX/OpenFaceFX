@@ -6,11 +6,12 @@ Browsers block file:// fetch, so the track is baked into the page.
 import json
 import sys
 
-TEMPLATE = open(__file__.replace("build_preview.py", "preview_template.html")).read()
+TEMPLATE = open(__file__.replace("build_preview.py", "preview_template.html"),
+                encoding="utf-8").read()
 
 
 def main(track_path: str, out_path: str) -> None:
-    track = json.load(open(track_path))
+    track = json.load(open(track_path, encoding="utf-8"))
     html = TEMPLATE.replace("/*__TRACK__*/null", json.dumps(track))
     open(out_path, "w", encoding="utf-8").write(html)
     print("wrote", out_path)
