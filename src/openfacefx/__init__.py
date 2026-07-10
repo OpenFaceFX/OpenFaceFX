@@ -12,6 +12,10 @@ from .pipeline import (generate_from_alignment, generate_naive,
                        naive_segments, wav_duration)
 from .io_export import to_dict, write_json, write_csv
 from .export_unity import write_unity_anim, NAMING_PRESETS
+from .export_cues import (
+    dominant_cues, write_rhubarb_tsv, write_rhubarb_xml, write_rhubarb_json,
+    write_moho_dat, write_pgo,
+)
 from .mapping import Mapping, Target
 from .retarget import retarget, rename_only, PRESETS
 from .visemes import VISEMES, phoneme_to_viseme
@@ -35,6 +39,8 @@ __all__ = [
     "reduce_to_track", "generate_from_alignment", "generate_naive",
     "naive_segments", "wav_duration", "to_dict", "write_json", "write_csv",
     "write_unity_anim", "NAMING_PRESETS",
+    "dominant_cues", "write_rhubarb_tsv", "write_rhubarb_xml",
+    "write_rhubarb_json", "write_moho_dat", "write_pgo",
     "Mapping", "Target",
     "retarget", "rename_only", "PRESETS",
     "VISEMES", "phoneme_to_viseme",

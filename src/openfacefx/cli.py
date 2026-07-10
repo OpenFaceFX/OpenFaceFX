@@ -19,6 +19,10 @@ from .alignment import load_mfa_textgrid
 from .pipeline import generate_naive, generate_from_alignment, wav_duration
 from .io_export import write_json, write_csv
 from .export_unity import write_unity_anim
+from .export_cues import (
+    write_rhubarb_tsv, write_rhubarb_xml, write_rhubarb_json,
+    write_moho_dat, write_pgo, _RHUBARB_SHAPES,
+)
 from .mapping import Mapping
 from .retarget import retarget, PRESETS
 from .timing import (
@@ -57,7 +61,56 @@ _TIMING_PARSERS = {
 _VISEME_TABLES = {"azure": AZURE_VISEME_TO_TARGET, "polly": POLLY_VISEME_TO_TARGET}
 
 
+# Cue-list formats reachable by output extension. `.json` is deliberately
+# absent: it stays the native track format, so the Rhubarb JSON cue list is
+# reached only via --cue-format json-cues.
+_CUE_EXT = {".tsv": "tsv", ".xml": "xml", ".dat": "dat", ".pgo": "pgo"}
+
+
+def _cue_format(out: str, explicit):
+    """Cue format for this output, from --cue-format or the file extension."""
+    if explicit:
+        return explicit
+    for ext, fmt in _CUE_EXT.items():
+        if out.endswith(ext):
+            return fmt
+    return None
+
+
+def _write_cue(track, out: str, fmt: str, args) -> None:
+    sound = getattr(args, "cue_sound", None) or "openfacefx"
+    fps = getattr(args, "cue_fps", 24)
+    shapes = getattr(args, "rhubarb_shapes", None)
+    if shapes:
+        shapes = set(shapes.upper())
+        if not shapes <= _RHUBARB_SHAPES:
+            raise SystemExit(f"--rhubarb-shapes must be Rhubarb letters "
+                             f"({''.join(sorted(_RHUBARB_SHAPES))}), got {args.rhubarb_shapes!r}")
+    if fmt == "tsv":
+        write_rhubarb_tsv(track, out, available_shapes=shapes)
+    elif fmt == "xml":
+        write_rhubarb_xml(track, out, sound_file=sound, available_shapes=shapes)
+    elif fmt == "json-cues":
+        write_rhubarb_json(track, out, sound_file=sound, available_shapes=shapes)
+    elif fmt == "dat":
+        write_moho_dat(track, out, fps=fps,
+                       preston_blair=getattr(args, "dat_preston_blair", True))
+    elif fmt == "pgo":
+        write_pgo(track, out, fps=fps, sound_path=sound)
+    else:
+        raise SystemExit(f"unknown cue format {fmt!r}")
+    print(f"wrote {out}: {fmt} cue list, {track.duration:.2f}s")
+
+
 def _write(track, out: str, args=None) -> None:
+    cue_fmt = _cue_format(out, getattr(args, "cue_format", None))
+    if cue_fmt:
+        if getattr(args, "retarget", None):
+            raise SystemExit(
+                "--retarget does not apply to cue formats (tsv/xml/json-cues/"
+                "dat/pgo); they map to Rhubarb/Preston-Blair shapes automatically")
+        _write_cue(track, out, cue_fmt, args)
+        return
     if args is not None and args.retarget:
         if out.endswith(".anim"):
             raise SystemExit("--retarget applies to JSON/CSV output; "
@@ -89,6 +142,27 @@ def _add_output_options(p) -> None:
     p.add_argument("--anim-path", default="Body",
                    help="Animator-to-SkinnedMeshRenderer transform path for "
                         ".anim output (default: Body)")
+    p.add_argument("--cue-format",
+                   choices=["tsv", "xml", "json-cues", "dat", "pgo"],
+                   help="write a stepped cue list instead of curves: Rhubarb "
+                        "TSV/XML/JSON, Moho/OpenToonz .dat, Papagayo .pgo. "
+                        "Inferred from a .tsv/.xml/.dat/.pgo extension; use "
+                        "json-cues explicitly since .json stays the native track")
+    p.add_argument("--cue-sound", default="openfacefx",
+                   help="soundFile/sound-path string embedded in xml/json/pgo "
+                        "cue output (default: 'openfacefx' — not your local path)")
+    p.add_argument("--cue-fps", type=int, default=24,
+                   help="frame rate for .dat/.pgo cue quantization "
+                        "(default: 24; .dat requires 24..100)")
+    p.add_argument("--dat-preston-blair", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="use Preston-Blair drawing names in .dat (default; "
+                        "required by OpenToonz/Moho). --no-dat-preston-blair "
+                        "emits Rhubarb's raw A-H/X letters instead")
+    p.add_argument("--rhubarb-shapes",
+                   help="restrict Rhubarb tsv/xml/json to these shape letters "
+                        "(e.g. ABCDEF); missing extended shapes G/H/X fall back "
+                        "to a basic shape per the documented table")
 
 
 def _anchored_track(args, dur, g2p, mapping):

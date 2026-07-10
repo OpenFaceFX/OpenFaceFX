@@ -9,6 +9,27 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Rhubarb-dialect cue exporters** (#16): flatten a track into a stepped cue
+  list (dominant viseme per interval) and serialise the formats the indie 2D
+  ecosystem reads, making OpenFaceFX a drop-in Rhubarb replacement for those
+  hosts (`export_cues.py`, pure stdlib, LF endings). Writers: Rhubarb `-f tsv`
+  (`start<TAB>shape` lines + a terminal `X` row bounding the last cue), `-f xml`
+  (`rhubarbResult` tree, soundFile/duration metadata, `mouthCue` start/end
+  elements) and `-f json` (hand-formatted `metadata` + `mouthCues` array);
+  Moho/OpenToonz `.dat` (`MohoSwitch1`, 1-based truncated frames with same-frame
+  dedup and a terminal rest row, `--cue-fps` 24..100, Preston-Blair drawing
+  names by default — required by OpenToonz's "Apply Lip Sync Data" — or Rhubarb
+  A–H/X letters via `--no-dat-preston-blair`); and Papagayo-NG `.pgo` (single
+  voice/phrase/word phoneme tree, TAB-indented). Shape vocabulary is handled
+  automatically: an Oculus-15 track is retargeted through the built-in
+  `rhubarb`/`preston_blair` presets, a track already in the target shapes passes
+  through, anything else errors clearly. Extended shapes the art lacks collapse
+  to a basic shape via Rhubarb's documented fallback (`--rhubarb-shapes ABCDEF`;
+  G→A, H→C, X→A). CLI: `-o` dispatches on the `.tsv`/`.xml`/`.dat`/`.pgo`
+  extension, or `--cue-format tsv|xml|json-cues|dat|pgo` selects explicitly
+  (`json-cues` is needed because `.json` stays the native track format); every
+  format is reachable from `naive`, `mfa` and `from-timing`. `soundFile`/sound
+  path default to the literal `"openfacefx"`, never your local absolute path.
 - **Word/segment-anchored alignment** (#15): the naive aligner now accepts
   anchors — `Anchor(text, start, end=None)` spans — and distributes each word's
   phonemes *within* its anchored span instead of across the whole utterance,

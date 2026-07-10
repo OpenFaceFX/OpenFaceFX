@@ -88,6 +88,17 @@ python -m openfacefx naive --text "..." --wav voice.wav -o clip.anim --anim-nami
 python -m openfacefx mfa --textgrid voice.TextGrid -o track.json --retarget arkit
 ```
 
+Or a stepped cue list for the indie 2D ecosystem — Rhubarb TSV/XML/JSON,
+Moho/OpenToonz `.dat` (Preston-Blair drawing names), Papagayo `.pgo` — flattened
+to the dominant mouth shape per interval (extension picks the format; `.json`
+stays the native track, so ask for the Rhubarb JSON explicitly):
+
+```bash
+python -m openfacefx naive --text "..." --wav voice.wav -o cues.tsv          # Rhubarb TSV
+python -m openfacefx mfa --textgrid voice.TextGrid -o mouth.dat              # Moho/OpenToonz
+python -m openfacefx mfa --textgrid voice.TextGrid -o cues.json --cue-format json-cues
+```
+
 Whole dialogue trees at once, with an OOV/confidence QA report and
 incremental re-runs:
 
@@ -221,6 +232,7 @@ src/openfacefx/
   curves.py         keyframe reduction, FaceTrack
   io_export.py      JSON / CSV writers
   export_unity.py   Unity .anim AnimationClip writer
+  export_cues.py    Rhubarb TSV/XML/JSON, Moho/OpenToonz .dat, Papagayo .pgo cues
   retarget.py       viseme→rig remapping + presets          ← retarget rigs here
   bethesda.py       .fuz container / .lip header tools
   batch.py          directory batch runner + QA summary
