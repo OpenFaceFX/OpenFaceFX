@@ -1,4 +1,5 @@
-"""Retarget: preset integrity, optional-shape fallbacks, rename mapping (#9, #22).
+"""Retarget: preset integrity, optional-shape fallbacks, rename mapping,
+per-target gain/offset trim and the CLI --adjust/--retarget-shapes flags (#9, #22).
 
 Run with:  python -m pytest  (or)  python tests/test_retarget.py
 """
@@ -136,6 +137,195 @@ def test_retarget_rename_only():
     dst = {c.name: [(k.time, k.value) for k in c.keys] for c in out.channels}
     for name, keys in src.items():
         assert dst["viseme_" + name] == keys
+
+
+# ---------------------------------------------------------------------------
+# Per-target gain/offset (#22): retarget(adjust=) and the apply_adjust helper.
+# ---------------------------------------------------------------------------
+
+def test_adjust_gain_offset_and_clamp():
+    # gain multiplies, offset adds, result clamps to [0, 1] per target; a target
+    # with no adjust entry is passed through untouched.
+    from openfacefx.curves import Channel, FaceTrack, Keyframe
+    from openfacefx.retarget import apply_adjust
+    tk = FaceTrack(fps=60, channels=[
+        Channel("jawOpen", [Keyframe(0.0, 0.5), Keyframe(1.0, 1.0)]),
+        Channel("mouthPucker", [Keyframe(0.0, 0.4)]),
+    ])
+    gain = apply_adjust(tk, {"jawOpen": (0.8, 0.0)})
+    assert [(k.time, k.value) for k in gain.channels[0].keys] == [(0.0, 0.4), (1.0, 0.8)]
+    off = apply_adjust(tk, {"jawOpen": (1.0, 0.1)})
+    assert [k.value for k in off.channels[0].keys] == [0.6, 1.0]       # 1.1 -> clamp 1
+    clamp = apply_adjust(tk, {"jawOpen": (3.0, -0.2)})
+    assert [k.value for k in clamp.channels[0].keys] == [1.0, 1.0]     # 1.3/2.8 -> 1
+    assert [(k.time, k.value) for k in gain.channels[1].keys] == [(0.0, 0.4)]  # untouched
+
+
+def test_adjust_noop_and_retarget_equivalence():
+    # None/empty adjust is a byte-identical no-op, and retarget(adjust=A) equals
+    # apply_adjust(retarget(), A) exactly -- adjust never perturbs the preset table.
+    from openfacefx.retarget import retarget, apply_adjust, PRESETS
+    track = generate_naive("hello world", duration=1.3)
+    base = retarget(track, PRESETS["arkit"])
+    assert to_dict(retarget(track, PRESETS["arkit"], adjust=None)) == to_dict(base)
+    assert to_dict(retarget(track, PRESETS["arkit"], adjust={})) == to_dict(base)
+    assert apply_adjust(base, {}) is base                 # no-op returns the same object
+    A = {"jawOpen": (0.7, 0.05), "mouthPucker": (1.1, 0.0), "mouthFunnel": (0.5, 0.1)}
+    assert (to_dict(retarget(track, PRESETS["arkit"], adjust=A))
+            == to_dict(apply_adjust(base, A)))
+
+
+def test_adjust_creates_always_on_shape():
+    # A positive-offset target with no curve yet becomes a constant channel over
+    # the clip and joins target_set ("mouthSmile always slightly on"), without
+    # editing the mapping; a declared-but-unfired target is not duplicated in
+    # target_set; zero/negative/gain-only absent targets create nothing.
+    from openfacefx.curves import Channel, FaceTrack, Keyframe
+    from openfacefx.retarget import apply_adjust
+    tk = FaceTrack(fps=60,
+                   channels=[Channel("jawOpen", [Keyframe(0.0, 0.5), Keyframe(2.0, 0.2)])],
+                   target_set=["jawOpen", "mouthFunnel"])   # mouthFunnel declared, unfired
+    out = apply_adjust(tk, {"mouthSmileLeft": (1.0, 0.2),    # absent -> create constant
+                            "mouthFunnel": (1.0, 0.3),        # declared, unfired -> create
+                            "jawOpen": (0.5, 0.0)})           # existing -> scale
+    chans = {c.name: [(k.time, k.value) for k in c.keys] for c in out.channels}
+    assert chans["jawOpen"] == [(0.0, 0.25), (2.0, 0.1)]
+    assert chans["mouthSmileLeft"] == [(0.0, 0.2), (2.0, 0.2)]   # constant over clip span
+    assert chans["mouthFunnel"] == [(0.0, 0.3), (2.0, 0.3)]
+    assert out.target_set == ["jawOpen", "mouthFunnel", "mouthSmileLeft"]  # deduped
+    none_made = apply_adjust(tk, {"a": (1.0, 0.0), "b": (1.0, -0.3), "c": (5.0, 0.0)})
+    assert {c.name for c in none_made.channels} == {"jawOpen"}
+
+
+def test_adjust_preserves_events_and_is_deterministic():
+    from openfacefx.curves import Channel, FaceTrack, Keyframe
+    from openfacefx.retarget import retarget, apply_adjust, PRESETS
+    from openfacefx.events import Event
+    tk = FaceTrack(fps=60, channels=[Channel("jawOpen", [Keyframe(0.0, 0.5)])])
+    tk.events = [Event(0.2, "emphasis", "beat")]
+    out = apply_adjust(tk, {"jawOpen": (0.5, 0.0)})
+    assert out.events == tk.events and out.variants is tk.variants
+    track = generate_naive("determinism check please", duration=1.1)
+    A = {"jawOpen": (0.83, 0.017), "mouthFunnel": (1.0, 0.2)}
+    assert (to_dict(retarget(track, PRESETS["arkit"], adjust=A))
+            == to_dict(retarget(track, PRESETS["arkit"], adjust=A)))
+
+
+# --- CLI: --adjust and --retarget-shapes end-to-end -----------------------
+
+def _cli_naive(tmp, out_name, *extra):
+    from openfacefx.cli import main as cli_main
+    out = os.path.join(tmp, out_name)
+    rc = cli_main(["naive", "--text", "thin south path is here", "--duration",
+                   "1.4", "-o", out, *extra])
+    return rc, out
+
+
+def test_cli_retarget_adjust_end_to_end():
+    import json, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        adj = os.path.join(tmp, "adjust.json")
+        with open(adj, "w") as fh:
+            json.dump({"jawOpen": {"gain": 0.5},
+                       "mouthSmileLeft": {"offset": 0.2}}, fh)
+        rc, out = _cli_naive(tmp, "r.json", "--retarget", "arkit", "--adjust", adj)
+        assert rc == 0
+        with open(out) as fh:
+            d = json.load(fh)
+        chans = {c["name"]: c["keys"] for c in d["channels"]}
+        # mouthSmileLeft is not in the arkit table; the offset lifts it "always on"
+        assert "mouthSmileLeft" in chans and "mouthSmileLeft" in d["viseme_set"]
+        assert all(v == 0.2 for _, v in chans["mouthSmileLeft"])
+        assert all(0.0 <= v <= 1.0 for c in d["channels"] for _, v in c["keys"])
+
+
+def test_cli_adjust_empty_is_byte_identical():
+    import json, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        empty = os.path.join(tmp, "e.json")
+        with open(empty, "w") as fh:
+            fh.write("{}")
+        rc1, out1 = _cli_naive(tmp, "a.json", "--retarget", "arkit")
+        rc2, out2 = _cli_naive(tmp, "b.json", "--retarget", "arkit", "--adjust", empty)
+        assert rc1 == 0 and rc2 == 0
+        with open(out1, "rb") as f1, open(out2, "rb") as f2:
+            assert f1.read() == f2.read()
+
+
+def test_cli_adjust_schema_errors():
+    import tempfile
+    import pytest
+    from openfacefx.cli import main as cli_main
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "x.json")
+
+        def argv(doc):
+            p = os.path.join(tmp, "adj.json")
+            with open(p, "w") as fh:
+                fh.write(doc)
+            return ["naive", "--text", "hi", "--duration", "1", "--retarget",
+                    "arkit", "--adjust", p, "-o", out]
+
+        with pytest.raises(SystemExit, match="finite number"):
+            cli_main(argv('{"jawOpen": {"gain": "x"}}'))
+        with pytest.raises(SystemExit, match="unknown key"):
+            cli_main(argv('{"jawOpen": {"scale": 0.5}}'))
+        with pytest.raises(SystemExit, match="finite number"):     # JSON bool != number
+            cli_main(argv('{"jawOpen": {"gain": true}}'))
+        with pytest.raises(SystemExit, match="must be an object"):
+            cli_main(argv('{"jawOpen": 0.5}'))
+        with pytest.raises(SystemExit, match="JSON object"):
+            cli_main(argv('["jawOpen"]'))
+        with pytest.raises(SystemExit, match="cannot read"):
+            cli_main(["naive", "--text", "hi", "--duration", "1", "--retarget",
+                      "arkit", "--adjust", os.path.join(tmp, "nope.json"), "-o", out])
+
+
+def test_cli_retarget_shapes_filters_and_requires_retarget():
+    import json, tempfile
+    import pytest
+    from openfacefx.cli import main as cli_main
+    with tempfile.TemporaryDirectory() as tmp:
+        shapes = os.path.join(tmp, "shapes.json")
+        with open(shapes, "w") as fh:                    # tongue-less ARKit rig
+            json.dump(["jawOpen", "jawForward", "mouthPucker", "mouthFunnel",
+                       "mouthRollUpper", "mouthRollLower", "mouthPressLeft",
+                       "mouthPressRight", "mouthDimpleLeft", "mouthDimpleRight",
+                       "mouthLowerDownLeft", "mouthLowerDownRight",
+                       "mouthUpperUpLeft", "mouthUpperUpRight", "mouthShrugUpper"], fh)
+        rc, out = _cli_naive(tmp, "s.json", "--retarget", "arkit",
+                             "--retarget-shapes", shapes)
+        assert rc == 0
+        with open(out) as fh:
+            d = json.load(fh)
+        names = {c["name"] for c in d["channels"]}
+        assert "tongueOut" not in names and "tongueOut" not in d["viseme_set"]
+        assert "jawOpen" in names                        # TH/nn tongue weight rerouted here
+        with pytest.raises(SystemExit, match="needs --retarget"):
+            cli_main(["naive", "--text", "hi", "--duration", "1",
+                      "--retarget-shapes", shapes, "-o", os.path.join(tmp, "y.json")])
+        empty = os.path.join(tmp, "empty.json")
+        with open(empty, "w") as fh:
+            fh.write("[]")
+        with pytest.raises(SystemExit, match="empty"):
+            cli_main(["naive", "--text", "hi", "--duration", "1", "--retarget",
+                      "arkit", "--retarget-shapes", empty, "-o", os.path.join(tmp, "z.json")])
+
+
+def test_cli_adjust_rejected_on_noncurve_formats():
+    import json, tempfile
+    import pytest
+    from openfacefx.cli import main as cli_main
+    with tempfile.TemporaryDirectory() as tmp:
+        adj = os.path.join(tmp, "a.json")
+        with open(adj, "w") as fh:
+            json.dump({"jawOpen": {"gain": 0.5}}, fh)
+        for out_name, pat in (("c.tsv", "cue formats"),
+                              ("m.motion3.json", "Live2D"),
+                              ("g.tres", "Godot")):
+            with pytest.raises(SystemExit, match=pat):
+                cli_main(["naive", "--text", "hi", "--duration", "1",
+                          "--adjust", adj, "-o", os.path.join(tmp, out_name)])
 
 
 if __name__ == "__main__":

@@ -217,6 +217,14 @@ closures are re-sealed *after* the filter, so `/p/ /b/ /m/ /f/ /v/` stay sharp
 audio, clamped into the clip. Both default off (byte-identical) and apply to
 `naive`/`mfa`/`from-timing`/`energy`.
 
+When retargeting, trim individual rig shapes without forking a preset table:
+`--adjust adjust.json` applies a per-target `clamp(gain*v + offset, 0, 1)` (JSON
+`{"jawOpen": {"gain": 0.8}, "mouthSmileLeft": {"offset": 0.15}}` — soften the
+jaw, hold a smile slightly on), and `--retarget-shapes shapes.json` restricts a
+preset to a rig's real shapes (a JSON array), rerouting any it lacks through the
+preset's fallback table (e.g. a tongue-less ARKit rig). Both leave the weighted
+tables untouched; details in [docs/retargeting.md](docs/retargeting.md).
+
 Library use:
 
 ```python

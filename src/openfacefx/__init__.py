@@ -34,7 +34,8 @@ from .export_cues import (
 )
 from .mapping import Mapping, Target
 from .ipa import IPA_MAPPING, is_ipa_vowel, ipa_unknown_symbols
-from .retarget import retarget, rename_only, PRESETS, PRESET_FALLBACKS
+from .retarget import (retarget, apply_adjust, rename_only, PRESETS,
+                       PRESET_FALLBACKS)
 from .visemes import VISEMES, phoneme_to_viseme
 from .timing import (
     TimingEvent, resolve_ends, to_segments, parse_pho, parse_piper_alignments,
@@ -74,7 +75,7 @@ __all__ = [
     "write_rhubarb_json", "write_moho_dat", "write_pgo",
     "Mapping", "Target",
     "IPA_MAPPING", "is_ipa_vowel", "ipa_unknown_symbols",
-    "retarget", "rename_only", "PRESETS", "PRESET_FALLBACKS",
+    "retarget", "apply_adjust", "rename_only", "PRESETS", "PRESET_FALLBACKS",
     "VISEMES", "phoneme_to_viseme",
     "TimingEvent", "resolve_ends", "to_segments", "parse_pho",
     "parse_piper_alignments", "parse_cartesia", "parse_azure_visemes",

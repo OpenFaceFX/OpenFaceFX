@@ -9,6 +9,27 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Per-target gain/offset trim and CLI shape filtering when retargeting**
+  ([#22](https://github.com/OpenFaceFX/OpenFaceFX/issues/22)): retargeting onto a
+  rig can now trim individual shapes without forking a weighted preset table.
+  `retarget(track, mapping, adjust={target: (gain, offset)})` — and the standalone
+  `apply_adjust(track, adjust)` — remap each named target to `clamp(gain*value +
+  offset, 0, 1)` **after** the weighted sum, leaving the preset **byte-identical**,
+  so an integrator can soften `jawOpen` or hold `mouthSmile` slightly on with a
+  data argument rather than a table edit. `retarget(..., adjust=A)` is exactly
+  `apply_adjust(retarget(...), A)`; a target the rig never receives but given a
+  positive `offset` is materialised as a constant channel over the clip (and added
+  to `target_set`) — the way "always slightly on" lifts a shape the mapping never
+  drives, `gain` being moot there (the absent base is 0). On the CLI, `--adjust
+  adjust.json` (a JSON `{target: {"gain": G, "offset": O}}` object — an ARKit rig's
+  ~52 shapes overflow the flag line) applies the trim to the curve outputs
+  (`json`/`csv`/`anim`), and `--retarget-shapes shapes.json` (a JSON array of the
+  rig's real shapes) exposes the existing `available=`/`fallbacks=` reroute path —
+  e.g. a tongue-less Audio2Face rig sends `tongueOut` to a small `jawOpen`. Both
+  compose (shapes filtered, then trimmed) and are validated at the CLI boundary.
+  Default/empty ⇒ **byte-identical** output; deterministic across Python 3.9–3.13.
+  Closes #22 (the `vrm0`/`readyplayerme` presets and the optional-shape fallback
+  mechanism shipped earlier).
 - **Curve smoothing and lag/lead post-processing**
   ([#10](https://github.com/OpenFaceFX/OpenFaceFX/issues/10)): a new
   `openfacefx.postprocess` module (numpy + stdlib only) adds FaceFX-style
@@ -30,7 +51,7 @@ its `version` field.
   **byte-identical** output; deterministic across Python 3.9–3.13.
 
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — the
-remaining P2/P3 features are unspecced (#8 i18n, #18/#19/#22/#23) or distribution
+remaining P2/P3 features are unspecced (#8 i18n, #18/#19/#23) or distribution
 (#28–#31); adoption needs the one manual PyPI publisher step (#24); and the
 `.lip` writer + FaceFXWrapper shim await in-game confirmation (#12, #33).
 

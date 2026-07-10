@@ -30,7 +30,7 @@ from .export_cues import (
 )
 from .mapping import Mapping, ARTICULATOR_CLASSES
 from .coarticulation import CoartParams
-from .retarget import retarget, PRESETS
+from .retarget import retarget, apply_adjust, PRESETS, PRESET_FALLBACKS
 from .timing import (
     parse_pho, parse_piper_alignments, parse_cartesia, parse_azure_visemes,
     parse_polly_marks, resolve_ends, to_segments, viseme_events_to_segments,
@@ -121,11 +121,76 @@ def _load_str_map(path: str, flag: str) -> dict:
     return data
 
 
+def _load_adjust(path: str) -> dict:
+    """Load a ``--adjust`` file into a validated ``{target: (gain, offset)}``.
+
+    Schema: a JSON object mapping each rig target name to an object with optional
+    numeric ``gain`` (default 1.0) and ``offset`` (default 0.0), e.g.
+    ``{"jawOpen": {"gain": 0.8}, "mouthSmileLeft": {"offset": 0.1}}``. Validated
+    at this CLI boundary so a malformed file is a clear SystemExit, not a stray
+    KeyError/TypeError deeper in ``apply_adjust``."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"--adjust: cannot read {path!r}: {e}")
+    if not isinstance(data, dict):
+        raise SystemExit('--adjust must be a JSON object mapping target names to '
+                         '{"gain":G,"offset":O} objects')
+    adjust = {}
+    for target, spec in data.items():
+        if not isinstance(spec, dict):
+            raise SystemExit(f"--adjust[{target!r}] must be an object with "
+                             f"gain/offset, got {spec!r}")
+        extra = set(spec) - {"gain", "offset"}
+        if extra:
+            raise SystemExit(f"--adjust[{target!r}] has unknown key(s) "
+                             f"{sorted(extra)}; only 'gain' and 'offset' allowed")
+        pair = []
+        for key, default in (("gain", 1.0), ("offset", 0.0)):
+            val = spec.get(key, default)
+            # JSON booleans are ints in Python; reject them explicitly.
+            if isinstance(val, bool) or not isinstance(val, (int, float)) \
+                    or not math.isfinite(val):
+                raise SystemExit(f"--adjust[{target!r}].{key} must be a finite "
+                                 f"number, got {val!r}")
+            pair.append(float(val))
+        adjust[target] = (pair[0], pair[1])
+    return adjust
+
+
+def _load_shapes(path: str) -> set:
+    """Load a ``--retarget-shapes`` file: a JSON array of the rig's real shape
+    names, validated at this CLI boundary."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"--retarget-shapes: cannot read {path!r}: {e}")
+    if not isinstance(data, list) or not all(isinstance(s, str) for s in data):
+        raise SystemExit("--retarget-shapes must be a JSON array of shape-name "
+                         "strings the rig actually has")
+    if not data:
+        raise SystemExit("--retarget-shapes is empty: list at least one shape the "
+                         "rig has (an empty set would drop every channel)")
+    return set(data)
+
+
+def _reject_trim_flags(args, what: str) -> None:
+    """--adjust/--retarget-shapes only condition the retargeted curve outputs
+    (json/csv/anim); reject them on ``what`` rather than silently dropping them."""
+    for flag, dash in (("adjust", "--adjust"),
+                       ("retarget_shapes", "--retarget-shapes")):
+        if getattr(args, flag, None):
+            raise SystemExit(f"{dash} does not apply to {what}")
+
+
 def _write_live2d(track, out: str, args) -> None:
     if getattr(args, "retarget", None):
         raise SystemExit(
             "--retarget does not apply to Live2D .motion3.json; use "
             "--live2d-params to map visemes onto parameter Ids")
+    _reject_trim_flags(args, "Live2D .motion3.json")
     params_file = getattr(args, "live2d_params", None)
     model3 = getattr(args, "live2d_model3", None)
     if params_file and model3:
@@ -152,6 +217,7 @@ def _write_godot(track, out: str, args) -> None:
         raise SystemExit(
             "--retarget does not apply to Godot .tres; it has its own "
             "--godot-naming presets (or pass --godot-names)")
+    _reject_trim_flags(args, "Godot .tres")
     names_file = getattr(args, "godot_names", None)
     names = _load_str_map(names_file, "--godot-names") if names_file else None
     write_godot_anim(track, out,
@@ -178,13 +244,23 @@ def _write(track, out: str, args=None) -> None:
             raise SystemExit(
                 "--retarget does not apply to cue formats (tsv/xml/json-cues/"
                 "dat/pgo); they map to Rhubarb/Preston-Blair shapes automatically")
+        _reject_trim_flags(args, "cue formats (tsv/xml/json-cues/dat/pgo)")
         _write_cue(track, out, cue_fmt, args)
         return
     if args is not None and args.retarget:
         if out.endswith(".anim"):
             raise SystemExit("--retarget applies to JSON/CSV output; "
                              ".anim output has its own --anim-naming presets")
-        track = _apply_retarget(track, PRESETS[args.retarget])
+        available, fallbacks = None, None
+        if getattr(args, "retarget_shapes", None):
+            available = _load_shapes(args.retarget_shapes)
+            fallbacks = PRESET_FALLBACKS.get(args.retarget)
+        track = _apply_retarget(track, PRESETS[args.retarget], available, fallbacks)
+    elif args is not None and getattr(args, "retarget_shapes", None):
+        raise SystemExit("--retarget-shapes needs --retarget (it filters the "
+                         "chosen rig preset's shapes); pass --retarget too")
+    if args is not None and getattr(args, "adjust", None):
+        track = apply_adjust(track, _load_adjust(args.adjust))
     if out.endswith(".csv"):
         write_csv(track, out)
     elif out.endswith(".anim"):
@@ -205,6 +281,19 @@ def _add_output_options(p) -> None:
     p.add_argument("--retarget", choices=sorted(PRESETS),
                    help="remap viseme channels onto another rig's shapes "
                         "(JSON/CSV output; see docs/retargeting.md)")
+    p.add_argument("--retarget-shapes", metavar="JSON",
+                   help="restrict --retarget to the rig's real shapes: a JSON "
+                        "array of shape names the rig has. A mapped target it "
+                        "lacks reroutes through the preset's fallback table "
+                        "(e.g. a tongue-less ARKit rig sends tongueOut to a "
+                        "small jawOpen) — the library available=/fallbacks= path")
+    p.add_argument("--adjust", metavar="JSON",
+                   help="per-target gain/offset trim applied after --retarget "
+                        "(curve output: json/csv/anim): a JSON object "
+                        '{"target":{"gain":G,"offset":O}} remapping each shape as '
+                        "clamp(gain*v+offset,0,1). Leaves the preset weight tables "
+                        "untouched — e.g. soften jawOpen, hold mouthSmile slightly "
+                        "on. See docs/retargeting.md")
     p.add_argument("--anim-naming", choices=["oculus", "vrchat"],
                    default="oculus",
                    help="blendshape naming for .anim output (default: oculus)")
@@ -518,19 +607,22 @@ def _event_layer(track, args, segments=None, env_times=None, env=None) -> None:
         print(f"warning: {w}")
 
 
-def _apply_retarget(track, preset):
+def _apply_retarget(track, preset, available=None, fallbacks=None):
     """Retarget the viseme channels onto a rig while passing gesture/pose
     channels (issue #5) through unchanged -- ``retarget`` drops channels absent
-    from the viseme map by design, which would otherwise delete the gestures."""
+    from the viseme map by design, which would otherwise delete the gestures.
+
+    ``available``/``fallbacks`` (from --retarget-shapes) restrict the rig's real
+    shapes and reroute the rest, exactly as the library ``retarget`` args do."""
     from .gestures import GESTURE_CHANNELS
     from .curves import FaceTrack
     gest = [c for c in track.channels if c.name in GESTURE_CHANNELS]
     if not gest:
-        return retarget(track, preset)
+        return retarget(track, preset, available=available, fallbacks=fallbacks)
     mouth = FaceTrack(track.fps,
                       [c for c in track.channels if c.name not in GESTURE_CHANNELS],
                       track.target_set)
-    out = retarget(mouth, preset)
+    out = retarget(mouth, preset, available=available, fallbacks=fallbacks)
     out.channels.extend(gest)
     if out.target_set is not None:
         out.target_set = list(out.target_set) + [c.name for c in gest]

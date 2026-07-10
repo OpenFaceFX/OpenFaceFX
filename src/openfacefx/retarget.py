@@ -11,6 +11,13 @@ contributions per target, clamps to [0, 1], and returns a new ``FaceTrack``.
 Presets for common rigs live in ``PRESETS``; they are plain data — copy and
 tweak for your character.
 
+An integrator can trim individual rig shapes without editing those weighted
+tables by passing ``adjust={target: (gain, offset)}`` (or running the standalone
+``apply_adjust``): each named target's value becomes ``clamp(gain*value + offset,
+0, 1)`` after the weighted sum — e.g. a weaker ``jawOpen`` or a ``mouthSmile``
+held slightly on. ``retarget(..., adjust=A)`` is exactly
+``apply_adjust(retarget(...), A)``.
+
 A rig that lacks some of a preset's target shapes can pass ``available=`` (an
 iterable of the shapes it actually has). Any mapped target not in that set is
 rerouted through a per-preset ``PRESET_FALLBACKS`` table so its weight
@@ -27,6 +34,7 @@ from .curves import Channel, FaceTrack, Keyframe
 from .visemes import VISEMES
 
 Mapping = Dict[str, Sequence[Tuple[str, float]]]
+Adjust = Dict[str, Tuple[float, float]]     # rig target -> (gain, offset) trim
 
 
 def _sampler(channel: Channel):
@@ -77,7 +85,8 @@ def _resolve_target(target: str, scale: float, available: Optional[set],
 
 def retarget(track: FaceTrack, mapping: Mapping,
              available: Optional[Iterable[str]] = None,
-             fallbacks: Optional[Mapping] = None) -> FaceTrack:
+             fallbacks: Optional[Mapping] = None,
+             adjust: Optional[Adjust] = None) -> FaceTrack:
     """Return a new FaceTrack with channels renamed/combined per ``mapping``.
 
     Source channels absent from the mapping are dropped (deliberately: a rig
@@ -89,6 +98,11 @@ def retarget(track: FaceTrack, mapping: Mapping,
     ``PRESET_FALLBACKS[name]``) so weight redistributes rather than dropping
     silently. ``available=None`` (default) disables filtering and is identical
     to a plain rename/combine.
+
+    ``adjust`` is an optional ``{target: (gain, offset)}`` per-shape trim applied
+    to the finished channels (see ``apply_adjust``); it leaves the weighted
+    ``mapping`` untouched, so ``retarget(..., adjust=A)`` is exactly
+    ``apply_adjust(retarget(...), A)``. ``adjust=None`` (default) is a no-op.
     """
     avail = set(available) if available is not None else None
     # target name -> list of (sampler, key times, scale)
@@ -113,7 +127,70 @@ def retarget(track: FaceTrack, mapping: Mapping,
     # shapes it emits.
     all_targets = sorted({ft for targets in mapping.values() for t, _ in targets
                           for ft, _ in _resolve_target(t, 1.0, avail, fallbacks)})
-    return FaceTrack(fps=track.fps, channels=channels, target_set=all_targets)
+    ft = FaceTrack(fps=track.fps, channels=channels, target_set=all_targets)
+    return apply_adjust(ft, adjust) if adjust else ft
+
+
+def _clip_span(track: FaceTrack):
+    """(min, max) key time across every channel, or None for a keyless track."""
+    times = [k.time for c in track.channels for k in c.keys]
+    return (min(times), max(times)) if times else None
+
+
+def apply_adjust(track: FaceTrack, adjust: Adjust) -> FaceTrack:
+    """Return a new FaceTrack with a per-target ``(gain, offset)`` trim applied.
+
+    Every channel whose name has an ``adjust`` entry has each key value ``v``
+    remapped to ``clamp(gain*v + offset, 0, 1)`` (rounded like the rest of the
+    pipeline); channels without an entry pass through unchanged. This is a pure
+    post-process on already-retargeted (or native) curves, so the weighted preset
+    tables stay byte-identical — the way to trim ``jawOpen`` a touch weaker or
+    hold ``mouthSmileLeft`` slightly on without editing a mapping.
+
+    An entry whose target has *no* channel yet but a positive constant
+    (``clamp(offset, 0, 1) > 0``) is materialised as a constant channel spanning
+    the clip and added to ``target_set`` — that is how "always slightly on" lifts
+    a shape the rig would otherwise never receive. ``gain`` is irrelevant there
+    (the absent base is 0). An empty/None ``adjust`` returns ``track`` unchanged
+    (byte-identical).
+    """
+    if not adjust:
+        return track
+    present = {c.name for c in track.channels}
+    channels: List[Channel] = []
+    for c in track.channels:
+        adj = adjust.get(c.name)
+        if adj is None:
+            channels.append(c)
+            continue
+        g, o = adj
+        channels.append(Channel(c.name, [
+            Keyframe(k.time, round(min(max(g * k.value + o, 0.0), 1.0), 4))
+            for k in c.keys]))
+    # "Always slightly on": a positive-offset target with no curve yet becomes a
+    # constant channel over the clip (deterministic, appended in name order).
+    span = _clip_span(track)
+    created: List[Channel] = []
+    for name in sorted(adjust):
+        if name in present or span is None:
+            continue
+        val = round(min(max(adjust[name][1], 0.0), 1.0), 4)
+        if val <= 0.0:
+            continue
+        t0, t1 = span
+        keys = ([Keyframe(t0, val)] if t0 == t1
+                else [Keyframe(t0, val), Keyframe(t1, val)])
+        created.append(Channel(name, keys))
+    channels.extend(created)
+    target_set = track.target_set
+    if created:
+        # None == the built-in viseme vocab; make it explicit before extending.
+        target_set = list(VISEMES if target_set is None else target_set)
+        for c in created:
+            if c.name not in target_set:
+                target_set.append(c.name)
+    return FaceTrack(fps=track.fps, channels=channels, target_set=target_set,
+                     events=track.events, variants=track.variants)
 
 
 def rename_only(prefix: str = "", names: Dict[str, str] = None) -> Mapping:

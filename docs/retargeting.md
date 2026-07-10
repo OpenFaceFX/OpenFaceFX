@@ -97,3 +97,63 @@ not looped. With `available=None` (the default) nothing is filtered, so a plain
 | `rhubarb` | `G → A`, `H → C`, `X → A` | Rhubarb's own documented [basic-set collapse](https://github.com/DanielSWolf/rhubarb-lip-sync) for art with only the six basic shapes. Single source of truth: the cue exporters (`--rhubarb-shapes`) derive their collapse from this same table. |
 
 The tables are data — extend `PRESET_FALLBACKS` or pass your own `fallbacks=`.
+
+### On the CLI: `--retarget-shapes`
+
+The same restrict-and-reroute is reachable from the CLI with `--retarget-shapes`
+— a JSON **array** of the shape names the rig actually has. Missing targets
+reroute through the preset's `PRESET_FALLBACKS` table, exactly like the library
+`available=`/`fallbacks=` path:
+
+```bash
+# shapes.json: ["jawOpen", "jawForward", "mouthFunnel", "mouthPucker", ...]  (no tongueOut)
+python -m openfacefx mfa --textgrid voice.TextGrid -o a2f.json \
+    --retarget arkit --retarget-shapes shapes.json          # tongueOut -> jawOpen
+```
+
+`--retarget-shapes` needs `--retarget` (it filters that preset's shapes), and an
+empty array is rejected — an empty rig would drop every channel.
+
+## Per-target gain and offset (`adjust`)
+
+Presets are averages; a specific mesh often wants one shape a touch weaker, or
+another held slightly open, without forking a weight table. Pass
+`adjust={target: (gain, offset)}` and each named target's value becomes
+`clamp(gain*value + offset, 0, 1)` **after** the weighted sum — the preset stays
+byte-identical:
+
+```python
+from openfacefx import retarget, apply_adjust, PRESETS
+
+track = retarget(track, PRESETS["arkit"], adjust={
+    "jawOpen": (0.8, 0.0),           # 20% weaker jaw
+    "mouthSmileLeft":  (1.0, 0.15),  # always slightly smiling ...
+    "mouthSmileRight": (1.0, 0.15),  # ... even though arkit never drives smile
+})
+```
+
+`gain` scales, `offset` shifts, the result clamps to `[0, 1]`. A target the rig
+never receives but given a **positive offset** is materialised as a constant
+channel over the clip (and added to the declared `target_set`) — that is how the
+`mouthSmile*` above turn on with no mapping edit; `gain` is irrelevant there (the
+absent base is 0). `apply_adjust(track, adjust)` is the same transform as a
+standalone post-process on any `FaceTrack`, so `retarget(track, m, adjust=A)` is
+exactly `apply_adjust(retarget(track, m), A)`. An empty/omitted `adjust` is a
+byte-identical no-op.
+
+On the CLI, per-target trims come from a JSON **object** via `--adjust` (an ARKit
+rig's ~52 shapes are too many for flags), on the curve outputs (`json`/`csv`/
+`anim`); each shape's object takes an optional `gain` (default 1.0) and `offset`
+(default 0.0):
+
+```bash
+# adjust.json: {"jawOpen": {"gain": 0.8}, "mouthSmileLeft": {"offset": 0.15}}
+python -m openfacefx mfa --textgrid voice.TextGrid -o rig.json \
+    --retarget arkit --adjust adjust.json
+```
+
+It composes with `--retarget-shapes` (shapes are filtered first, then trimmed)
+and is validated at the CLI boundary — an unknown key or a non-numeric
+gain/offset is a clear error, not a stray failure deeper in. `--adjust` is a
+trim on retargeted curves, so it is rejected on the pose-based cue/Live2D/Godot
+formats.
