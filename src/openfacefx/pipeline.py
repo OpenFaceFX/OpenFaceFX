@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import wave
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from .g2p import G2P
 from .alignment import NaiveAligner, PhonemeSegment
@@ -145,7 +145,37 @@ def generate_naive(
     params=None,
     gestures=None,
     wav: Optional[str] = None,
+    preprocess: Optional[Callable[[str], str]] = None,
+    parse_tags: bool = False,
 ) -> FaceTrack:
+    """``preprocess`` (issue #7) is an optional ``callable(text) -> text`` run on
+    the transcript before anything else, so a registered auto-tagger can insert
+    tags programmatically; injecting a tag this way is identical to hand-writing
+    it. ``parse_tags`` enables the transcript text-tag stage (see
+    :mod:`openfacefx.texttags`): curve tags become extra channels, event tags the
+    event layer, ``[emphasis]`` a local articulation boost and ``<T>``/``[pause]``
+    chunk/silence the timeline. Both default off, so the plain naive path is
+    byte-identical; a ``parse_tags`` run on a transcript that carries no tags is
+    byte-identical too."""
+    if preprocess is not None:
+        text = preprocess(text)
+    if parse_tags:
+        from .texttags import (parse_tagged_transcript, resolve_tagged_segments,
+                               curve_channels, tag_events, emphasis_params)
+        clean, tags = parse_tagged_transcript(text)
+        if not tags:
+            segs = naive_segments(clean, duration, g2p=g2p)
+            return generate_from_alignment(segs, fps=fps, epsilon=epsilon,
+                                           mapping=mapping, params=params,
+                                           gestures=gestures, wav=wav)
+        segs, spans, windows = resolve_tagged_segments(clean, duration, tags,
+                                                       g2p or G2P())
+        track = generate_from_alignment(
+            segs, fps=fps, epsilon=epsilon, mapping=mapping,
+            params=emphasis_params(params, windows), gestures=gestures, wav=wav)
+        track.channels.extend(curve_channels(tags, spans, duration))
+        track.events.extend(tag_events(tags, spans, duration))
+        return track
     segs = naive_segments(text, duration, g2p=g2p)
     return generate_from_alignment(segs, fps=fps, epsilon=epsilon,
                                    mapping=mapping, params=params,

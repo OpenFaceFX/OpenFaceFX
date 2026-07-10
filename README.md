@@ -341,6 +341,45 @@ emits an `AnimNotify` sidecar JSON that a short editor-Python snippet stamps ont
 snippet ships in that module's docstring. The mouth-only cue/`.lip` exporters
 ignore events.
 
+## Text tags: directing animation from the script
+
+Steer the generated animation with inline tags in the transcript — expression
+curves, event notifies, local emphasis and audio chunking — the way FaceFX's
+[text-tagging](https://facefx.github.io/documentation/doc/text-tagging) stage
+does. Tags are stripped **before** grapheme-to-phoneme conversion, the clean
+words are lip-synced as usual, and each tag is mapped onto the timeline the
+aligner produced. Turn it on with `--tags` (or just include a tag — clear tags
+auto-enable it):
+
+```bash
+python -m openfacefx naive --tags --duration 3 -o out.track.json \
+  --text 'I said [brow_raise type=ct v1=1]really[/brow_raise] loud [event:sound payload="clap"] now.'
+```
+
+The syntax is modelled on the FaceFX text-tag docs (and, for `[emphasis]` /
+`[pause]`, on SSML `<emphasis>` / `<break>`):
+
+| Family | Syntax | Effect |
+|---|---|---|
+| **Curve** | `[Name type=quad\|lt\|ct\|tt v1=.. v2=.. v3=.. v4=.. easein=.. easeout=.. timeshift=.. duration=..]word(s)[/Name]` | adds an animation channel `Name` keyframed over the tagged word span (leading/centered/trailing triplet or quadruplet, 0.2 s ease default) |
+| **Event** | `[event:NAME k=v ...]`, `[gesture:NAME ...]`, or FaceFX `{"group\|anim" start=.. payload=".." ...}` | injects an [event](#events--takes-game-engine-notifies) at the **start of the following word** (end of the last word if trailing); `start`/`duration`/`blendin`/`blendout` map to event fields, everything else is kept in the payload |
+| **Emphasis** | `[emphasis]word[/emphasis]` (optional `strength=`) | raises the local vowel peak over the span (reuses the `--stress-emphasis` dominance pass from #18) |
+| **Chunk** | `<T>` angle-bracket marker(s), e.g. `<5>Yes I'm here<7.5>` | pins text to audio time `T`; the naive utterance is split into phrases with `sil` in the gaps. Times must be non-negative, `<= duration` and non-decreasing, else a `ValueError` |
+| **Pause / phrase** | `[pause:SECONDS]` / `[break time=..]`, `[phrase]` | inserts that much silence at the word boundary; `[phrase]` drops a `marker/phrase` event |
+
+Curve tags are still lip-synced (the word survives), event payloads round-trip
+through the track JSON, and the tag layer composes with `--gestures` / `--events`
+/ `--prosody` / `--edits`. A **tagless transcript is byte-identical** to a run
+without `--tags`, so switching it on is safe.
+
+Programmatically, `parse_tagged_transcript(text) -> (clean_text, tags)` exposes
+the parse, and `generate_naive(text, duration, parse_tags=True,
+preprocess=fn)` runs an optional `callable(text) -> text` first — a registered
+auto-tagger (regex head-shakes on *no/not*, phonetic respelling of proper nouns)
+that injects a tag is identical to hand-writing it. Deterministic, stdlib-only
+parsing (`re` / `shlex`). `--tags` is rejected with `-o .lip` (no curve/event
+slot) and with `--anchors`.
+
 ## Prosody events from the audio (pitch & loudness)
 
 `--events` reads accents from the *timing* (stress digits, loudness peaks).

@@ -22,6 +22,9 @@ from .events import (Event, Alternative, VariantGroup, Variants, EVENT_TYPES,
                      validate_events)
 from .io_export import to_dict, write_json, write_csv, from_dict, read_json
 from .qa import summarize, normalize_transcript, cue_flags
+from .texttags import (parse_tagged_transcript, Tag, has_tags,
+                       resolve_tagged_segments, curve_channels, tag_events,
+                       build_curve_channel)
 from .edits import (EditsDoc, diff_edits, apply_edits, load_edits, save_edits,
                     sample)
 from .export_unity import write_unity_anim, NAMING_PRESETS
@@ -70,6 +73,8 @@ __all__ = [
     "validate_events",
     "to_dict", "write_json", "write_csv", "from_dict", "read_json",
     "summarize", "normalize_transcript", "cue_flags",
+    "parse_tagged_transcript", "Tag", "has_tags", "resolve_tagged_segments",
+    "curve_channels", "tag_events", "build_curve_channel",
     "EditsDoc", "diff_edits", "apply_edits", "load_edits", "save_edits", "sample",
     "write_unity_anim", "NAMING_PRESETS",
     "write_unreal_notifies", "notifies_to_dict",

@@ -783,6 +783,33 @@ def _naive_input_segments(args, dur, g2p):
     return naive_segments(args.text, dur, g2p=g2p)
 
 
+def _naive_tagged(args, dur, g2p, mapping, params):
+    """The ``naive`` command's transcript-text-tag path (issue #7): parse the tags
+    out of ``--text``, lip-sync the clean words as usual, and fold the tags back in
+    — curve tags as channels, event tags into the event layer, ``[emphasis]`` as a
+    local articulation boost, ``<T>``/``[pause]`` as timeline chunking/silence.
+    Returns ``(track, segments, clean_text)``. A transcript that parses to no tags
+    takes the plain naive path, so it is byte-identical to a run without --tags."""
+    from .pipeline import naive_segments
+    from .texttags import (parse_tagged_transcript, resolve_tagged_segments,
+                           curve_channels, tag_events, emphasis_params)
+    clean, tags = parse_tagged_transcript(args.text or "")
+    if not tags:
+        segs = naive_segments(clean, dur, g2p=g2p)
+        track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
+                                        params=params,
+                                        gestures=_gesture_params(args),
+                                        wav=args.wav)
+        return track, segs, clean
+    segs, spans, windows = resolve_tagged_segments(clean, dur, tags, g2p)
+    track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
+                                    params=emphasis_params(params, windows),
+                                    gestures=_gesture_params(args), wav=args.wav)
+    track.channels.extend(curve_channels(tags, spans, dur))
+    track.events.extend(tag_events(tags, spans, dur))
+    return track, segs, clean
+
+
 def _emit_segments(segs, args) -> None:
     """Dump the phoneme segments as JSON for the HTML previewer's --segments
     lane, when --emit-segments PATH was given (naive/mfa). Independent of the
@@ -850,6 +877,15 @@ def main(argv=None) -> int:
                         "(Unicode ellipsis/dashes/curly-quotes/NBSP -> ASCII "
                         "before G2P). Substitutions are reported in --json/"
                         "--report; ASCII transcripts are unaffected either way")
+    n.add_argument("--tags", action="store_true",
+                   help="parse transcript text tags in --text (issue #7): curve "
+                        "tags '[Name type=ct v1=1]word[/Name]' -> channels, event "
+                        "tags '[event:NAME ...]'/'[gesture:NAME]' -> the event "
+                        "layer, '[emphasis]word[/emphasis]' -> local articulation "
+                        "boost, '<T>' chunk markers / '[pause:SEC]' -> timeline "
+                        "silence. Auto-enabled when a clear tag is present. Tags "
+                        "are stripped before G2P, so the words are still lip-synced; "
+                        "a tagless transcript is byte-identical to no --tags")
 
     m = sub.add_parser("mfa", help="MFA TextGrid -> curves (accurate)")
     m.add_argument("--textgrid", required=True)
@@ -1036,6 +1072,25 @@ def main(argv=None) -> int:
         if args.cmudict:
             added = g2p.load_cmudict(args.cmudict)
             _say(args, f"loaded {added} CMUdict entries")
+        from .texttags import has_tags
+        use_tags = getattr(args, "tags", False) or (
+            bool(args.text) and has_tags(args.text))
+        if use_tags:
+            if args.anchors:
+                raise SystemExit("--tags cannot be combined with --anchors")
+            if args.out.endswith(".lip"):
+                raise SystemExit(
+                    "--tags is not supported for -o .lip output: tags drive "
+                    "curves/events, which the phoneme .lip format cannot carry")
+            track, segs, clean = _naive_tagged(args, dur, g2p, mapping, params)
+            oov = g2p.oov_words(clean) if (clean and _want_summary(args)) else []
+            _emit_segments(segs, args)
+            track = _apply_edits_layer(track, args)
+            _event_layer(track, args, segments=segs)
+            _write(track, args.out, args)
+            _emit_summary(args, track, segments=segs, oov_words=oov,
+                          substitutions=subs)
+            return 0
         segs = _naive_input_segments(args, dur, g2p)
         oov = g2p.oov_words(args.text) if (args.text and _want_summary(args)) else []
         _emit_segments(segs, args)

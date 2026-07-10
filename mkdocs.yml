@@ -97,6 +97,7 @@ nav:
   - API Reference:
       - Overview: api/index.md
       - Pipeline & generation: api/pipeline.md
+      - Transcript text tags: api/texttags.md
       - Visemes, coarticulation & curves: api/visemes.md
       - Timing & anchors: api/timing.md
       - Retargeting: api/retarget.md

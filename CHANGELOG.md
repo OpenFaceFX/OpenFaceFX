@@ -9,6 +9,43 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Transcript text tags for curves, events, emphasis, and audio chunking**
+  (closes [#7](https://github.com/OpenFaceFX/OpenFaceFX/issues/7)): a new
+  `openfacefx.texttags` module and a `--tags` flag on `naive` that let a writer
+  direct animation from the script, modelled on the FaceFX
+  [text-tagging](https://facefx.github.io/documentation/doc/text-tagging) syntax
+  (and, for `[emphasis]`/`[pause]`, on SSML `<emphasis>`/`<break>`). Tags are
+  extracted *before* G2P and mapped onto the timeline the aligner produced, so the
+  words are still lip-synced. stdlib-only (`re`/`shlex`), deterministic across
+  Python 3.9/3.13, and **byte-identical on a tagless transcript** — a plain
+  transcript parses to itself with an empty tag list and takes the ordinary naive
+  path, verified against a captured baseline.
+  - **Curve tags** `[Name type=quad|lt|ct|tt v1=.. v2=.. v3=.. v4=.. easein=..
+    easeout=.. timeshift=.. duration=..]word(s)[/Name]` add an animation channel
+    `Name` keyframed over the tagged word span with the documented leading /
+    centered / trailing-triplet or quadruplet shape and 0.2 s ease defaults, e.g.
+    `[brow_raise type=ct v1=1]really[/brow_raise]` peaks a `brow_raise` channel
+    over *really*.
+  - **Event tags** `[event:NAME k=v ...]` / `[gesture:NAME ...]` — or the FaceFX
+    curly form `{"group|anim" start=.. payload=".." ...}` — inject an
+    `openfacefx.events.Event` at the **start of the following word** (the end of
+    the last word when trailing), with `start`/`duration`/`blendin`/`blendout`
+    mapped to the event fields and every other parameter preserved in the payload.
+  - **Emphasis** `[emphasis]word[/emphasis]` (optional `strength=`) raises the
+    local vowel peak by re-weighting the coarticulation solve over the tagged
+    span, reusing the issue-#18 dominance-amplitude mechanism via a new
+    `CoartParams.emphasis_windows` (empty = byte-identical no-op).
+  - **Chunk / pause** `<T>` angle-bracket time markers split the naive utterance
+    into phrases pinned to those audio times with `sil` filling the gaps —
+    rejecting a non-monotonic, overlapping, negative, or past-duration timeline
+    with a `ValueError`; `[pause:SECONDS]` (or `[break time=..]`) inserts silence
+    at a word boundary and `[phrase]` drops a `marker/phrase` event.
+  - **Preprocessor hook**: `generate_naive(..., preprocess=callable, parse_tags=
+    True)` runs a `callable(text) -> text` before parsing, so a registered
+    auto-tagger can insert tags programmatically — injecting a tag this way is
+    byte-identical to hand-writing it. `--tags` auto-enables when a clear tag is
+    present; it is rejected with `-o .lip` (which cannot carry curves/events) and
+    with `--anchors`.
 - **Batch NDJSON progress stream, run ledger, and cue-flag QA** (closes
   [#35](https://github.com/OpenFaceFX/OpenFaceFX/issues/35) and, with it, the
   batch half of [#23](https://github.com/OpenFaceFX/OpenFaceFX/issues/23)): three

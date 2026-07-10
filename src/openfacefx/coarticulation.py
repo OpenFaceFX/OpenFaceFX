@@ -139,6 +139,14 @@ class CoartParams:
     smooth: float = 0.0           # Gaussian smoothing sigma in seconds (0 = off)
     lag: float = 0.0              # keyframe time-shift seconds (>0 lag, <0 lead)
     stress_emphasis: float = 0.0  # lexical-stress articulation boost (0 = off)
+    # Time-windowed local articulation boost (issue #7 [emphasis] text tags):
+    # ``(t0, t1, gain)`` triples scale the dominance amplitude of every segment
+    # whose centre falls in ``[t0, t1]`` by ``gain`` — the same alpha-multiply
+    # mechanism ``stress_emphasis`` uses (:func:`_stress_gains`), so the partition
+    # invariant is preserved, but localized to a span the tag layer resolves from
+    # word timings instead of read from lexical-stress digits. Empty (the default)
+    # is a byte-identical no-op.
+    emphasis_windows: List[Tuple[float, float, float]] = field(default_factory=list)
 
 # Diphthong -> component vowels (split at 55% of the segment).
 _DIPHTHONGS = {
@@ -226,6 +234,17 @@ def build_viseme_curves(
     # no-op off the stressed path.
     if params.stress_emphasis > 0.0:
         alphas = alphas * _stress_gains(segments, params.stress_emphasis)
+
+    # Local emphasis pass (issue #7 [emphasis] tags): scale the dominance of the
+    # segments inside each tag-resolved time window. Like the stress pass above it
+    # multiplies segment amplitudes (present in both blend numerator and shared
+    # denominator), so the row-sum partition is untouched — only the balance
+    # shifts toward the emphasized span, whose visemes then peak higher. Empty
+    # ``emphasis_windows`` skips this entirely (byte-identical).
+    if params.emphasis_windows:
+        alphas = alphas.copy()
+        for t0, t1, gain in params.emphasis_windows:
+            alphas[(centres >= t0) & (centres <= t1)] *= gain
 
     # Per-class asymmetric influence: scale the decay rate on each side by
     # (basic_lead / class_lead), so "basic"/"jaw" reproduce the classic
