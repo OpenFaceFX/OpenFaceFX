@@ -8,6 +8,16 @@ its `version` field.
 
 ## [Unreleased]
 
+Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — P2/P3
+features (#4 prosody, #9 edit-preservation, #10 smoothing, #18/#19/#22/#23),
+adoption infrastructure (#24 PyPI, #28–#31), and in-game confirmation of the
+`.lip` writer + FaceFXWrapper shim (#12, #33).
+
+## [0.8.0] — 2026-07-11
+
+The rip-and-replace release: a clean-room drop-in for the FaceFXWrapper the
+whole AI-NPC modding ecosystem depends on, plus an engine event/take layer.
+
 ### Added
 - **`FaceFXWrapper.exe`-compatible drop-in shim**
   ([#33](https://github.com/OpenFaceFX/OpenFaceFX/issues/33)): a CLI-compatible
@@ -55,11 +65,6 @@ its `version` field.
   `export_unreal_notifies` writes an `AnimNotify` sidecar JSON an editor-Python
   snippet stamps onto a `UAnimSequence`. **Fully backward-compatible**: a track
   with no events is byte-identical to previous releases, in JSON and `.anim`.
-
-Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — remaining
-P2 items (#18 presets/stress, #19, #22 gain/offset), adoption infrastructure
-(#24, #28–#31), the other feature specs de-risked and ready (#4 prosody, #9
-edit-preservation), and in-game confirmation of the `.lip` writer (#12).
 
 ## [0.7.0] — 2026-07-11
 
@@ -471,7 +476,8 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.5.0...v0.6.0
