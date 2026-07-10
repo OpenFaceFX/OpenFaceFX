@@ -949,6 +949,26 @@ def main(argv=None) -> int:
     _add_edits_options(t)
     _add_qa_options(t)
 
+    fc = sub.add_parser("from-cues",
+                        help="import a stepped mouth-cue file back into a track "
+                             "(Rhubarb tsv/xml/json, Moho .dat, Papagayo .pgo) — "
+                             "the inverse of the cue exporters (issue #44)")
+    fc.add_argument("file", help="the mouth-cue file to import")
+    fc.add_argument("--format", choices=["tsv", "xml", "json-cues", "dat", "pgo"],
+                    help="override the format (else auto-detected by extension + "
+                         "first line); json-cues reads a Rhubarb JSON, not a track")
+    fc.add_argument("--fps", type=float,
+                    help="frame rate for the rate-less Moho .dat (default 24); "
+                         "Papagayo .pgo carries its own and Rhubarb is seconds-"
+                         "based (reconstructed at 100 fps), so this is ignored there")
+    fc.add_argument("--coarticulate", action="store_true",
+                    help="re-solve the stepped cues through the coarticulation "
+                         "dominance blend to smooth the hard steps (default: keep "
+                         "the stepped [0,1] switches)")
+    fc.add_argument("-o", "--out", required=True)
+    _add_output_options(fc)
+    _add_qa_options(fc)
+
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
                             "transcript; amplitude fallback, not viseme sync)")
@@ -1112,6 +1132,20 @@ def main(argv=None) -> int:
         except ValueError as ex:
             raise SystemExit(f"emotion: {ex}")
         _write(baked, args.out, args)
+        return 0
+
+    if args.cmd == "from-cues":
+        from .importers import import_cues
+        try:
+            track, warnings = import_cues(args.file, fmt=args.format,
+                                          fps=args.fps,
+                                          coarticulate=args.coarticulate)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"from-cues: {ex}")
+        for w in warnings:
+            _warn(args, w)
+        _write(track, args.out, args)
+        _emit_summary(args, track)
         return 0
 
     mapping = Mapping.from_json(args.mapping) if args.mapping else None

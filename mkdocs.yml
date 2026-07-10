@@ -103,5 +103,6 @@ nav:
       - Timing & anchors: api/timing.md
       - Retargeting: api/retarget.md
       - Exporters: api/exporters.md
+      - Importing cue files: api/importers.md
       - Batch & CLI: api/batch.md
   - Changelog: changelog.md

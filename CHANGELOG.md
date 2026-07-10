@@ -9,6 +9,33 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Import mouth-cue files back into a FaceTrack** (closes
+  [#44](https://github.com/OpenFaceFX/OpenFaceFX/issues/44)): a new
+  `openfacefx.importers` module and a `from-cues` command that read the stepped
+  mouth-cue files OpenFaceFX already writes — Rhubarb TSV/XML/JSON, Moho/OpenToonz
+  `.dat`, Papagayo-NG `.pgo` — back into an ordinary stepped `FaceTrack` (one
+  `[0,1]` viseme channel, `sil` in the gaps, via `reduce_to_track`), giving a
+  studio's Rhubarb/Papagayo library a migration path *into* the tool to
+  coarticulate, retarget, layer gestures/events, condition and re-export. The
+  format is auto-detected by extension + first line; `--coarticulate` re-solves
+  the hard steps through the dominance blend. stdlib + numpy only (`xml.etree`,
+  `json`, `re`), deterministic across Python 3.9/3.13, and **purely additive** —
+  no existing command's output changes.
+  - **Verified inverse of the cue exporters**: each parser inverts the exact
+    grammar `export_cues` emits, and the shape→viseme tables
+    (`RHUBARB_TO_VISEME` / `PRESTON_BLAIR_TO_VISEME`) are *derived from the forward
+    retarget presets* so they cannot drift. `write → from-cues → write`
+    round-trips **byte-identically** for the seconds-based Rhubarb formats and to
+    a byte-exact **idempotent fixed point** — preserving the exact
+    (shape, frame-boundary) cue sequence — for the frame-based `.dat` / `.pgo`
+    (`.dat` defaults to 24 fps via `--fps`, `.pgo` carries its own; frame decode
+    inverts `_frame_at` / `_to_frames`).
+  - **Extended/unknown shapes** route through the documented
+    `RHUBARB_EXTENDED_FALLBACK` (`G→A`, `H→C`, `X→A`) and are *reported*, or raise
+    a clear error — never silently dropped. The imported track validates through
+    `io_export.from_dict`/`to_dict` and re-exports through Unity/Godot/Live2D/cues
+    unchanged. Library API: `import_cues`, `detect_format`, `build_cue_track`,
+    exported from the package root.
 - **Additive emotion/expression layer baked over speech** (closes
   [#38](https://github.com/OpenFaceFX/OpenFaceFX/issues/38)): a new
   `openfacefx.emotion` module and a standalone `emotion` command that bake an

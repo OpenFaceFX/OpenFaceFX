@@ -29,6 +29,8 @@ from .edits import (EditsDoc, diff_edits, apply_edits, load_edits, save_edits,
                     sample)
 from .emotion import (EmotionEnvelope, bake_emotion, load_envelope,
                      save_envelope, va_to_pose, VA_TABLE, VA_EMOTION_CHANNELS)
+from .importers import (import_cues, detect_format, build_cue_track,
+                       RHUBARB_TO_VISEME, PRESTON_BLAIR_TO_VISEME)
 from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_unreal_notifies import write_unreal_notifies, notifies_to_dict
 from .export_live2d import write_live2d_motion, lipsync_param_ids
@@ -80,6 +82,8 @@ __all__ = [
     "EditsDoc", "diff_edits", "apply_edits", "load_edits", "save_edits", "sample",
     "EmotionEnvelope", "bake_emotion", "load_envelope", "save_envelope",
     "va_to_pose", "VA_TABLE", "VA_EMOTION_CHANNELS",
+    "import_cues", "detect_format", "build_cue_track",
+    "RHUBARB_TO_VISEME", "PRESTON_BLAIR_TO_VISEME",
     "write_unity_anim", "NAMING_PRESETS",
     "write_unreal_notifies", "notifies_to_dict",
     "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",

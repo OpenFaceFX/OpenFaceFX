@@ -504,6 +504,35 @@ with `--intensity 0`, a neutral envelope, or a zero delta, output is
 byte-identical to the plain speech track. See
 [docs/api/emotion.md](docs/api/emotion.md) for the full valence/arousal table.
 
+## Import mouth-cue files (Rhubarb, Papagayo, Moho)
+
+OpenFaceFX writes stepped mouth-cue files for the indie 2D ecosystem — and now
+reads them back (issue [#44](https://github.com/OpenFaceFX/OpenFaceFX/issues/44)),
+so a studio sitting on a Rhubarb/Papagayo library or a hand-timed Moho mouth
+track has a migration path **into** the tool: import, then coarticulate,
+retarget, layer gestures/events, condition and re-export to Unity/Godot/Live2D.
+The `from-cues` command auto-detects the format by extension and first line:
+
+```bash
+python -m openfacefx from-cues mouth.tsv -o track.json           # Rhubarb TSV/XML/JSON
+python -m openfacefx from-cues mouth.dat --fps 24 -o track.anim  # Moho/OpenToonz -> Unity
+python -m openfacefx from-cues mouth.pgo --coarticulate -o track.json  # Papagayo, smoothed
+```
+
+Each parser is the **verified inverse** of the matching cue *exporter*: the shape
+tables are derived from the same retarget presets the writers use, so
+`write → from-cues → write` round-trips **byte-identically** for Rhubarb and to a
+byte-exact fixed point (preserving the exact shape/frame sequence) for the
+frame-based Moho `.dat` / Papagayo `.pgo`. The result is an ordinary stepped
+`FaceTrack` (one `[0,1]` viseme channel, `sil` in the gaps) that flows through
+every exporter and `--retarget`; `--coarticulate` re-solves the steps through the
+dominance blend. Extended/unknown shapes route through the documented
+`RHUBARB_EXTENDED_FALLBACK` or raise a clear error — never silently dropped.
+Library callers get `import_cues(path)`, `detect_format`, `build_cue_track` and
+the `RHUBARB_TO_VISEME` / `PRESTON_BLAIR_TO_VISEME` tables; stdlib + numpy,
+deterministic, and purely additive (no existing output changes). See
+[docs/api/importers.md](docs/api/importers.md).
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -781,6 +810,7 @@ src/openfacefx/
   gestures.py       procedural blinks/brows/head/eyes, GestureParams (#5) ← opt-in, deterministic
   edits.py          edit-preservation sidecar: diff/apply hand-edits (#9) ← --edits, diff-edits
   emotion.py        additive emotion/expression layer, valence/arousal table (#38) ← emotion command
+  importers.py      read Rhubarb/Moho/Papagayo cue files back into a track (#44) ← from-cues command
   gestures_layers.py  gesture event-extraction + per-layer curve synthesis (gestures.py's engine)
   pipeline.py       orchestration
   cli.py            command line
