@@ -10,6 +10,7 @@ from .coarticulation import build_viseme_curves, CoartParams
 from .curves import FaceTrack, Channel, Keyframe, reduce_to_track
 from .pipeline import (generate_from_alignment, generate_naive,
                        naive_segments, wav_duration)
+from .energy import energy_envelope, generate_from_energy
 from .io_export import to_dict, write_json, write_csv
 from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_cues import (
@@ -37,7 +38,8 @@ __all__ = [
     "G2P", "PhonemeSegment", "NaiveAligner", "load_mfa_textgrid",
     "build_viseme_curves", "CoartParams", "FaceTrack", "Channel", "Keyframe",
     "reduce_to_track", "generate_from_alignment", "generate_naive",
-    "naive_segments", "wav_duration", "to_dict", "write_json", "write_csv",
+    "naive_segments", "wav_duration", "energy_envelope", "generate_from_energy",
+    "to_dict", "write_json", "write_csv",
     "write_unity_anim", "NAMING_PRESETS",
     "dominant_cues", "write_rhubarb_tsv", "write_rhubarb_xml",
     "write_rhubarb_json", "write_moho_dat", "write_pgo",

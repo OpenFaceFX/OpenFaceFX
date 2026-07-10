@@ -81,6 +81,15 @@ with no models (SRT supplies its own transcript; the rest take `--text`):
 python -m openfacefx naive --anchors cues.srt --anchors-format srt --wav voice.wav -o track.json
 ```
 
+No transcript at all? Drive the mouth straight from audio loudness — an
+amplitude fallback in the spirit of SALSA/Moho/Live2D (**energy, not viseme
+detection**; good for barks, crowds, or a quick pass when all you have is a
+WAV):
+
+```bash
+python -m openfacefx energy --wav examples/voice.wav -o track.json
+```
+
 Straight to a Unity AnimationClip, or remapped onto another rig:
 
 ```bash
@@ -237,6 +246,7 @@ src/openfacefx/
   retarget.py       viseme→rig remapping + presets          ← retarget rigs here
   bethesda.py       .fuz container / .lip header tools
   batch.py          directory batch runner + QA summary
+  energy.py         audio-loudness fallback lip-sync (no transcript) ← amplitude-driven
   pipeline.py       orchestration
   cli.py            command line
 tests/test_core.py  run: pytest

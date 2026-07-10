@@ -231,6 +231,19 @@ def main(argv=None) -> int:
     t.add_argument("-o", "--out", required=True)
     _add_output_options(t)
 
+    e = sub.add_parser("energy",
+                       help="audio loudness -> mouth-open curves (no "
+                            "transcript; amplitude fallback, not viseme sync)")
+    e.add_argument("--wav", required=True,
+                   help="16-bit PCM WAV (mono or stereo; stereo is downmixed). "
+                        "Convert other codecs first: ffmpeg -c:a pcm_s16le")
+    e.add_argument("--intensity", type=float, default=1.0,
+                   help="gain on the mouth opening (1.0 = as-is; >1 opens "
+                        "wider on quiet speech, <1 is subtler)")
+    e.add_argument("--fps", type=float, default=60.0)
+    e.add_argument("-o", "--out", required=True)
+    _add_output_options(e)
+
     b = sub.add_parser("batch", help="process a directory tree of voice lines")
     b.add_argument("--dir", required=True, help="input tree of .wav files "
                    "with same-stem .TextGrid or .txt transcripts")
@@ -305,6 +318,11 @@ def main(argv=None) -> int:
         else:
             segs = to_segments(events)
             track = generate_from_alignment(segs, fps=args.fps, mapping=mapping)
+        _write(track, args.out, args)
+    elif args.cmd == "energy":
+        from .energy import generate_from_energy
+        track = generate_from_energy(args.wav, fps=args.fps,
+                                     intensity=args.intensity, mapping=mapping)
         _write(track, args.out, args)
     return 0
 

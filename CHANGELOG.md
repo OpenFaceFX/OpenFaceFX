@@ -9,8 +9,32 @@ its `version` field.
 ## [Unreleased]
 
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — next up
-the remaining P1/P2 items (#17–#23, #26–#32) and the sample-blocked `.LIP`
+the remaining P1/P2 items (#18–#23, #26–#32) and the sample-blocked `.LIP`
 writer (#12).
+
+### Added
+- **Audio-energy fallback lip-sync** (#17): `openfacefx energy --wav voice.wav
+  -o track.json` drives a mouth from loudness alone — the first path that needs
+  *no transcript and no aligner* (`energy.py`, numpy + stdlib `wave` only). This
+  is the common non-ML mechanism behind SALSA/Moho/Live2D, and it is **an
+  amplitude fallback, not viseme detection**: it cannot tell a /m/ from an /aa/
+  and will open the mouth on a cough — docstrings, `--help` and the README all
+  say so. `energy_envelope` computes per-frame RMS at the track fps, gates the
+  noise floor and normalizes against a high percentile (not the max, so one
+  plosive does not flatten the take), then runs an asymmetric envelope follower
+  (fast attack, ~7x slower release — mouths snap open and relax shut).
+  `generate_from_energy` turns that envelope into an ordinary Oculus-viseme
+  `FaceTrack`: jaw-open (`aa`) is the primary channel, with a small, honestly
+  *aesthetic* `spread` bled into two secondary shapes (louder leans rounded
+  `O`, quieter leans mid `E`) so it does not read as one channel flapping, and
+  `sil` takes the rest; each frame partitions unit weight (`sil + aa + E + O ==
+  1`). Output is deterministic (no jitter/RNG) and flows through the existing
+  keyframe reduction, so `--retarget`, `.anim` and every cue exporter compose
+  unchanged. Input is 16-bit PCM WAV, mono or stereo (stereo is downmixed by
+  averaging); other sample widths raise a clear `ValueError` with convert-first
+  guidance (`ffmpeg -c:a pcm_s16le`). CLI knobs: `--fps` and `--intensity` (gain
+  on the opening); library callers also get `window`, `gate`, `smoothing` and
+  `spread`.
 
 ## [0.4.0] — 2026-07-10
 
