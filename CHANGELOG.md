@@ -8,6 +8,16 @@ its `version` field.
 
 ## [Unreleased]
 
+Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — the
+remaining P2/P3 features are unspecced (#8 i18n, #10 smoothing, #18/#19/#22/#23)
+or distribution (#28–#31); adoption needs the one manual PyPI publisher step
+(#24); and the `.lip` writer + FaceFXWrapper shim await in-game confirmation
+(#12, #33).
+
+## [0.9.0] — 2026-07-11
+
+Production workflow: follow the voice's pitch, and keep the animator's edits.
+
 ### Added
 - **Edit preservation: hand-tweaks that survive regeneration**
   ([#9](https://github.com/OpenFaceFX/OpenFaceFX/issues/9)): a new
@@ -67,11 +77,6 @@ its `version` field.
   movement, so this is acceptable. 16-bit PCM WAV in (convert first with
   `ffmpeg -c:a pcm_s16le`), same as `energy.py`. **Fully backward-compatible**:
   without `--prosody`, output is byte-identical to previous releases.
-
-Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — P2/P3
-features (#10 smoothing, #18/#19/#22/#23), adoption
-infrastructure (#24 PyPI, #28–#31), and in-game confirmation of the `.lip`
-writer + FaceFXWrapper shim (#12, #33).
 
 ## [0.8.0] — 2026-07-11
 
@@ -536,7 +541,8 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.0...v0.6.1
