@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="72 84 156 82" width="156" height="82" role="img" aria-label="SS viseme mouth shape">
+<rect x="72" y="84" width="156" height="82" rx="8" fill="#0d1119" stroke="#1e2635" stroke-width="1.5"/>
+<path d="M 96.0 120.0 Q 150.0 112.0 204.0 120.0 L 204.0 120.0 Q 150.0 132.0 96.0 120.0 Z" fill="#05070b"/>
+<rect x="102.0" y="116.0" width="96.0" height="6" rx="1" fill="#c9d1d9" opacity="0.17"/>
+<path d="M 96.0 120.0 Q 150.0 112.0 204.0 120.0" fill="none" stroke="#f4b942" stroke-width="2.5" stroke-linecap="round"/>
+<path d="M 96.0 120.0 Q 150.0 132.0 204.0 120.0" fill="none" stroke="#f4b942" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

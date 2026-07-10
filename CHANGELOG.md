@@ -13,6 +13,24 @@ the remaining P1/P2 items (#18–#23, #26–#32) and the sample-blocked `.LIP`
 writer (#12).
 
 ### Added
+- **README hero onboarding: quickstart GIF, viseme gallery, literal output**
+  (#26). The README now opens with the live-demo link, an animated quickstart
+  GIF, and `pip install openfacefx` above the fold; the long-form pipeline
+  description moves below. The GIF is **recorded as code**, not hand-captured:
+  [`docs/quickstart.tape`](docs/quickstart.tape) drives [VHS](https://github.com/charmbracelet/vhs),
+  and the Pages workflow (`pages.yml`) re-renders it on every push via
+  `charmbracelet/vhs-action` and publishes it to the GitHub Pages site — so the
+  GIF can never drift from the real CLI and no bot ever commits a binary to the
+  repo (the README points at the Pages URL; `docs/quickstart.gif` is
+  git-ignored). A new `tools/render_viseme_gallery.py` renders one small SVG per
+  viseme (`docs/visemes/*.svg`, <800 bytes each, presentation-attributes-only so
+  GitHub inlines them) by porting the schematic-mouth `drawFace` geometry from
+  the previewer and evaluating each viseme at full weight — **no art
+  dependency**; a table documents all 15 Oculus/Meta visemes with their
+  phonemes. The hero also shows a literal `openfacefx.track` excerpt that matches
+  the demo command's real output byte-for-byte. `test_viseme_gallery.py` guards
+  the committed SVGs against drift from the generator (like the GIF from its
+  tape). Docs/tooling only — no library behavior changed.
 - **Articulation-intensity dials** (#18, partial — the JALI-style gain layer):
   `--intensity` (master) and repeatable `--gain class=value` (e.g. `--gain
   tongue=0.6 --gain jaw=1.2`) on `naive`/`mfa`/`from-timing` scale how strongly

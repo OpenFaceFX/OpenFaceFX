@@ -18,3 +18,7 @@ CLAUDE.md
 /preview.html
 track.json
 track.csv
+
+# quickstart GIF: rendered by VHS in CI and published to the Pages site, never
+# committed (README points at the Pages URL). Rebuild locally: vhs docs/quickstart.tape
+/docs/quickstart.gif

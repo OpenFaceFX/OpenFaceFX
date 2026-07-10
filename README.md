@@ -15,11 +15,101 @@
 
 **[▶ Live demo](https://openfacefx.github.io/OpenFaceFX/demo/)** — no install, regenerated from the current pipeline on every push.
 
-<img src="docs/preview.png" width="850" alt="OpenFaceFX previewer: schematic mouth animating next to the viseme channel curves of a generated track"/>
+<a href="https://openfacefx.github.io/OpenFaceFX/demo/"><img src="https://openfacefx.github.io/OpenFaceFX/quickstart.gif" width="850" alt="Quickstart: one naive command turns 'hello world' plus a WAV into a viseme track JSON"/></a>
 
-*The built-in previewer playing a track generated from `examples/voice.wav` — schematic articulator on the left, the exported viseme curves with a scrubbing playhead on the right. [Try it live.](https://openfacefx.github.io/OpenFaceFX/demo/)*
+*The one-command quickstart, rendered from [`docs/quickstart.tape`](docs/quickstart.tape) by [VHS](https://github.com/charmbracelet/vhs) in CI on every push — recorded as code, so it can't drift from the real CLI. [Open the live previewer →](https://openfacefx.github.io/OpenFaceFX/demo/)*
 
 </div>
+
+## Install
+
+```bash
+git clone https://github.com/OpenFaceFX/OpenFaceFX && cd OpenFaceFX
+pip install -e .              # numpy is the only runtime dependency
+```
+
+(`pip install openfacefx` from PyPI is coming — the release automation is in
+place pending the registry setup, [#24](https://github.com/OpenFaceFX/OpenFaceFX/issues/24).)
+
+## Quick start
+
+No models, no downloads — approximate lip-sync from text + a WAV's duration:
+
+```bash
+python -m openfacefx naive --text "hello world" --wav examples/voice.wav -o track.json
+```
+
+```
+wrote track.json: 7 channels, 93 keyframes, 1.60s
+```
+
+`track.json` is the `openfacefx.track` format: sparse `[time, value]` keyframes
+per viseme channel, weights in `[0, 1]`. The real output begins:
+
+```json
+{
+  "format": "openfacefx.track",
+  "version": 1,
+  "fps": 60.0,
+  "duration": 1.6,
+  "viseme_set": [
+    "sil",
+    "PP",
+    "FF",
+    "TH",
+    "DD",
+    "kk",
+    "CH",
+    "SS",
+    "nn",
+    "RR",
+    "aa",
+    "E",
+    "I",
+    "O",
+    "U"
+  ],
+  "channels": [
+    {
+      "name": "sil",
+      "keys": [
+        [
+          0.0,
+          0.6196
+        ],
+```
+
+*The first 30 lines of the actual file (7 channels, 93 keyframes in full). A
+reference reader is ~15 lines — see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).*
+
+## The 15 visemes
+
+15 targets from the Oculus/Meta LipSync convention — a well-documented, IP-free
+set most character rigs already expose blendshapes for. Each mouth shape below
+is drawn by the same schematic articulator the [live previewer](https://openfacefx.github.io/OpenFaceFX/demo/)
+animates, rendered at full weight (regenerate with `python tools/render_viseme_gallery.py`):
+
+| Viseme | Shape | Phonemes | Mouth |
+|:------:|:-----:|:----------|:------|
+| **sil** | <img src="docs/visemes/sil.svg" width="72" alt="sil mouth shape"> | — | neutral / mouth at rest |
+| **PP** | <img src="docs/visemes/PP.svg" width="72" alt="PP mouth shape"> | `B`, `M`, `P` | lips pressed shut |
+| **FF** | <img src="docs/visemes/FF.svg" width="72" alt="FF mouth shape"> | `F`, `V` | lower lip to upper teeth |
+| **TH** | <img src="docs/visemes/TH.svg" width="72" alt="TH mouth shape"> | `DH`, `TH` | tongue between the teeth |
+| **DD** | <img src="docs/visemes/DD.svg" width="72" alt="DD mouth shape"> | `D`, `L`, `T` | tongue to the alveolar ridge |
+| **kk** | <img src="docs/visemes/kk.svg" width="72" alt="kk mouth shape"> | `G`, `HH`, `K` | back of tongue raised |
+| **CH** | <img src="docs/visemes/CH.svg" width="72" alt="CH mouth shape"> | `CH`, `JH`, `SH`, `ZH` | rounded, protruded |
+| **SS** | <img src="docs/visemes/SS.svg" width="72" alt="SS mouth shape"> | `S`, `Z` | narrow, teeth close |
+| **nn** | <img src="docs/visemes/nn.svg" width="72" alt="nn mouth shape"> | `N`, `NG` | nasal, tongue up |
+| **RR** | <img src="docs/visemes/RR.svg" width="72" alt="RR mouth shape"> | `ER`, `R` | retroflex / lightly rounded |
+| **aa** | <img src="docs/visemes/aa.svg" width="72" alt="aa mouth shape"> | `AA`, `AE`, `AH`, `AY` | open jaw |
+| **E** | <img src="docs/visemes/E.svg" width="72" alt="E mouth shape"> | `EH`, `EY`, `IH` | mid-front spread |
+| **I** | <img src="docs/visemes/I.svg" width="72" alt="I mouth shape"> | `IY`, `Y` | wide spread |
+| **O** | <img src="docs/visemes/O.svg" width="72" alt="O mouth shape"> | `AO`, `AW`, `OW`, `OY` | rounded and open |
+| **U** | <img src="docs/visemes/U.svg" width="72" alt="U mouth shape"> | `UH`, `UW`, `W` | tight lip rounding |
+
+To retarget to a different rig (Apple ARKit's 52 blendshapes, a Preston-Blair
+12-shape set, …), edit `PHONEME_TO_VISEME` and `VISEMES` in `visemes.py` —
+nothing else changes.
 
 ## What it is
 
@@ -41,22 +131,7 @@ and fully owns the other three stages:
 Every seam is a tiny data contract (`PhonemeSegment` in, `FaceTrack` out), so
 any stage can be swapped without touching the rest.
 
-## Install
-
-```bash
-pip install -e .          # numpy is the only runtime dependency
-```
-
-## Quick start
-
-No models, no downloads — approximate lip-sync from text + a WAV's duration:
-
-```bash
-python -m openfacefx naive \
-  --text "hello world this is a test" \
-  --wav examples/voice.wav \
-  -o track.json
-```
+## More ways to generate
 
 Accurate lip-sync from a Montreal Forced Aligner result:
 
@@ -144,27 +219,31 @@ scrubbing playhead. Rebuild it for your own track:
 python tools/build_preview.py track.json preview.html
 ```
 
+<img src="docs/preview.png" width="850" alt="OpenFaceFX previewer: schematic mouth animating next to the viseme channel curves of a generated track"/>
+
+*The built-in previewer playing a track generated from `examples/voice.wav` —
+schematic articulator on the left, the exported viseme curves with a scrubbing
+playhead on the right. [Try it live.](https://openfacefx.github.io/OpenFaceFX/demo/)*
+
 ## Output format
 
 Deliberately trivial JSON (CSV also available) — sparse `[time, value]` keys
-per viseme channel, weights in `[0, 1]`:
+per viseme channel, weights in `[0, 1]`. The full shape, abbreviated:
 
 ```jsonc
 {
-  "format": "openfacefx.track",
-  "version": 1,
-  "fps": 60.0,
-  "duration": 1.6,
+  "format": "openfacefx.track", "version": 1, "fps": 60.0, "duration": 1.6,
   "viseme_set": ["sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS", "nn", "RR", "aa", "E", "I", "O", "U"],
   "channels": [
-    { "name": "PP", "keys": [[0.0, 0.0], [0.9167, 0.0094], [1.0167, 0.0737]] }
+    { "name": "sil", "keys": [[0.0, 0.6196], [0.0833, 0.6644], /* … */] }
+    // one object per active viseme channel
   ]
 }
 ```
 
 Channel names are blendshape names your rig exposes; linear interpolation
-between keys is the intended playback. A reference reader is ~15 lines — see
-[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
+between keys is the intended playback. See
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for a ~15-line reference reader.
 
 ## Plugging in a real aligner (stage 1)
 
@@ -180,14 +259,6 @@ not for shipping. For production accuracy, produce a list of
 
 Better G2P: drop in the full CMU Pronouncing Dictionary with
 `G2P().load_cmudict("cmudict.dict")` (the built-in dictionary is a tiny seed).
-
-## The viseme set
-
-15 targets from the Oculus/Meta LipSync convention (`sil, PP, FF, TH, DD, kk,
-CH, SS, nn, RR, aa, E, I, O, U`) — a well-documented, IP-free convention most
-character rigs already provide blendshapes for. To retarget to a different rig
-(Apple ARKit's 52 blendshapes, a Preston-Blair 12-shape set, …), edit
-`PHONEME_TO_VISEME` and `VISEMES` in `visemes.py` — nothing else changes.
 
 ## FaceFX ecosystem compatibility
 
@@ -253,8 +324,8 @@ src/openfacefx/
   pipeline.py       orchestration
   cli.py            command line
 tests/test_core.py  run: pytest
-tools/              HTML previewer builder
-docs/               logo, images, compatibility survey
+tools/              HTML previewer builder + viseme-gallery SVG renderer
+docs/               logo, images, viseme gallery, quickstart tape, compatibility survey
 ```
 
 CI runs the test suite plus CLI and preview-builder smoke tests on every push,

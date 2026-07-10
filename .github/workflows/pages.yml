@@ -62,6 +62,15 @@ jobs:
                <code>openfacefx naive --text "hello world this is a test of open face f x" --wav examples/voice.wav</code></p>
           </main></body></html>
           EOF
+      - name: Render the quickstart GIF from docs/quickstart.tape (VHS)
+        # Re-recorded from the committed .tape on every push so it can never
+        # drift from the real CLI; openfacefx is already installed above, so the
+        # `python -m openfacefx …` line inside the tape runs against this code.
+        uses: charmbracelet/vhs-action@v2.1.0
+        with:
+          path: docs/quickstart.tape
+      - name: Publish the GIF into the site
+        run: cp docs/quickstart.gif site/quickstart.gif
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
