@@ -91,6 +91,7 @@ nav:
   - Home: index.md
   - Guides:
       - Compatibility: COMPATIBILITY.md
+      - FaceFXWrapper drop-in: facefxwrapper.md
       - Retargeting: retargeting.md
       - TTS timing ingest: timing.md
   - API Reference:

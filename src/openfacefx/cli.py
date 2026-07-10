@@ -42,6 +42,7 @@ from .anchors import (
     from_azure_word_boundaries, from_elevenlabs_alignment, from_kokoro_tokens,
     from_google_timepoints,
 )
+from . import facefxwrapper
 
 # Anchor timing formats: name -> parser(text) -> List[Anchor]. `google` is
 # handled separately (its markN timepoints need the transcript to resolve).
@@ -485,6 +486,15 @@ def _write_lip(segs, dur, args) -> None:
 
 
 def main(argv=None) -> int:
+    # FaceFXWrapper.exe drop-in shim (issue #33): intercept BEFORE argparse so the
+    # raw positional args pass through verbatim. A real consumer command carries
+    # values argparse would choke on — a leading-dash token read as an option, or
+    # a resampled-WAV/text path — so the whole tail goes straight to the shim,
+    # dispatched on the literal 'facefxwrapper' token.
+    raw = sys.argv[1:] if argv is None else list(argv)
+    if raw and raw[0] == "facefxwrapper":
+        return facefxwrapper.run(raw[1:])
+
     p = argparse.ArgumentParser(prog="openfacefx")
     sub = p.add_subparsers(dest="cmd", required=True)
 

@@ -36,6 +36,9 @@ docs = [
 
 [project.scripts]
 openfacefx = "openfacefx.cli:main"
+# FaceFXWrapper.exe-compatible drop-in shim (issue #33). PyInstaller can freeze
+# this same entry point into a Windows FaceFXWrapper.exe (see docs/facefxwrapper.md).
+facefxwrapper = "openfacefx.facefxwrapper:_console"
 
 [tool.setuptools.packages.find]
 where = ["src"]

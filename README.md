@@ -407,9 +407,12 @@ Better G2P: drop in the full CMU Pronouncing Dictionary with
 
 We surveyed every public FaceFX wrapper on GitHub. The short version: **all of
 them are parallel audio+text generators, not curve consumers** — none accepts
-any lip-sync tool's curves as input, so "drop-in" compatibility is impossible
-by design, for us and everyone else. What *is* possible is writing the
-artifacts their pipelines consume:
+any lip-sync tool's curves as input, so feeding one our curves is impossible by
+design, for us and everyone else. What *is* possible is writing the artifacts
+their pipelines consume — and, because the de-facto-standard
+[`FaceFXWrapper.exe`](https://github.com/Nukem9/FaceFXWrapper) is itself an
+audio+text generator, *replacing* it outright with a
+[drop-in shim](docs/facefxwrapper.md) (issue [#33](https://github.com/OpenFaceFX/OpenFaceFX/issues/33)):
 
 | Ecosystem | Route | Status |
 |---|---|---|
@@ -418,7 +421,7 @@ artifacts their pipelines consume:
 | Godot 4 | `-o lipsync.tres` — `AnimationPlayer` resource, one `blend_shapes/*` value track per viseme (`--godot-node`/`--godot-naming`) | ✅ shipped |
 | ARKit / Rhubarb / VRM / CC4 rigs | `--retarget arkit\|rhubarb\|vrm\|cc4` weighted remaps ([docs](docs/retargeting.md)) | ✅ shipped |
 | Unreal (official FaceFX-UE4/UE5 plugins) | Impossible via the plugins (proprietary `.ffxc` compiler); instead drive UE float curves / morph targets from JSON — the `arkit` remap feeds MetaHuman's ARKit route — plus an `AnimNotify` sidecar JSON (`write_unreal_notifies`) an editor-Python snippet stamps onto a `UAnimSequence` | ✅ JSON + AnimNotify sidecar |
-| Bethesda modding (Nukem9/FaceFXWrapper, xVASynth, Mantella) | `.fuz` container + `.lip` header tools (`openfacefx.bethesda`), plus an **experimental** clean-room Skyrim `.lip` **writer** (`-o out.lip` from `naive`/`mfa`): the payload was reverse-engineered and our codec re-encodes the real samples byte-exact — but it is **not yet verified in-game** ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)) | 🧪 experimental writer shipped — needs in-game confirmation |
+| Bethesda modding (Nukem9/FaceFXWrapper, xVASynth, Mantella, Pantella) | `.fuz` container + `.lip` header tools (`openfacefx.bethesda`), an **experimental** clean-room Skyrim `.lip` **writer** (`-o out.lip` from `naive`/`mfa`; the payload was reverse-engineered and our codec re-encodes the real samples byte-exact, **not yet verified in-game** [#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12)), plus a **`FaceFXWrapper.exe`-compatible drop-in shim** those pipelines can call in place of Nukem9's tool ([docs](docs/facefxwrapper.md), [#33](https://github.com/OpenFaceFX/OpenFaceFX/issues/33)) | 🧪 experimental writer + drop-in shim shipped — needs in-game confirmation |
 | Anything else | Trivial JSON/CSV + documented remap | ✅ today |
 
 Full survey with per-tool details: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).

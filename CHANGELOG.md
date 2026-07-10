@@ -9,6 +9,31 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **`FaceFXWrapper.exe`-compatible drop-in shim**
+  ([#33](https://github.com/OpenFaceFX/OpenFaceFX/issues/33)): a CLI-compatible
+  stand-in for Nukem9's `FaceFXWrapper.exe` — the tool xVASynth's `lip_fuz`
+  plugin and the Mantella / Pantella AI-NPC pipelines shell out to for Skyrim
+  `.lip` generation. A new `openfacefx.facefxwrapper` module reproduces the
+  binary's exact contract (verified from `FFXW32/FFXW32.cpp`): **dispatch on
+  argument count**, the input WAV at positional index 3 in both the 7-arg
+  (resample) and 6-arg (pre-resampled) forms, the output `.lip` at index 5 / 4,
+  dialogue text last, and `Type` ∈ `Skyrim`/`Fallout4` (case-insensitive). It
+  generates a real (experimental, #12) Skyrim `.lip` through the pipeline instead
+  of driving Creation Kit code, and matches the behaviours consumers actually
+  depend on — **success is a byte-valid `.lip` at the output path** (exit code and
+  stdout are ignored by consumers; we still return 0/1 and print the wrapper's
+  `Unknown generator type` / `LIP generation failed` / usage messages), the
+  resampled-WAV path is **never written** (consumers `os.remove` it only if
+  present), and `Fallout4` fails honestly with no file so the caller uses its
+  placeholder. Exposed as a native `facefxwrapper` console script and as
+  `python -m openfacefx facefxwrapper …` (intercepted **before** argparse so raw
+  positional args — flag-like tokens, paths with spaces — pass through verbatim);
+  a `FonixData.cdf` **stub** requirement, the per-consumer drop-in recipe, and the
+  PyInstaller `FaceFXWrapper.exe` build (runs under the consumers' Wine prefix) are
+  documented in `docs/facefxwrapper.md`. **Honest limitations**: naive
+  duration-based timing (not Fonix acoustic alignment), the `.lip` payload is
+  experimental / unverified in-game (#12), and Fallout 4 is unsupported. The
+  `.fuz`/xWMA repacking path stays out of scope (needs an external xWMA encoder).
 - **Event & take layer** ([#6](https://github.com/OpenFaceFX/OpenFaceFX/issues/6)):
   named, timed, typed events with a freeform JSON payload — the game-engine
   notify layer, mirroring FaceFX events / Unreal `AnimNotify` / Unity
