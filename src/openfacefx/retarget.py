@@ -10,13 +10,21 @@ weight scale::
 contributions per target, clamps to [0, 1], and returns a new ``FaceTrack``.
 Presets for common rigs live in ``PRESETS``; they are plain data — copy and
 tweak for your character.
+
+A rig that lacks some of a preset's target shapes can pass ``available=`` (an
+iterable of the shapes it actually has). Any mapped target not in that set is
+rerouted through a per-preset ``PRESET_FALLBACKS`` table so its weight
+redistributes instead of vanishing (e.g. a tongue-less ARKit rig sends
+``tongueOut`` to a small ``jawOpen``); a target with no fallback rule is
+dropped. Provenance and the fallback tables: docs/retargeting.md.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .curves import Channel, FaceTrack, Keyframe
+from .visemes import VISEMES
 
 Mapping = Dict[str, Sequence[Tuple[str, float]]]
 
@@ -45,18 +53,51 @@ def _sampler(channel: Channel):
     return sample
 
 
-def retarget(track: FaceTrack, mapping: Mapping) -> FaceTrack:
+def _resolve_target(target: str, scale: float, available: Optional[set],
+                    fallbacks: Optional[Mapping],
+                    _seen: frozenset = frozenset()):
+    """Expand one ``(target, scale)`` contribution against a rig's shapes.
+
+    With ``available=None`` (or the target present) the contribution is yielded
+    unchanged. An unavailable target reroutes through ``fallbacks`` — chained
+    (a replacement may itself be unavailable) and cycle-guarded — with weights
+    multiplied along the way; a target with no fallback rule yields nothing
+    (dropped). An explicit empty rule ``()`` is the way to say "drop this".
+    """
+    if available is None or target in available:
+        yield (target, scale)
+        return
+    rule = fallbacks.get(target) if fallbacks else None
+    if rule is None or target in _seen:
+        return
+    seen = _seen | {target}
+    for repl, s in rule:
+        yield from _resolve_target(repl, scale * s, available, fallbacks, seen)
+
+
+def retarget(track: FaceTrack, mapping: Mapping,
+             available: Optional[Iterable[str]] = None,
+             fallbacks: Optional[Mapping] = None) -> FaceTrack:
     """Return a new FaceTrack with channels renamed/combined per ``mapping``.
 
     Source channels absent from the mapping are dropped (deliberately: a rig
     that lacks a shape should not receive its weight).
+
+    ``available`` is an iterable of the target shape names the rig actually has;
+    any mapped target outside it reroutes through ``fallbacks`` (a
+    ``{target: [(replacement, scale), ...]}`` table, typically
+    ``PRESET_FALLBACKS[name]``) so weight redistributes rather than dropping
+    silently. ``available=None`` (default) disables filtering and is identical
+    to a plain rename/combine.
     """
+    avail = set(available) if available is not None else None
     # target name -> list of (sampler, key times, scale)
     contributors: Dict[str, List[tuple]] = {}
     for ch in track.channels:
+        times = [k.time for k in ch.keys]
         for target, scale in mapping.get(ch.name, ()):
-            times = [k.time for k in ch.keys]
-            contributors.setdefault(target, []).append((_sampler(ch), times, scale))
+            for final, s in _resolve_target(target, scale, avail, fallbacks):
+                contributors.setdefault(final, []).append((_sampler(ch), times, s))
 
     channels: List[Channel] = []
     for target, sources in contributors.items():
@@ -67,13 +108,16 @@ def retarget(track: FaceTrack, mapping: Mapping) -> FaceTrack:
             keys.append(Keyframe(t, round(min(max(v, 0.0), 1.0), 4)))
         channels.append(Channel(target, keys))
     channels.sort(key=lambda c: c.name)
-    all_targets = sorted({t for targets in mapping.values() for t, _ in targets})
+    # Declared vocabulary = every target the mapping can actually produce for
+    # this rig (fallback-resolved), so an available= run advertises only the
+    # shapes it emits.
+    all_targets = sorted({ft for targets in mapping.values() for t, _ in targets
+                          for ft, _ in _resolve_target(t, 1.0, avail, fallbacks)})
     return FaceTrack(fps=track.fps, channels=channels, target_set=all_targets)
 
 
 def rename_only(prefix: str = "", names: Dict[str, str] = None) -> Mapping:
     """Build a 1:1 mapping that renames each viseme, e.g. ``viseme_PP``."""
-    from .visemes import VISEMES
     names = names or {}
     return {v: [(names.get(v, prefix + v), 1.0)] for v in VISEMES}
 
@@ -155,7 +199,23 @@ _VRM = {
     "nn": (("ih", 0.4),), "RR": (("ou", 0.4),),
 }
 
-# Reallusion Character Creator 4 / iClone viseme set (near 1:1 rename).
+# VRM 0.x BlendShapePreset vowels. Same five-vowel design as `vrm`, but VRM 0.x
+# names the presets with uppercase single letters (A I U E O) where VRM 1.0
+# renamed them (aa ih ou ee oh). The 0.x<->1.0 correspondence is the spec's own:
+# "A (aa)", "I (ih)", "U (ou)", "E (E)", "O (oh)". Consonant borrowing mirrors
+# `vrm` exactly — coarse by design, VRM has no consonant visemes.
+_VRM0 = {
+    "aa": (("A", 1.0),), "I": (("I", 1.0),), "U": (("U", 1.0),),
+    "E": (("E", 1.0),), "O": (("O", 1.0),),
+    "FF": (("I", 0.2),), "TH": (("I", 0.3),), "DD": (("I", 0.5),),
+    "kk": (("A", 0.3),), "CH": (("U", 0.5),), "SS": (("I", 0.4),),
+    "nn": (("I", 0.4),), "RR": (("U", 0.4),),
+}
+
+# Reallusion Character Creator 4 / iClone viseme set (near 1:1 rename). The same
+# Viseme Panel phoneme-pair labels back CC3 and CC4 (CC4's ExPlus / "CC4
+# Extended" changes sit in the facial-profile layer beneath the panel, not in
+# these names), so this preset covers CC3 too.
 _CC4 = {
     "PP": (("B_M_P", 1.0),), "FF": (("F_V", 1.0),), "TH": (("Th", 1.0),),
     "DD": (("T_L_D_N", 1.0),), "nn": (("T_L_D_N", 1.0),),
@@ -165,10 +225,34 @@ _CC4 = {
     "U": (("W_OO", 1.0),),
 }
 
+# Ready Player Me exposes the Oculus 15 visemes as morph targets named
+# ``viseme_<name>`` in verbatim Oculus casing (viseme_sil, viseme_PP, ...,
+# viseme_aa, viseme_E, viseme_I, viseme_O, viseme_U), so the map is exactly
+# ``rename_only(prefix="viseme_")``. (RPM also ships the ARKit 52 for that route
+# — use the ``arkit`` preset instead if you drive those.)
+_READY_PLAYER_ME = {v: ((f"viseme_{v}", 1.0),) for v in VISEMES}
+
 PRESETS: Dict[str, Mapping] = {
     "arkit": _ARKIT,
     "rhubarb": _RHUBARB,
     "preston_blair": _PRESTON_BLAIR,
     "vrm": _VRM,
+    "vrm0": _VRM0,
     "cc4": _CC4,
+    "readyplayerme": _READY_PLAYER_ME,
+}
+
+# Optional-shape fallbacks: when ``retarget(..., available=)`` is given a rig's
+# real shapes, a mapped target the rig lacks reroutes through its preset's table
+# here (``{target: [(replacement, scale), ...]}``; ``()`` means drop) instead of
+# vanishing. Data, like the weight tables — tune or extend per rig.
+PRESET_FALLBACKS: Dict[str, Mapping] = {
+    # Rhubarb's documented basic-set collapse (README, "Extended mouth shapes"):
+    # a rig with only the six basic shapes A-F loses G/H/X. Canonical home for
+    # the table export_cues derives its cue-label view from.
+    "rhubarb": {"G": (("A", 1.0),), "H": (("C", 1.0),), "X": (("A", 1.0),)},
+    # Tongue-less ARKit rigs (e.g. NVIDIA Audio2Face, which does not animate the
+    # tongue) reroute tongueOut to a small jaw opening rather than dropping the
+    # TH/nn tongue weight. Our heuristic, not an Apple convention.
+    "arkit": {"tongueOut": (("jawOpen", 0.2),)},
 }

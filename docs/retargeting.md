@@ -9,7 +9,8 @@ from openfacefx import generate_naive, retarget, rename_only, PRESETS, write_jso
 track = generate_naive("hello world", duration=1.2)
 write_json(retarget(track, PRESETS["arkit"]), "track_arkit.json")
 
-# rigs that just prefix the same visemes (Oculus reference / Ready Player Me):
+# Ready Player Me / Oculus-reference rigs just prefix the same visemes — the
+# readyplayerme preset (below) is exactly this rename:
 write_json(retarget(track, rename_only(prefix="viseme_")), "track_rpm.json")
 ```
 
@@ -25,7 +26,9 @@ Each mapping sends a viseme to one or more target shapes with a weight scale;
 | `rhubarb` | [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync) mouth shapes A–H + X | Shape semantics from the Rhubarb README; nearest-pose assignment is ours. Uses extended shapes G (F/V) and H (L); if your rig only has the six basic shapes, remap G→A, H→C. |
 | `preston_blair` | Preston-Blair series (Papagayo/Moho/OpenToonz) | Shape set from [garycmartin.com](https://www.garycmartin.com/mouth_shapes.html) and Rhubarb's DAT exporter; assignment ours. Consonant catch-all is named `etc` (the exact layer name OpenToonz/Moho expect); `WQ` is omitted — viseme-level input can't split W from UW. |
 | `vrm` | VRM 1.0 expression presets (`aa ih ou ee oh`) | Preset semantics from the [VRM spec](https://github.com/vrm-c/vrm-specification/blob/master/specification/VRMC_vrm-1.0/expressions.md). The five vowels map canonically; **VRM has no consonant visemes**, so consonants borrow the nearest vowel mouth at reduced weight and `PP`/`sil` rest at zero — coarse by design. |
-| `cc4` | Reallusion CC4 / iClone viseme panel | Names from the [Reallusion manual](https://manual.reallusion.com/Character-Creator-4/Content/ENU/4.0/06-Facial-Profile-Editor/The-Mapping-Between-Facial-Profile-Editor-and-Viseme-Panel.htm); CC4's set is nearly a 1:1 rename of the Oculus 15. |
+| `vrm0` | VRM 0.x BlendShapePreset vowels (`A I U E O`) | Preset names from the [VRM 0.0 spec](https://github.com/vrm-c/vrm-specification/blob/master/specification/0.0/README.md): VRM 0.x names the lip-sync presets with uppercase single letters, which the spec pairs one-to-one with 1.0's names — `A (aa)`, `I (ih)`, `U (ou)`, `E (E)`, `O (oh)`. Same five-vowel projection and consonant borrowing as `vrm`. Use this for VRoid Studio / VRM 0.x exports; use `vrm` for VRM 1.0. |
+| `cc4` | Reallusion CC4 / iClone viseme panel (also CC3) | Names from the [Reallusion manual](https://manual.reallusion.com/Character-Creator-4/Content/ENU/4.0/06-Facial-Profile-Editor/The-Mapping-Between-Facial-Profile-Editor-and-Viseme-Panel.htm); CC4's set is nearly a 1:1 rename of the Oculus 15. The same Viseme Panel phoneme-pair labels back CC3 and CC4 — CC4's `ExPlus` / "CC4 Extended" additions sit in the facial-profile layer beneath the panel, not in these names — so this preset covers CC3 too. |
+| `readyplayerme` | Ready Player Me Oculus visemes (`viseme_*`) | Ready Player Me avatars expose the Oculus 15 as morph targets named `viseme_<name>` in verbatim Oculus casing ([RPM Oculus OVR LipSync](https://docs.readyplayer.me/ready-player-me/api-reference/avatars/morph-targets/oculus-ovr-libsync); names per the [Meta viseme reference](https://developers.meta.com/horizon/documentation/unity/audio-ovrlipsync-viseme-reference/)). Identical to `rename_only(prefix="viseme_")`. RPM also ships the ARKit 52 blendshapes — drive those with the `arkit` preset instead. |
 
 ## Known quirks worth knowing
 
@@ -38,12 +41,59 @@ Each mapping sends a viseme to one or more target shapes with a weight scale;
 - **Rhubarb/Preston-Blair are pose-based**: several consonant visemes collapse
   onto one "consonants"/B shape. That is how those conventions work, not data
   loss you can tune away.
+- **`vrm` / `vrm0`** carry only five vowel mouths, so consonants are coarse (see
+  the table). They are the same projection under two spec versions — pick `vrm0`
+  for VRM 0.x / VRoid Studio uppercase presets, `vrm` for VRM 1.0.
 
-## MetaHuman and friends (no preset yet)
+## Rigs covered by an existing preset (no new table needed)
 
-Epic's MetaHuman face rig exposes the 52 ARKit shapes as poses with a bundled
-ARKit mapping asset (`mh_arkit_mapping_pose`), so the `arkit` preset output is
-the right input for the standard MetaHuman ARKit route. MetaHuman Animator's
-own ~130 `CTRL_expressions` curves are a different, proprietary layer —
-community remaps exist (e.g. AntiAnti/MetahumVisemeCurves' 12 `LS_*` poses)
-but there is no authoritative table to ship.
+Some ecosystems reuse another rig's shape names, so they want documentation, not
+a duplicate table:
+
+- **Meta Avatars / Quest**: the Oculus/Meta LipSync SDK's 15 visemes *are*
+  OpenFaceFX's native channel set (`sil PP FF … O U`, [Meta viseme
+  reference](https://developers.meta.com/horizon/documentation/unity/audio-ovrlipsync-viseme-reference/)),
+  so no retarget is needed — or `rename_only()` for a bare rename. Ready Player
+  Me prefixes them (`viseme_*`): the `readyplayerme` preset.
+- **Epic MetaHuman**: the face rig exposes the 52 ARKit shapes as poses with a
+  bundled ARKit mapping asset (`mh_arkit_mapping_pose`), so `arkit` output is the
+  right input for the standard MetaHuman ARKit route. MetaHuman Animator's own
+  ~130 `CTRL_expressions` curves are a different, proprietary layer — community
+  remaps exist (e.g. AntiAnti/MetahumVisemeCurves' 12 `LS_*` poses) but there is
+  no authoritative table to ship.
+- **NVIDIA Audio2Face-3D**: emits [ARKit
+  blendshapes](https://docs.nvidia.com/ace/audio2face-3d-microservice/latest/text/getting-started/overview.html),
+  so drive it with `arkit`. A2F does not animate the tongue — pass `available=`
+  without `tongueOut` and the arkit fallback reroutes the `TH`/`nn` tongue weight
+  to a small `jawOpen` (below). (A2F's `MouthClose` also folds in jaw opening,
+  deviating from Apple's, but that is moot here: `arkit` seals `PP` with
+  lip-roll, not `mouthClose`.)
+- **Reallusion CC3**: shares CC4's Viseme Panel labels — use `cc4`.
+
+## Optional shapes and fallbacks
+
+A rig rarely has *every* shape a preset names. Pass `available=` (the shapes it
+does have) and any missing target reroutes through the preset's fallback table
+instead of dropping silently:
+
+```python
+from openfacefx import retarget, PRESETS, PRESET_FALLBACKS
+
+# an Audio2Face rig with no tongue shape:
+shapes = {"jawOpen", "mouthFunnel", "mouthPucker", ...}   # the rig's real ARKit shapes
+track = retarget(track, PRESETS["arkit"], available=shapes,
+                 fallbacks=PRESET_FALLBACKS["arkit"])      # tongueOut -> jawOpen
+```
+
+`fallbacks` is a `{target: [(replacement, scale), ...]}` table (an empty list
+`[]` means *drop this target*). Substitutions **chain** — a replacement that is
+itself missing is resolved again, weights multiplying — and cycles are broken,
+not looped. With `available=None` (the default) nothing is filtered, so a plain
+`retarget(track, mapping)` is unchanged. Shipped tables (`PRESET_FALLBACKS`):
+
+| Preset | Fallback | Rationale |
+|---|---|---|
+| `arkit` | `tongueOut → jawOpen × 0.2` | Tongue-less rigs (e.g. Audio2Face) keep a hint of the `TH`/`nn` opening instead of losing it. Our heuristic, not an Apple convention. |
+| `rhubarb` | `G → A`, `H → C`, `X → A` | Rhubarb's own documented [basic-set collapse](https://github.com/DanielSWolf/rhubarb-lip-sync) for art with only the six basic shapes. Single source of truth: the cue exporters (`--rhubarb-shapes`) derive their collapse from this same table. |
+
+The tables are data — extend `PRESET_FALLBACKS` or pass your own `fallbacks=`.

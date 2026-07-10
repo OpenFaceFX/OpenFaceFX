@@ -8,8 +8,24 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **More retarget presets and optional-shape fallbacks** (#22): two new
+  `--retarget` presets — `vrm0` (VRM 0.x / VRoid Studio uppercase `A I U E O`
+  BlendShapePresets, the 0.x-named sibling of `vrm`) and `readyplayerme` (the
+  Oculus 15 as Ready Player Me's `viseme_*` morph targets) — plus documentation
+  that MetaHuman, Meta Avatars/Quest, NVIDIA Audio2Face and Reallusion CC3 are
+  already covered by the existing `arkit`/native-Oculus/`cc4` presets rather than
+  duplicated. `retarget()` gains `available=` (the shapes a rig actually has) and
+  `fallbacks=`: a mapped target the rig lacks reroutes through a per-preset
+  `PRESET_FALLBACKS` table — chained, cycle-guarded, weights multiplying —
+  instead of dropping silently (e.g. a tongue-less Audio2Face rig sends
+  `tongueOut → jawOpen × 0.2`). Rhubarb's documented basic-set collapse
+  (`G→A H→C X→A`) now lives once in `PRESET_FALLBACKS`, and the cue exporters'
+  `--rhubarb-shapes` derives its view from it (behaviour unchanged). Provenance
+  and the fallback tables: `docs/retargeting.md`.
+
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — the
-remaining P2 items (#18 presets/stress, #19, #22, #23), adoption
+remaining P2 items (#18 presets/stress, #19, #22 gain/offset, #23), adoption
 infrastructure (#24, #27–#31) and the sample-blocked `.LIP` writer (#12).
 
 ## [0.5.0] — 2026-07-10

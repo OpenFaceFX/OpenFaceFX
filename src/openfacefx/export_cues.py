@@ -26,7 +26,7 @@ from typing import List, Optional, Set, Tuple
 from xml.sax.saxutils import escape as _xml_escape
 
 from .curves import FaceTrack
-from .retarget import PRESETS, retarget, _sampler
+from .retarget import PRESETS, PRESET_FALLBACKS, retarget, _sampler
 from .visemes import VISEMES
 
 Cue = Tuple[float, float, str]
@@ -41,8 +41,11 @@ _OCULUS_SHAPES = frozenset(VISEMES)
 
 # Rhubarb's documented fallback when a rig lacks an extended shape (README,
 # "Extended mouth shapes"): the f/v shape G and the idle X collapse to the
-# closed A, the tongue-up H to the open C.
-RHUBARB_EXTENDED_FALLBACK = {"G": "A", "H": "C", "X": "A"}
+# closed A, the tongue-up H to the open C. The collapse lives once, in
+# retarget.PRESET_FALLBACKS (weighted form, shared with retarget's available=);
+# here we need the single-shape view a cue label steps to, so flatten each
+# rhubarb rule to its lone replacement (they are all single-target renames).
+RHUBARB_EXTENDED_FALLBACK = {k: v[0][0] for k, v in PRESET_FALLBACKS["rhubarb"].items()}
 
 # A frame whose loudest channel sits below this weight is treated as silence
 # (rest / X). Real tracks carry an explicit sil->X/rest channel that wins on its
