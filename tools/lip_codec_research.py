@@ -35,14 +35,35 @@ import sys
 def parse_header(d):
     h = {}
     h["version"] = struct.unpack_from("<I", d, 0)[0]     # [V] =1
-    h["duration"] = struct.unpack_from("<I", d, 4)[0]    # [I] duration; unit [U] (ms?)
-    h["num_curves"] = struct.unpack_from("<I", d, 8)[0]  # [I] =13 in all samples
-    h["count12"] = struct.unpack_from("<H", d, 12)[0]    # [I] key-count-like
-    h["const14"] = struct.unpack_from("<H", d, 14)[0]    # [V] =3
-    h["neg16"] = struct.unpack_from("<i", d, 16)[0]      # [U] -8/-9
-    h["u20"] = struct.unpack_from("<H", d, 20)[0]        # [U]
-    h["u22"] = struct.unpack_from("<H", d, 22)[0]        # [U]
+    h["duration"] = struct.unpack_from("<I", d, 4)[0]    # [V] FaceFX ticks; see time_model
+    h["num_curves"] = struct.unpack_from("<I", d, 8)[0]  # [I] ACTIVE curve count (13 in all samples)
+    h["count12"] = struct.unpack_from("<H", d, 12)[0]    # [V] FRAME count (uniform time grid)
+    h["const14"] = struct.unpack_from("<H", d, 14)[0]    # [I] =3: key = (value, slopeIn, slopeOut)
+    h["neg16"] = struct.unpack_from("<i", d, 16)[0]      # [V] first frame index (negative pre-roll)
+    h["u20"] = struct.unpack_from("<H", d, 20)[0]        # [V] target vocabulary: 16 Skyrim / 43 FO4
+    h["u22"] = struct.unpack_from("<H", d, 22)[0]        # [U] varies (63/163/199/3)
     return h
+
+
+def time_model(h):
+    """TIME MODEL — resolved Jul 2026 from 4 samples incl. a real vanilla CK
+    lip, exact on all: duration = ticks_per_frame * count12 + 28, with
+    ticks_per_frame an integer per game (Skyrim 132, Fallout 4 240). Keys sit
+    on a uniform frame grid running neg16 .. count12-1 (t=0 at audio start);
+    at the standard 30 fps, time_s(frame) = frame / 30. Per-key time is NOT
+    stored (const14=3: value + two slopes only). The one remaining unknown is
+    per-key CURVE ROUTING (which of the num_curves active curves each
+    frame-major value belongs to) — markers are in curve-index range but the
+    decode is unproven; see issue #12."""
+    tpf = (h["duration"] - 28) / h["count12"]
+    return {
+        "frame_count": h["count12"],
+        "ticks_per_frame": tpf,
+        "ticks_exact": tpf == int(tpf),
+        "first_frame": h["neg16"],
+        "duration_s_at_30fps": h["count12"] / 30.0,
+        "preroll_s_at_30fps": -h["neg16"] / 30.0,
+    }
 
 
 def _is_marker(d, p):
@@ -103,8 +124,12 @@ def report(path):
     vals = [t["value"] for t in toks]
     in01 = sum(1 for v in vals if -1e-4 <= v <= 1.0001)
     neg = sum(1 for v in vals if v < -1e-4)
+    tm = time_model(h)
     print(f"\n{path}:")
     print(f"  header={h}")
+    print(f"  time: {tm['frame_count']} frames x {tm['ticks_per_frame']:g} ticks"
+          f" (exact={tm['ticks_exact']}), first frame {tm['first_frame']},"
+          f" ~{tm['duration_s_at_30fps']:.2f}s at 30fps")
     print(f"  ntok={len(toks)}  EOF: end={end}/{len(d)} (slop={len(d) - end})")
     print(f"  roundtrip_raw    = {'EXACT' if rt_raw == d else 'FAIL'}")
     print(f"  roundtrip_fields = {'EXACT' if rt_fld == d else 'FAIL'}")
