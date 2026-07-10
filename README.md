@@ -652,6 +652,31 @@ event-take layer); variants are separate files. Library callers get
 `generate_lods(track)`, `make_lod`, `lod_metadata`; numpy + stdlib, deterministic,
 additive. See [docs/api/lod.md](docs/api/lod.md).
 
+## Fit a channel budget (morph cap / per-LOD)
+
+Rigs have fixed morph-target budgets and drop secondary detail at distance. The
+budget pass (issue [#37](https://github.com/OpenFaceFX/OpenFaceFX/issues/37)) ranks
+channels by **total energy** (summed abs key-to-key delta — how much a channel
+moves) and keeps the top N, dropping the low-energy secondary micro-channels
+**entirely**:
+
+```bash
+python -m openfacefx transform clip.track.json --max-channels 20 -o rig.json   # hard cap
+python -m openfacefx lod clip.track.json --max-channels 15,8,4 -o out/clip      # per-LOD
+```
+
+In speech the jaw + primary lip visemes are highest-energy, so the ranking keeps
+them naturally (no protect-set). The cap applies to the `[0,1]` morph channels
+only — the signed head/eye **pose** channels pass through unchanged and aren't
+counted toward N (they drive bones, not morph targets, and their degree-scale
+deltas aren't comparable to `[0,1]` weights). Dropped channels are removed, not
+zeroed; the cap never yields more than N morph channels; and the per-channel energy
+ranking is written as sidecar metadata either way (`transform` →
+`<out>.budget.json`, `lod` → the `*_lod.json`). Absent the flag, output is
+byte-identical. Library callers get
+`rank_channels`, `budget_channels(track, N)`, `channel_energy`; stdlib,
+deterministic, additive. See [docs/api/budget.md](docs/api/budget.md).
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -934,6 +959,7 @@ src/openfacefx/
   inspect.py        read-only track stats + a CI format/contract linter (#47) ← inspect, validate commands
   transforms.py     retime/stretch, mirror L/R, trim/slice a track (#48) ← transform command
   lod.py            offline LOD variant export (RDP-eps + fps-resample tiers) (#36) ← lod command
+  budget.py         energy-ranked channel-budget reduction / morph cap (#37) ← --max-channels
   gestures_layers.py  gesture event-extraction + per-layer curve synthesis (gestures.py's engine)
   pipeline.py       orchestration
   cli.py            command line

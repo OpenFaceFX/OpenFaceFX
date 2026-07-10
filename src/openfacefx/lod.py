@@ -117,8 +117,10 @@ def _resample_thin(channels, grid: np.ndarray, eps: float) -> List[Channel]:
     out: List[Channel] = []
     for c in channels:
         vals = np.round(sample(c, grid), 4)
-        if not np.any(vals > 1e-3):
-            continue                                  # silent at this LOD; drop
+        if not np.any(np.abs(vals) > 1e-3):           # magnitude, not sign:
+            continue  # silent at this LOD; drop. |v| so an all-negative signed
+            #           pose channel (e.g. eyeYaw in [-4, 0]) is not misread as
+            #           "never fires" and dropped (issue #36 follow-up).
         idx = _rdp(grid, vals, eps)
         # Times stay full-precision grid points (matching reduce_to_track, which
         # rounds only values); to_dict rounds times to 4 dp on write like any

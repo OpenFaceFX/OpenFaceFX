@@ -123,6 +123,26 @@ def test_fps_above_source_is_pure_rdp_not_upsampled():
     assert to_dict(variants[0]) == to_dict(src)                  # eps 0.015 == source
 
 
+def test_fps_resample_preserves_all_negative_signed_pose_channel():
+    # issue #36 follow-up: the liveness gate tests magnitude, so a signed pose
+    # channel that stays fully negative (e.g. headRoll / eyeYaw in [-x, 0]) is not
+    # misread as "never fires" and dropped from the coarse fps tiers.
+    from openfacefx.gestures import GestureParams
+    from openfacefx.inspect import POSE_CHANNELS
+    src = from_dict(to_dict(generate_from_alignment(
+        naive_segments(TEXT, DUR), fps=60.0, gestures=GestureParams(seed=1))))
+    negative_pose = [c.name for c in src.channels if c.name in POSE_CHANNELS
+                     and c.keys and max(k.value for k in c.keys) <= 1e-9]
+    assert negative_pose, "test needs an all-non-positive pose channel"
+    variants, _ = generate_lods(src)                             # 60 / 30 / 15 fps
+    for i, v in enumerate(variants):
+        present = {c.name for c in v.channels}
+        for name in negative_pose:
+            assert name in present, f"LOD{i} (fps {v.fps}) dropped {name}"
+            keys = next(c.keys for c in v.channels if c.name == name)
+            assert keys                                          # present with keys
+
+
 # --------------------------------------------------------------------------- #
 # 4. metadata sidecar                                                         #
 # --------------------------------------------------------------------------- #

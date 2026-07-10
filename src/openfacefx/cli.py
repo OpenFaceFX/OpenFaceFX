@@ -851,6 +851,32 @@ def _parse_floats(s, name):
     return out
 
 
+def _parse_ints(s, name):
+    """Parse a comma-separated integer list (the per-tier lod channel budget);
+    ``None`` passes through (no budgeting)."""
+    if s is None:
+        return None
+    try:
+        out = [int(x) for x in s.split(",") if x.strip()]
+    except ValueError:
+        raise SystemExit(f"lod: {name} must be comma-separated integers, got {s!r}")
+    if not out:
+        raise SystemExit(f"lod: {name} is empty")
+    return out
+
+
+def _write_budget_sidecar(out, ranking, max_channels, args):
+    """Write the ``<out>.budget.json`` energy-ranking sidecar for a transform
+    ``--max-channels`` run (issue #37)."""
+    import os
+    from .budget import budget_metadata
+    path = os.path.splitext(out)[0] + ".budget.json"
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(budget_metadata(ranking, max_channels), fh, indent=2)
+        fh.write("\n")
+    _say(args, f"wrote {path}: energy ranking of {len(ranking)} channels")
+
+
 def _emotion_clamps(args):
     """Parse repeated ``--clamp CHANNEL LO HI`` triples into a
     ``{channel: (lo, hi)}`` dict for ``bake_emotion`` (None when unset). The
@@ -1055,6 +1081,10 @@ def main(argv=None) -> int:
                          "lateral pose channels (headYaw/headRoll/eyeYaw)")
     tf.add_argument("--trim", type=float, nargs=2, metavar=("T0", "T1"),
                     help="keep [T0, T1] seconds and rebase to 0")
+    tf.add_argument("--max-channels", type=int, metavar="N",
+                    help="keep only the N highest-energy channels (drop the "
+                         "low-energy secondary ones); writes a <out>.budget.json "
+                         "energy-ranking sidecar (issue #37)")
     _add_output_options(tf)
 
     lo = sub.add_parser("lod",
@@ -1073,6 +1103,10 @@ def main(argv=None) -> int:
     lo.add_argument("--format", choices=["json", "csv"], default="json",
                     help="variant file format (default json); the metadata "
                          "sidecar is always json")
+    lo.add_argument("--max-channels", metavar="N1,N2,..",
+                    help="per-tier channel budget: keep the N highest-energy "
+                         "channels at each LOD (same length as the tiers, higher "
+                         "LODs fewer); nested by the source ranking (issue #37)")
 
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
@@ -1330,23 +1364,44 @@ def main(argv=None) -> int:
             if args.trim is not None:
                 track = _tf.trim(track, args.trim[0], args.trim[1])
                 applied = True
+            ranking = None
+            if args.max_channels is not None:      # energy-ranked cap (issue #37)
+                from .budget import budget_channels
+                track, ranking = budget_channels(track, args.max_channels)
+                applied = True
         except (ValueError, OSError) as ex:
             raise SystemExit(f"transform: {ex}")
         if not applied:
             raise SystemExit("transform: choose at least one of "
-                             "--retime/--duration/--wav, --mirror, --trim")
+                             "--retime/--duration/--wav, --mirror, --trim, "
+                             "--max-channels")
         _write(track, args.out, args)
+        if ranking is not None:
+            _write_budget_sidecar(args.out, ranking, args.max_channels, args)
         return 0
 
     if args.cmd == "lod":
         import os
         from .io_export import read_json, write_csv, write_json
         from .lod import generate_lods, lod_metadata
+        source_ranking = None
         try:
             track = read_json(args.infile)
             variants, levels = generate_lods(
                 track, rdp=_parse_floats(args.rdp, "--rdp"),
                 fps=_parse_floats(args.fps, "--fps"))
+            budgets = _parse_ints(args.max_channels, "--max-channels")
+            if budgets is not None:
+                if len(budgets) != len(variants):
+                    raise ValueError(
+                        f"--max-channels must list one budget per tier "
+                        f"({len(variants)}), got {len(budgets)}")
+                # rank the SOURCE once so the kept channel sets nest across LODs
+                # (pose channels pass through every tier; issue #37)
+                from .budget import keep_top_weight, rank_channels
+                source_ranking = rank_channels(track)
+                variants = [keep_top_weight(v, source_ranking, n)
+                            for v, n in zip(variants, budgets)]
         except (OSError, ValueError) as ex:
             raise SystemExit(f"lod: {ex}")
         prefix, ext = args.out, args.format
@@ -1360,6 +1415,10 @@ def main(argv=None) -> int:
             writer(v, path)
             files.append(os.path.basename(path))
         meta = lod_metadata(track, levels, variants, files)
+        if source_ranking is not None:                # issue #37: per-tier budget
+            meta["ranking"] = source_ranking
+            for i, entry in enumerate(meta["levels"]):
+                entry["max_channels"] = budgets[i]
         meta_path = f"{prefix}_lod.json"
         with open(meta_path, "w", encoding="utf-8") as fh:
             json.dump(meta, fh, indent=2)

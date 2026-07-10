@@ -9,6 +9,32 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Energy-ranked channel-budget reduction** (closes
+  [#37](https://github.com/OpenFaceFX/OpenFaceFX/issues/37)): a new
+  `openfacefx.budget` module (`channel_energy`, `rank_channels`, `keep_channels`,
+  `keep_top_weight`, `budget_channels`, `budget_metadata`) that ranks a solved
+  track's channels by **total energy** — the summed absolute key-to-key value
+  delta (total variation) — and keeps the top N, dropping the low-energy secondary
+  micro-channels entirely (as `reduce_to_track` skips never-firing channels;
+  nothing is zeroed with dead keys). The ranking is deterministic, ties broken by
+  channel name; in a speech clip the jaw + primary lip visemes are highest-energy
+  so they survive naturally (no protect-set). The cap applies to the `[0,1]`
+  **morph** channels only — the signed head/eye **pose** channels (`headPitch`/
+  `headYaw`/`headRoll`/`eyePitch`/`eyeYaw`, the set `inspect`/`validate` already
+  classifies) pass through unchanged and are not counted toward N, since they drive
+  bones not morph targets and their degree-scale deltas aren't comparable to
+  `[0,1]` weights. Two modes, both emitting the per-channel energy ranking as
+  sidecar metadata:
+  - a **standalone hard cap** `transform --max-channels N` (fixed morph-target
+    platforms), composable with retime/mirror/trim, writing a `<out>.budget.json`
+    (`format: openfacefx.budget`) sidecar;
+  - a **per-LOD budget** `lod --max-channels N1,N2,..` (one per tier, higher LODs
+    fewer), nested by the *source* ranking so channel sets don't pop between
+    levels, folded into the `*_lod.json` metadata.
+
+  A cap of N never yields more than N morph channels; absent the flag the track is
+  returned unchanged (byte-identical). numpy-free stdlib arithmetic, deterministic
+  across Python 3.9/3.13, additive.
 - **`lod` command: offline LOD (level-of-detail) variant export** (closes
   [#36](https://github.com/OpenFaceFX/OpenFaceFX/issues/36)): a new
   `openfacefx.lod` module (`generate_lods`, `make_lod`, `lod_metadata`,
@@ -31,6 +57,17 @@ its `version` field.
     `FaceTrack.variants` (the issue-#6 event-take layer) is **not** overloaded for
     LOD — variants are separate files, and each carries the event/take layer
     through unchanged.
+
+### Fixed
+- **`lod`: fps-resample tiers no longer drop all-negative signed pose channels**
+  (a follow-up to [#36](https://github.com/OpenFaceFX/OpenFaceFX/issues/36), found
+  while wiring the [#37](https://github.com/OpenFaceFX/OpenFaceFX/issues/37)
+  budget): the per-channel liveness gate in `lod._resample_thin` used
+  `np.any(vals > 1e-3)` — a `[0, 1]` test — which misread a signed pose channel
+  that stays fully negative (e.g. `headRoll` / `eyeYaw` going into `[-x, 0]`) as
+  "never fires" and dropped it from the coarser fps LOD tiers. It now tests
+  magnitude (`np.abs(vals) > 1e-3`): identical for `[0, 1]` weight channels
+  (values ≥ 0), and it correctly keeps signed pose channels at every tier.
 
 ## [0.13.0] — 2026-07-11
 

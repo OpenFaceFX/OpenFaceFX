@@ -107,5 +107,6 @@ nav:
       - Inspect & validate: api/inspect.md
       - Transforms (retime/mirror/trim): api/transforms.md
       - LOD variant export: api/lod.md
+      - Channel budget: api/budget.md
       - Batch & CLI: api/batch.md
   - Changelog: changelog.md

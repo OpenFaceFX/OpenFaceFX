@@ -41,8 +41,9 @@ VERSION = 1
 #: the head/eye rotation channels from the gesture layer (issue #5). Everything
 #: else (visemes, blink/brow weights, emotion channels, rig blendshapes) is a
 #: ``[0, 1]`` weight. Distinguishing them is the same weight-vs-angle split the
-#: CSV importer hit in issue #45.
-_POSE_CHANNELS = frozenset({
+#: CSV importer hit in issue #45 and the channel budget uses in issue #37 -- this
+#: is the shared source of truth for that classification.
+POSE_CHANNELS = frozenset({
     "headPitch", "headYaw", "headRoll", "eyePitch", "eyeYaw",
 })
 #: A signed pose value beyond this magnitude is "wildly out of range" (a full
@@ -72,7 +73,7 @@ def inspect_track(track, *, segments=None, oov_words=None) -> Dict:
     for c in sorted(track.channels, key=lambda ch: ch.name):
         vals = [k.value for k in c.keys]
         times = [k.time for k in c.keys]
-        is_pose = c.name in _POSE_CHANNELS
+        is_pose = c.name in POSE_CHANNELS
         pose += is_pose
         weight += not is_pose
         gesture += c.name in GESTURE_CHANNELS
@@ -226,7 +227,7 @@ def _validate_track(data: Dict) -> List[Dict]:
 
 def _check_channel_keys(c, where: str, duration: float,
                         problems: List[Dict]) -> None:
-    is_pose = c.name in _POSE_CHANNELS
+    is_pose = c.name in POSE_CHANNELS
     last: Optional[float] = None
     for i, k in enumerate(c.keys):
         at = f"{where} key {i}"
