@@ -1,0 +1,77 @@
+name: Deploy demo site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e .
+      - name: Generate demo track from the live pipeline
+        run: |
+          python -m openfacefx naive \
+            --text "hello world this is a test of open face f x" \
+            --wav examples/voice.wav -o demo_track.json
+      - name: Build site
+        run: |
+          mkdir -p site/demo
+          python tools/build_preview.py demo_track.json site/demo/index.html --autoplay
+          cp docs/logo.svg site/logo.svg
+          cat > site/index.html <<'EOF'
+          <!doctype html>
+          <html lang="en"><head><meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>OpenFaceFX</title>
+          <style>
+            body{margin:0;min-height:100vh;display:grid;place-items:center;
+                 background:linear-gradient(160deg,#12181f,#0a0e13);
+                 font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#e8edf4}
+            main{text-align:center;padding:24px}
+            img{width:120px}
+            h1{letter-spacing:.02em}h1 b{color:#f4b942}
+            p{color:#8b96a4;max-width:34em;line-height:1.5}
+            a.btn{display:inline-block;margin:10px 8px 0;padding:12px 22px;border-radius:10px;
+                  border:1.5px solid #f4b942;color:#f4b942;text-decoration:none}
+            a.btn.alt{border-color:#39424f;color:#8b96a4}
+          </style></head><body><main>
+            <img src="logo.svg" alt="OpenFaceFX logo">
+            <h1><b>Open</b>FaceFX</h1>
+            <p>Open-source lip-sync: voice recording + transcript &rarr; viseme
+               animation curves for any engine. MIT, numpy-only.</p>
+            <a class="btn" href="demo/">&#9654; Live demo</a>
+            <a class="btn alt" href="https://github.com/OpenFaceFX/OpenFaceFX">GitHub</a>
+            <p style="font-size:13px">The demo is regenerated from the current
+               pipeline on every push:<br>
+               <code>openfacefx naive --text "hello world this is a test of open face f x" --wav examples/voice.wav</code></p>
+          </main></body></html>
+          EOF
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

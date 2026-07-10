@@ -12,9 +12,11 @@
 [![Runtime deps](https://img.shields.io/badge/runtime%20deps-numpy%20only-6e7681.svg)](pyproject.toml)
 [![Status](https://img.shields.io/badge/status-0.1.0%20alpha-e06c5b.svg)](#scope--honesty)
 
+**[▶ Live demo](https://openfacefx.github.io/OpenFaceFX/demo/)** — no install, regenerated from the current pipeline on every push.
+
 <img src="docs/preview.png" width="850" alt="OpenFaceFX previewer: schematic mouth animating next to the viseme channel curves of a generated track"/>
 
-*The built-in previewer playing a track generated from `examples/voice.wav` — schematic articulator on the left, the exported viseme curves with a scrubbing playhead on the right.*
+*The built-in previewer playing a track generated from `examples/voice.wav` — schematic articulator on the left, the exported viseme curves with a scrubbing playhead on the right. [Try it live.](https://openfacefx.github.io/OpenFaceFX/demo/)*
 
 </div>
 

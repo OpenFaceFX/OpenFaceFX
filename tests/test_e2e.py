@@ -147,6 +147,10 @@ def test_e2e_preview_builder(tmp_path):
     build_preview.main(track, out)
     html = open(out, encoding="utf-8").read()
     assert "openfacefx.track" in html and "<canvas" in html.lower()
+    assert "render(0);btn.click();" not in html
+    # --autoplay (used by the hosted demo) starts playback on load
+    build_preview.main(track, out, autoplay=True)
+    assert "render(0);btn.click();" in open(out, encoding="utf-8").read()
 
 
 def test_e2e_batch_dialogue_example(tmp_path):
