@@ -1,0 +1,21 @@
+/* OpenFaceFX brand palette — amber (#f4b942) on dark, matching docs/logo.svg
+ * and the Pages landing page. Overrides Material's built-in "amber" (a lighter
+ * yellow) with the exact brand hex. Loaded after the theme, so these win. */
+
+[data-md-color-primary="amber"] {
+  --md-primary-fg-color:        #f4b942;
+  --md-primary-fg-color--light: #f6c766;
+  --md-primary-fg-color--dark:  #d99b1f;
+  --md-primary-bg-color:        #12181f;               /* text/icons on the amber header */
+  --md-primary-bg-color--light: rgba(18, 24, 31, 0.72);
+}
+
+[data-md-color-accent="amber"] {
+  --md-accent-fg-color:              #f4b942;
+  --md-accent-fg-color--transparent: rgba(244, 185, 66, 0.10);
+}
+
+/* Body links: amber reads well on the dark scheme, but needs to darken for
+ * contrast on the light scheme (amber on white is ~2:1). */
+[data-md-color-scheme="slate"]   { --md-typeset-a-color: #f4b942; }
+[data-md-color-scheme="default"] { --md-typeset-a-color: #9c6f16; }

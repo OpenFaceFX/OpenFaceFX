@@ -22,3 +22,7 @@ track.csv
 # quickstart GIF: rendered by VHS in CI and published to the Pages site, never
 # committed (README points at the Pages URL). Rebuild locally: vhs docs/quickstart.tape
 /docs/quickstart.gif
+
+# mkdocs build output — the Pages workflow builds site/ (landing + demo + docs)
+# in CI and never commits it. Local `mkdocs build` lands here too.
+/site/

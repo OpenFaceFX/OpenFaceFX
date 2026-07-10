@@ -25,6 +25,14 @@ Demo = "https://openfacefx.github.io/OpenFaceFX/demo/"
 # output into the pipeline via the adapters in openfacefx.alignment.
 align = []  # e.g. montreal-forced-aligner (conda), or torch + a wav2vec2 model
 dev = ["pytest>=7"]
+# Documentation site (MkDocs Material + mkdocstrings). Build-time only — these
+# never touch the numpy-only runtime. Pinned so the GitHub Pages build stays
+# reproducible; CI installs this group before `mkdocs build`.
+docs = [
+    "mkdocs==1.6.1",
+    "mkdocs-material==9.7.6",
+    "mkdocstrings[python]==1.0.5",
+]
 
 [project.scripts]
 openfacefx = "openfacefx.cli:main"

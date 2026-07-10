@@ -13,6 +13,17 @@ P2 items (#18 presets/stress, #19, #22 gain/offset, #23), adoption
 infrastructure (#24, #27–#31), and in-game confirmation of the `.lip` writer
 (#12).
 
+### Added
+- **Documentation site** ([#27](https://github.com/OpenFaceFX/OpenFaceFX/issues/27)):
+  a MkDocs Material + mkdocstrings site published to
+  [openfacefx.github.io/OpenFaceFX/docs/](https://openfacefx.github.io/OpenFaceFX/docs/),
+  alongside the existing landing page and live demo. Full-text search, a
+  light/dark toggle on the amber-on-dark brand, the compatibility / retargeting /
+  TTS-timing guides surfaced straight from `docs/` (no content forks), an API
+  reference generated from docstrings for every public module, and this changelog.
+  Built and deployed by the Pages workflow; the pinned build tools live in a new
+  `docs` extra (`pip install -e ".[docs]"`) and never touch the numpy-only runtime.
+
 ## [0.6.1] — 2026-07-11
 
 ### Fixed
@@ -146,7 +157,7 @@ for TTS timing.
   (#26). The README now opens with the live-demo link, an animated quickstart
   GIF, and `pip install openfacefx` above the fold; the long-form pipeline
   description moves below. The GIF is **recorded as code**, not hand-captured:
-  [`docs/quickstart.tape`](docs/quickstart.tape) drives [VHS](https://github.com/charmbracelet/vhs),
+  [`docs/quickstart.tape`](https://github.com/OpenFaceFX/OpenFaceFX/blob/main/docs/quickstart.tape) drives [VHS](https://github.com/charmbracelet/vhs),
   and the Pages workflow (`pages.yml`) re-renders it on every push via
   `charmbracelet/vhs-action` and publishes it to the GitHub Pages site — so the
   GIF can never drift from the real CLI and no bot ever commits a binary to the

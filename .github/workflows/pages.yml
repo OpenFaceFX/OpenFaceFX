@@ -22,8 +22,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install
-        run: pip install -e .
+      - name: Install (runtime + docs build tools)
+        run: pip install -e ".[docs]"
       - name: Generate demo track from the live pipeline
         run: |
           python -m openfacefx naive \
@@ -56,12 +56,18 @@ jobs:
             <p>Open-source lip-sync: voice recording + transcript &rarr; viseme
                animation curves for any engine. MIT, numpy-only.</p>
             <a class="btn" href="demo/">&#9654; Live demo</a>
+            <a class="btn alt" href="docs/">Docs</a>
             <a class="btn alt" href="https://github.com/OpenFaceFX/OpenFaceFX">GitHub</a>
             <p style="font-size:13px">The demo is regenerated from the current
                pipeline on every push:<br>
                <code>openfacefx naive --text "hello world this is a test of open face f x" --wav examples/voice.wav</code></p>
           </main></body></html>
           EOF
+      - name: Build the docs site into site/docs (MkDocs Material + mkdocstrings)
+        # mkdocs only (re)writes the site/docs subdirectory, so the landing page,
+        # demo/, logo.svg and quickstart.gif already in site/ are left untouched.
+        # --strict fails the build on any broken link, missing nav page, or ref.
+        run: mkdocs build --strict --site-dir site/docs
       - name: Render the quickstart GIF from docs/quickstart.tape (VHS)
         # Re-recorded from the committed .tape on every push so it can never
         # drift from the real CLI; openfacefx is already installed above, so the
