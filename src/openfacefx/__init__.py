@@ -27,6 +27,8 @@ from .texttags import (parse_tagged_transcript, Tag, has_tags,
                        build_curve_channel)
 from .edits import (EditsDoc, diff_edits, apply_edits, load_edits, save_edits,
                     sample)
+from .emotion import (EmotionEnvelope, bake_emotion, load_envelope,
+                     save_envelope, va_to_pose, VA_TABLE, VA_EMOTION_CHANNELS)
 from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_unreal_notifies import write_unreal_notifies, notifies_to_dict
 from .export_live2d import write_live2d_motion, lipsync_param_ids
@@ -76,6 +78,8 @@ __all__ = [
     "parse_tagged_transcript", "Tag", "has_tags", "resolve_tagged_segments",
     "curve_channels", "tag_events", "build_curve_channel",
     "EditsDoc", "diff_edits", "apply_edits", "load_edits", "save_edits", "sample",
+    "EmotionEnvelope", "bake_emotion", "load_envelope", "save_envelope",
+    "va_to_pose", "VA_TABLE", "VA_EMOTION_CHANNELS",
     "write_unity_anim", "NAMING_PRESETS",
     "write_unreal_notifies", "notifies_to_dict",
     "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",

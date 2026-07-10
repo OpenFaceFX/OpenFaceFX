@@ -9,6 +9,32 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Additive emotion/expression layer baked over speech** (closes
+  [#38](https://github.com/OpenFaceFX/OpenFaceFX/issues/38)): a new
+  `openfacefx.emotion` module and a standalone `emotion` command that bake an
+  authored emotion envelope onto a speech-solved track as a true additive delta
+  relative to a neutral/reference pose (`channel_value - reference_value`),
+  mirroring how SALSA's EmoteR and Unreal additive animation layer expression over
+  lip-sync. The delta is resampled onto a grid shared with the base curve (reusing
+  `edits.sample`), scaled by a global `--intensity` dial, clamped per channel and
+  re-thinned with the same RDP thinner — the result is an ordinary `FaceTrack`
+  that exports through every exporter. numpy + stdlib, deterministic across Python
+  3.9/3.13, and **byte-identical** with `--intensity 0`, a neutral envelope or a
+  zero delta (verified by `cmp` of a baked track against its input).
+  - **Two authoring modes** in one envelope schema (`openfacefx.emotion`,
+    version 1, validated like the `edits` sidecar): direct emotion-channel
+    keyframes (`smile`/`frown`/`brow_raise` …), or a compact `valence`/`arousal`
+    keyframe track (both in `[-1, 1]`) mapped through the **fixed, hand-authored**
+    `VA_TABLE` by bilinear interpolation — a table lookup only, **no ML** — with
+    the circumplex centre `valence = arousal = 0` mapping to an all-zero pose.
+    `va_to_pose(valence, arousal)` exposes the documented lookup.
+  - **Composes with the existing exporters**: the curve exporters carry the
+    emotion channels; the mouth-only cue and `.lip` writers ignore the recognised
+    expression channels (`smile`/`cheek_raise`/`brow_raise`/`brow_lower`/`frown`)
+    exactly as they ignore gesture channels, and `--retarget` passes them through.
+  - **Library API** `bake_emotion(track, envelope, *, intensity, clamps, eps)`,
+    `EmotionEnvelope`, `load_envelope`/`save_envelope`, `va_to_pose`, `VA_TABLE`
+    and `VA_EMOTION_CHANNELS`, exported from the package root.
 - **Transcript text tags for curves, events, emphasis, and audio chunking**
   (closes [#7](https://github.com/OpenFaceFX/OpenFaceFX/issues/7)): a new
   `openfacefx.texttags` module and a `--tags` flag on `naive` that let a writer

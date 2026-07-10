@@ -27,6 +27,7 @@ from xml.sax.saxutils import escape as _xml_escape
 
 from .curves import FaceTrack
 from .gestures import GESTURE_CHANNELS
+from .emotion import VA_EMOTION_CHANNELS
 from .retarget import PRESETS, PRESET_FALLBACKS, retarget, _sampler
 from .visemes import VISEMES
 
@@ -39,6 +40,10 @@ _RHUBARB_SHAPES = frozenset("ABCDEFGHX")
 # Preston-Blair track passes through.
 _PB_SHAPES = frozenset({"AI", "E", "O", "U", "etc", "L", "WQ", "MBP", "FV", "rest"})
 _OCULUS_SHAPES = frozenset(VISEMES)
+# Non-mouth channels a cue format must never treat as a viseme: procedural
+# gesture/pose channels (issue #5) and the additive emotion/expression channels
+# (issue #38). Both are stripped before the mouth-only flatten.
+_NON_MOUTH_CHANNELS = GESTURE_CHANNELS | frozenset(VA_EMOTION_CHANNELS)
 
 # Rhubarb's documented fallback when a rig lacks an extended shape (README,
 # "Extended mouth shapes"): the f/v shape G and the idle X collapse to the
@@ -102,17 +107,18 @@ def dominant_cues(track: FaceTrack, rest_name: str = "X",
 
 
 def _drop_gesture_channels(track: FaceTrack) -> FaceTrack:
-    """Cue formats are mouth-only. A gesture-augmented track (issue #5) carries
-    non-viseme pose channels (blink/brow/head/eye) that must never be treated as
-    a mouth shape in the dominance flatten, so strip them (and from target_set)
-    before coercion. Viseme and custom-vocab channels are left untouched -- this
-    removes ONLY the known gesture names, so a custom mapping still errors the
-    same way if it isn't a cue shape set."""
-    keep = [c for c in track.channels if c.name not in GESTURE_CHANNELS]
+    """Cue formats are mouth-only. A gesture- (issue #5) or emotion-augmented
+    (issue #38) track carries non-viseme pose/expression channels (blink/brow/
+    head/eye, smile/frown/...) that must never be treated as a mouth shape in the
+    dominance flatten, so strip them (and from target_set) before coercion.
+    Viseme and custom-vocab channels are left untouched -- this removes ONLY the
+    known gesture/emotion names, so a custom mapping still errors the same way if
+    it isn't a cue shape set."""
+    keep = [c for c in track.channels if c.name not in _NON_MOUTH_CHANNELS]
     if len(keep) == len(track.channels):
         return track
     ts = (None if track.target_set is None
-          else [n for n in track.target_set if n not in GESTURE_CHANNELS])
+          else [n for n in track.target_set if n not in _NON_MOUTH_CHANNELS])
     return FaceTrack(fps=track.fps, channels=keep, target_set=ts)
 
 

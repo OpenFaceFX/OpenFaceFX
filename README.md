@@ -473,6 +473,37 @@ of edit times onto a changed transcript (offsets on the *same* audio are the
 supported robustness story; a transcript rewrite that drops a channel is flagged,
 not auto-migrated), and no 3-way / multi-user merge beyond keep / take.
 
+## Emotion & expression over speech
+
+Production rigs keep expression on a **separate additive layer** over lip-sync —
+SALSA's EmoteR blends emphasis-timed emotes over speech, and Unreal additive
+animation is the *difference between a pose and a reference pose* added onto the
+base. OpenFaceFX does the same (issue [#38](https://github.com/OpenFaceFX/OpenFaceFX/issues/38)):
+an authored emotion envelope becomes a true additive delta `channel_value -
+reference_value`, baked onto the speech-solved channels with a global intensity
+dial and per-channel clamps. Bake it over a solved track with the `emotion`
+command:
+
+```bash
+python -m openfacefx naive --text "we did it" --duration 1.5 -o base.json
+python -m openfacefx emotion base.json happy.emotion.json --intensity 1.0 -o baked.json
+```
+
+An envelope carries either **direct emotion-channel keyframes** (`smile` /
+`frown` / `brow_raise` …) or a compact **valence/arousal** keyframe track (both in
+`[-1, 1]`) mapped through a **fixed, hand-authored table** by bilinear
+interpolation — high valence → smile + cheek raise, low valence + high arousal →
+brow lower. It is a table lookup and interpolation, **not ML**; the neutral point
+`valence = arousal = 0` maps to an all-zero pose. The baked result is a normal
+track that exports through every exporter (the mouth-only cue/`.lip` writers
+ignore the expression channels, and `--retarget` passes them through). Library
+callers get `bake_emotion(track, envelope)`, `va_to_pose(valence, arousal)` and
+`load_envelope`/`save_envelope`; the bake is deterministic (numpy `interp`/`clip`
++ the same RDP thinner, no RNG — identical on Python 3.9/3.13) and **opt-in**:
+with `--intensity 0`, a neutral envelope, or a zero delta, output is
+byte-identical to the plain speech track. See
+[docs/api/emotion.md](docs/api/emotion.md) for the full valence/arousal table.
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -749,6 +780,7 @@ src/openfacefx/
   events.py         timed/typed events + deterministic takes (#6) ← --events, game-engine notifies
   gestures.py       procedural blinks/brows/head/eyes, GestureParams (#5) ← opt-in, deterministic
   edits.py          edit-preservation sidecar: diff/apply hand-edits (#9) ← --edits, diff-edits
+  emotion.py        additive emotion/expression layer, valence/arousal table (#38) ← emotion command
   gestures_layers.py  gesture event-extraction + per-layer curve synthesis (gestures.py's engine)
   pipeline.py       orchestration
   cli.py            command line

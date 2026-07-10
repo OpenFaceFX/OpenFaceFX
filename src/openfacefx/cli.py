@@ -729,23 +729,26 @@ def _event_layer(track, args, segments=None, env_times=None, env=None) -> None:
 
 def _apply_retarget(track, preset, available=None, fallbacks=None):
     """Retarget the viseme channels onto a rig while passing gesture/pose
-    channels (issue #5) through unchanged -- ``retarget`` drops channels absent
-    from the viseme map by design, which would otherwise delete the gestures.
+    (issue #5) and emotion/expression (issue #38) channels through unchanged --
+    ``retarget`` drops channels absent from the viseme map by design, which would
+    otherwise delete those layers.
 
     ``available``/``fallbacks`` (from --retarget-shapes) restrict the rig's real
     shapes and reroute the rest, exactly as the library ``retarget`` args do."""
     from .gestures import GESTURE_CHANNELS
+    from .emotion import VA_EMOTION_CHANNELS
     from .curves import FaceTrack
-    gest = [c for c in track.channels if c.name in GESTURE_CHANNELS]
-    if not gest:
+    passthru = GESTURE_CHANNELS | frozenset(VA_EMOTION_CHANNELS)
+    kept = [c for c in track.channels if c.name in passthru]
+    if not kept:
         return retarget(track, preset, available=available, fallbacks=fallbacks)
     mouth = FaceTrack(track.fps,
-                      [c for c in track.channels if c.name not in GESTURE_CHANNELS],
+                      [c for c in track.channels if c.name not in passthru],
                       track.target_set)
     out = retarget(mouth, preset, available=available, fallbacks=fallbacks)
-    out.channels.extend(gest)
+    out.channels.extend(kept)
     if out.target_set is not None:
-        out.target_set = list(out.target_set) + [c.name for c in gest]
+        out.target_set = list(out.target_set) + [c.name for c in kept]
     return out
 
 
@@ -832,6 +835,24 @@ def _write_lip(segs, dur, args) -> None:
     _say(args, f"wrote {args.out}: EXPERIMENTAL Bethesda .lip "
          f"({getattr(args, 'lip_game', 'skyrim')}), {dur:.2f}s — "
          "UNVERIFIED in-game, please report on issue #12")
+
+
+def _emotion_clamps(args):
+    """Parse repeated ``--clamp CHANNEL LO HI`` triples into a
+    ``{channel: (lo, hi)}`` dict for ``bake_emotion`` (None when unset). The
+    range validation (0<=lo<=hi<=1) is left to the library so the message matches
+    the envelope-JSON path."""
+    raw = getattr(args, "clamp", None)
+    if not raw:
+        return None
+    out = {}
+    for name, lo, hi in raw:
+        try:
+            out[name] = (float(lo), float(hi))
+        except ValueError:
+            raise SystemExit(f"emotion: --clamp {name}: LO/HI must be numbers, "
+                             f"got {lo!r} {hi!r}")
+    return out
 
 
 def main(argv=None) -> int:
@@ -1015,6 +1036,27 @@ def main(argv=None) -> int:
     de.add_argument("--source", metavar="WAV",
                     help="WAV whose sha1 keys the sidecar to its audio (source_id)")
 
+    em = sub.add_parser("emotion",
+                        help="bake an additive emotion/expression envelope over a "
+                             "solved track (reference-pose delta, issue #38)")
+    em.add_argument("track", help="the solved .track.json to bake onto")
+    em.add_argument("envelope", help="an openfacefx.emotion envelope JSON: direct "
+                    "emotion-channel keyframes, or a valence/arousal track")
+    em.add_argument("-o", "--out", required=True,
+                    help="baked output track (.json/.csv/.anim/.tres/"
+                         ".motion3.json/cue formats, like the generate commands)")
+    em.add_argument("--intensity", type=float, default=1.0,
+                    help="global dial scaling the emotion delta (linear); "
+                         "0 => output byte-identical to the input track")
+    em.add_argument("--eps", type=float, default=0.015,
+                    help="RDP thinning epsilon for the re-thinned baked channels "
+                         "(default 0.015, matching the solver)")
+    em.add_argument("--clamp", action="append", nargs=3,
+                    metavar=("CHANNEL", "LO", "HI"),
+                    help="per-channel output clamp 0<=LO<=HI<=1, repeatable; "
+                         "overrides the envelope's own clamps")
+    _add_output_options(em)
+
     args = p.parse_args(argv)
     args._warnings = []          # QA summary sink; see _warn / _emit_summary
 
@@ -1055,6 +1097,22 @@ def main(argv=None) -> int:
                          quiet=args.quiet, ledger=args.ledger,
                          cue_warnings=args.cue_warnings,
                          min_cue=lo, max_cue=hi)
+
+    if args.cmd == "emotion":
+        from .io_export import read_json
+        from .emotion import bake_emotion, load_envelope
+        try:
+            track = read_json(args.track)
+            env = load_envelope(args.envelope)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"emotion: {ex}")
+        try:
+            baked = bake_emotion(track, env, intensity=args.intensity,
+                                 clamps=_emotion_clamps(args), eps=args.eps)
+        except ValueError as ex:
+            raise SystemExit(f"emotion: {ex}")
+        _write(baked, args.out, args)
+        return 0
 
     mapping = Mapping.from_json(args.mapping) if args.mapping else None
     params = (_coart_params(args)
