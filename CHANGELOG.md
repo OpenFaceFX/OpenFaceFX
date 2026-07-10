@@ -8,6 +8,17 @@ its `version` field.
 
 ## [Unreleased]
 
+Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — engine-side
+distribution (#28 Pyodide, #29 Unity, #30 Unreal, #31 conda-forge), one large
+unspecced feature (#8 i18n), P3 follow-ups (#19 JALI rules, #35 batch QA), the
+manual PyPI publisher step (#24), and in-game confirmation of the `.lip` writer
++ FaceFXWrapper shim (#12, #33).
+
+## [0.11.0] — 2026-07-11
+
+Direction: delivery styles, stressed articulation, and machine-readable output
+for pipelines.
+
 ### Added
 - **Delivery-style presets and a lexical-stress amplitude pass** (closes
   [#18](https://github.com/OpenFaceFX/OpenFaceFX/issues/18)): the two remaining
@@ -68,13 +79,9 @@ its `version` field.
   summary's `cue_warnings` with clip, time and duration — the analogue of the
   over-short/over-long cues a lip-sync editor flags for manual attention.
 
-Still open on #23: the `batch` `--machine-readable` NDJSON event stream, the
-append-only run ledger, and wiring the new `cue_flags` into the batch summary.
-
-Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — larger
-unspecced features (#8 i18n, #19 JALI coart rules),
-engine-side distribution (#28–#31), the manual PyPI publisher step (#24), and
-in-game confirmation of the `.lip` writer + FaceFXWrapper shim (#12, #33).
+Still open on #23 (now tracked as #35): the `batch` `--machine-readable` NDJSON
+event stream, the append-only run ledger, and wiring the new `cue_flags` into
+the batch summary.
 
 ## [0.10.0] — 2026-07-11
 
@@ -655,7 +662,8 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.7.0...v0.8.0
