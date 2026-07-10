@@ -8,6 +8,22 @@ its `version` field.
 
 ## [Unreleased]
 
+Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — larger
+unspecced features (#8 i18n, #18 style presets/stress, #19 JALI coart rules,
+#23 QA ergonomics), engine-side distribution (#28–#31), the manual PyPI
+publisher step (#24), and in-game confirmation of the `.lip` writer +
+FaceFXWrapper shim (#12, #33).
+
+## [0.10.0] — 2026-07-11
+
+Finishing touches: curve smoothing with lag/lead, per-shape retarget trim, and
+an event-layer fix.
+
+### Fixed
+- **`--retarget` no longer drops the event/take layer** (#34): `retarget()`
+  rebuilt the track without carrying `events`/`variants`, so retargeting a track
+  that had events silently lost them. They now survive the remap.
+
 ### Added
 - **Per-target gain/offset trim and CLI shape filtering when retargeting**
   ([#22](https://github.com/OpenFaceFX/OpenFaceFX/issues/22)): retargeting onto a
@@ -49,11 +65,6 @@ its `version` field.
   `CoartParams` (`smooth`, `lag`) and exposed as `--smooth SECONDS` /
   `--lag MS` on `naive`/`mfa`/`from-timing`/`energy`. Default off ⇒
   **byte-identical** output; deterministic across Python 3.9–3.13.
-
-Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — the
-remaining P2/P3 features are unspecced (#8 i18n, #18/#19/#23) or distribution
-(#28–#31); adoption needs the one manual PyPI publisher step (#24); and the
-`.lip` writer + FaceFXWrapper shim await in-game confirmation (#12, #33).
 
 ## [0.9.0] — 2026-07-11
 
@@ -582,7 +593,8 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.1...v0.7.0
