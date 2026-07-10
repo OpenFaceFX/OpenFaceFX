@@ -26,6 +26,22 @@ from .timing import (
     parse_polly_marks, resolve_ends, to_segments, viseme_events_to_segments,
     build_vendor_mapping, AZURE_VISEME_TO_TARGET, POLLY_VISEME_TO_TARGET,
 )
+from .anchors import (
+    anchored_segments, anchors_transcript, parse_srt, parse_word_anchors,
+    from_azure_word_boundaries, from_elevenlabs_alignment, from_kokoro_tokens,
+    from_google_timepoints,
+)
+
+# Anchor timing formats: name -> parser(text) -> List[Anchor]. `google` is
+# handled separately (its markN timepoints need the transcript to resolve).
+_ANCHOR_PARSERS = {
+    "srt": parse_srt,
+    "words": parse_word_anchors,
+    "azure": from_azure_word_boundaries,
+    "elevenlabs": from_elevenlabs_alignment,
+    "kokoro": from_kokoro_tokens,
+}
+_ANCHOR_FORMATS = list(_ANCHOR_PARSERS) + ["google"]
 
 # TTS timing formats: name -> (parser, is_viseme_unit). Phoneme-unit formats
 # feed the existing mapping/coarticulation; viseme-unit formats use the vendor
@@ -75,16 +91,44 @@ def _add_output_options(p) -> None:
                         ".anim output (default: Body)")
 
 
+def _anchored_track(args, dur, g2p, mapping):
+    """Build a track from the naive aligner pinned at --anchors. Only `srt` can
+    supply its own transcript (concatenated cue text); every other format needs
+    --text, and `google` needs it up front to resolve its wN marks to words."""
+    with open(args.anchors, encoding="utf-8") as fh:
+        text = fh.read()
+    fmt = args.anchors_format
+    if fmt == "srt":
+        anchors = parse_srt(text)
+        transcript = args.text if args.text else anchors_transcript(anchors)
+    else:
+        if not args.text:
+            raise SystemExit(
+                f"--text is required with --anchors-format {fmt} "
+                "(only 'srt' supplies the transcript from its cue text)")
+        transcript = args.text
+        anchors = (from_google_timepoints(text, transcript) if fmt == "google"
+                   else _ANCHOR_PARSERS[fmt](text))
+    segs = anchored_segments(transcript, dur, anchors, g2p=g2p)
+    return generate_from_alignment(segs, fps=args.fps, mapping=mapping)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="openfacefx")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     n = sub.add_parser("naive", help="text + duration -> curves (no models)")
-    n.add_argument("--text", required=True)
+    n.add_argument("--text", help="transcript (required unless "
+                   "--anchors-format srt supplies it from the cue text)")
     g = n.add_mutually_exclusive_group(required=True)
     g.add_argument("--wav", help="WAV file to read duration from")
     g.add_argument("--duration", type=float, help="duration in seconds")
     n.add_argument("--cmudict", help="optional CMUdict file for better G2P")
+    n.add_argument("--anchors", help="word/segment timing file that pins the "
+                   "aligner at known boundaries (SRT cues or TTS word timings)")
+    n.add_argument("--anchors-format", choices=_ANCHOR_FORMATS,
+                   help="format of --anchors: srt|words|azure|elevenlabs|kokoro|"
+                        "google (only valid together with --anchors)")
     n.add_argument("--fps", type=float, default=60.0)
     n.add_argument("-o", "--out", required=True)
     _add_output_options(n)
@@ -140,13 +184,22 @@ def main(argv=None) -> int:
     mapping = Mapping.from_json(args.mapping) if args.mapping else None
 
     if args.cmd == "naive":
+        if bool(args.anchors) != bool(args.anchors_format):
+            raise SystemExit(
+                "--anchors and --anchors-format are only valid together")
         dur = args.duration if args.duration else wav_duration(args.wav)
         g2p = G2P()
         if args.cmudict:
             added = g2p.load_cmudict(args.cmudict)
             print(f"loaded {added} CMUdict entries")
-        track = generate_naive(args.text, dur, fps=args.fps, g2p=g2p,
-                               mapping=mapping)
+        if args.anchors:
+            track = _anchored_track(args, dur, g2p, mapping)
+        else:
+            if not args.text:
+                raise SystemExit(
+                    "--text is required (or pass --anchors with --anchors-format)")
+            track = generate_naive(args.text, dur, fps=args.fps, g2p=g2p,
+                                   mapping=mapping)
         _write(track, args.out, args)
     elif args.cmd == "mfa":
         segs = load_mfa_textgrid(args.textgrid)

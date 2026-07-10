@@ -21,6 +21,11 @@ from .timing import (
     viseme_events_to_segments, build_vendor_mapping,
     AZURE_VISEME_TO_TARGET, POLLY_VISEME_TO_TARGET,
 )
+from .anchors import (
+    Anchor, anchored_segments, anchors_transcript, parse_srt,
+    parse_word_anchors, from_azure_word_boundaries, from_elevenlabs_alignment,
+    from_kokoro_tokens, google_ssml_with_marks, from_google_timepoints,
+)
 
 __version__ = "0.3.1"
 
@@ -37,4 +42,8 @@ __all__ = [
     "parse_piper_alignments", "parse_cartesia", "parse_azure_visemes",
     "parse_polly_marks", "viseme_events_to_segments", "build_vendor_mapping",
     "AZURE_VISEME_TO_TARGET", "POLLY_VISEME_TO_TARGET",
+    "Anchor", "anchored_segments", "anchors_transcript", "parse_srt",
+    "parse_word_anchors", "from_azure_word_boundaries",
+    "from_elevenlabs_alignment", "from_kokoro_tokens", "google_ssml_with_marks",
+    "from_google_timepoints",
 ]

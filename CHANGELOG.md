@@ -9,6 +9,24 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Word/segment-anchored alignment** (#15): the naive aligner now accepts
+  anchors — `Anchor(text, start, end=None)` spans — and distributes each word's
+  phonemes *within* its anchored span instead of across the whole utterance,
+  a large accuracy win with zero ML (`anchors.py`, `anchored_segments`). Anchor
+  words are matched to the transcript sequentially (case/punctuation-insensitive);
+  uncovered words fill the gaps between anchors; wordless gaps over ~0.15 s relax
+  to `sil`; with no anchors the output is byte-identical to `naive_segments`.
+  Parsers/converters, each pure stdlib with a fixture test: `parse_srt` (SubRip
+  cues, multi-line, tag-stripped), `parse_word_anchors` (generic
+  `[{text,start,end?}]`), and converters from Azure `WordBoundary` events
+  (100-ns ticks), ElevenLabs character alignments (grouped at whitespace,
+  `normalized_alignment` preferred), Kokoro tokens (None-`start_ts`/`end_ts`
+  tolerant) and Google Cloud TTS timepoints, plus a `google_ssml_with_marks`
+  helper (pure text transform, one `<mark/>` per word). CLI: `openfacefx naive
+  --anchors FILE --anchors-format srt|words|azure|elevenlabs|kokoro|google`
+  (SRT supplies its own transcript when `--text` is omitted). Vendor field names
+  verified against Azure/ElevenLabs/Google docs; snake_case aliases and object
+  wrappers accepted as in `timing.py`.
 - **TTS timing ingest** (#14): `openfacefx from-timing` skips the aligner and
   builds tracks straight from a TTS engine's own timing, through one normalized
   `TimingEvent(unit, symbol, start, end)` schema (`timing.py`). Parsers for

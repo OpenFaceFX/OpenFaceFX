@@ -72,6 +72,14 @@ capture scripts in [docs/timing.md](docs/timing.md)):
 python -m openfacefx from-timing --file visemes.json --format azure -o track.json
 ```
 
+Or pin the naive aligner at known word/segment boundaries — subtitle cue times or
+TTS word timestamps (SRT, Azure/ElevenLabs/Kokoro/Google) — for much better sync
+with no models (SRT supplies its own transcript; the rest take `--text`):
+
+```bash
+python -m openfacefx naive --anchors cues.srt --anchors-format srt --wav voice.wav -o track.json
+```
+
 Straight to a Unity AnimationClip, or remapped onto another rig:
 
 ```bash
@@ -206,6 +214,7 @@ src/openfacefx/
   g2p.py            word → phonemes (CMUdict + rule fallback)
   alignment.py      PhonemeSegment, NaiveAligner, MFA TextGrid parser
   timing.py         TTS phoneme/viseme timing adapters (from-timing) ← skip the aligner
+  anchors.py        word/segment-anchored naive alignment (SRT + TTS word timings)
   visemes.py        viseme set + phoneme→viseme map
   mapping.py        weighted phoneme→target mapping (JSON)  ← remap phonemes here
   coarticulation.py component dominance blending, CoartParams ← the interesting math
