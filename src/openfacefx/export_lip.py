@@ -14,16 +14,27 @@ What is NOT verified, because it needs Skyrim + the Creation Kit and nobody has
 run that test yet:
 
   * **Does the game load it without crashing and animate a face?** Unknown.
-  * **Slot → morph mapping.** The payload routes each curve to a numbered slot,
-    not a named target. Which slot drives which of Skyrim's 16 speech morphs is
-    an *assumption* (``SKYRIM_SLOT_ORDER`` below) that cannot be checked without
-    the engine. If the mouth moves but says the wrong shapes, this table is why.
+  * **Slot → morph mapping — SLOT IS NOT THE TARGET INDEX.** The payload routes
+    each curve to a numbered grid slot (0..32 for Skyrim), not a named target,
+    and the real asset spreads 13 curves across slots up to 30 (a curve may even
+    occupy two slots as a value+tangent pair). Which slot drives which of
+    Skyrim's 16 speech morphs is UNRESOLVED. ``SKYRIM_SLOT_MAP`` below is a
+    deliberately provisional hypothesis: only its jaw assignment is
+    evidence-informed (the vanilla asset's slot 22 is a long-lived jaw-like
+    curve), the rest are placeholders. **Until it is calibrated, the mouth may
+    move but form the WRONG shapes.** Resolve it empirically — no reverse
+    engineering, just eyes on a screen — with the calibration set:
+    ``openfacefx lip-calibrate --out DIR`` writes one .lip per slot (a single
+    slot swept 0→1→0); play each on a voiced NPC line, note which mouth part
+    moves, and fill in ``SKYRIM_SLOT_MAP``. See ``docs/COMPATIBILITY.md``.
   * **Header field ``u22``** (see ``_U22_SKYRIM``): its meaning was never cracked;
     we copy the value the one real vanilla asset uses.
 
-Treat the output as a research artifact. If you can test it in-game, please
-report back on issue #12. Fallout 4 is deliberately unsupported (its 43-target
-vocabulary is undocumented) — ``game='fallout4'`` raises ``NotImplementedError``.
+Treat the output as a research artifact whose mouth shapes are uncalibrated. If
+you can test it in-game, please report back on issue #12. Fallout 4 is
+unsupported for authoring (its 43-target vocabulary is undocumented) —
+``game='fallout4'`` raises ``NotImplementedError`` from ``write_lip`` — but the
+calibration set works for any game's raw slots.
 
 Input is the phoneme-timing layer (``List[PhonemeSegment]`` from
 ``pipeline.naive_segments`` / ``alignment.load_mfa_textgrid``); we drive the
@@ -103,18 +114,33 @@ _TARGET_CLASS: Dict[str, str] = {
     "N": "tongue", "k": "tongue", "R": "tongue",
 }
 
-# UNVERIFIED slot → target assignment. The payload numbers curve slots 0..R-1;
-# which number the engine reads as which morph is unknown without the game. We
-# place the 16 targets on EVEN slots 0,2,..,30 in engine order. Even spacing is
-# deliberate: it guarantees a resting-skip marker sits between every two stored
-# values, so adjacent equal weights (e.g. two 0.0s) can never be misread as a
-# doubled-value key. It also matches the real vanilla asset, whose primary
-# curves sit on even slots. Change this table first if in-game mouths look wrong.
-SKYRIM_SLOT_ORDER: Dict[str, int] = {
-    name: 2 * i for i, name in enumerate(SKYRIM_TARGETS)
+# PROVISIONAL, UNCALIBRATED slot → target map. SLOT IS NOT THE TARGET INDEX: the
+# payload numbers curve slots 0..R-1 and the engine reads each as some morph, but
+# which morph is UNKNOWN without in-game testing (resolve it with the
+# ``lip-calibrate`` set — see the module docstring). Until then, mouth shapes may
+# be scrambled. Two design choices constrain this hypothesis:
+#   * Targets sit on EVEN slots 0,2,..,30. Even spacing guarantees a resting-skip
+#     marker between every two stored values, so adjacent equal weights (e.g. two
+#     0.0s) can never be misread as a doubled-value key.
+#   * The ONE evidence-informed assignment: the vanilla asset's slot 22 carries a
+#     long-lived, mid-amplitude jaw-like curve (active ~43/74 frames), so the
+#     open-jaw vowels Aah/BigAah are placed at slots 22/24. Every OTHER row is an
+#     arbitrary placeholder filling the remaining even slots in engine order.
+# Calibrate, then edit this table — it is the last unknown in the format.
+SKYRIM_SLOT_MAP: Dict[str, int] = {
+    "Aah": 22, "BigAah": 24,                       # evidence-informed (jaw slot)
+    "BMP": 0, "ChjSh": 2, "DST": 4, "Eee": 6,      # placeholders (unverified),
+    "Eh": 8, "FV": 10, "i": 12, "k": 14,           # remaining even slots in
+    "N": 16, "Oh": 18, "OohQ": 20, "R": 26,        # engine order
+    "Th": 28, "W": 30,
 }
+assert sorted(SKYRIM_SLOT_MAP) == sorted(SKYRIM_TARGETS)
+assert sorted(SKYRIM_SLOT_MAP.values()) == list(range(0, 32, 2))  # even 0..30, unique
 
-_ALWAYS_ON_SLOT = SKYRIM_SLOT_ORDER["Aah"]  # slot 0: the decoder starts at pos 0
+# The decoder's positional walk starts at pos 0, so a token must exist at grid
+# slot 0; the writer forces this slot active (emitted every frame, at rest when
+# its target is silent). It is a format anchor, not a claim about slot 0's morph.
+_ANCHOR_SLOT = 0
 
 
 def skyrim_mapping() -> Mapping:

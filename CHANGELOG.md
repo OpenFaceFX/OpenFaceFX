@@ -8,6 +8,19 @@ its `version` field.
 
 ## [Unreleased]
 
+Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — remaining
+P2 items (#18 presets/stress, #19, #22 gain/offset, #23), adoption
+infrastructure (#24, #27–#31), and in-game confirmation of the `.lip` writer
+(#12).
+
+## [0.6.0] — 2026-07-11
+
+The white whale: a clean-room Bethesda `.lip` writer. The format that every
+existing tool delegates to Bethesda's own embedded Creation Kit code has been
+reverse-engineered from four public samples and is now writable — verified
+byte-identical against the real vanilla asset, flagged experimental until
+someone confirms it in-game (calibration kit included).
+
 ### Added
 - **Experimental Bethesda `.lip` writer for Skyrim** (#12): a clean-room writer
   for the FaceFX facial-animation payload inside a Skyrim `.lip` file —
@@ -41,11 +54,6 @@ its `version` field.
   (`G→A H→C X→A`) now lives once in `PRESET_FALLBACKS`, and the cue exporters'
   `--rhubarb-shapes` derives its view from it (behaviour unchanged). Provenance
   and the fallback tables: `docs/retargeting.md`.
-
-Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — the
-remaining P2 items (#18 presets/stress, #19, #22 gain/offset, #23), adoption
-infrastructure (#24, #27–#31) and in-game verification of the experimental
-`.LIP` writer (#12).
 
 ## [0.5.0] — 2026-07-10
 
@@ -345,7 +353,8 @@ Initial public release.
   UTF-8 instead of the locale default (cp1252), which failed with
   `UnicodeDecodeError`.
 
-[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/OpenFaceFX/OpenFaceFX/compare/v0.3.0...v0.3.1
