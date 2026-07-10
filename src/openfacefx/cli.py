@@ -936,6 +936,32 @@ def main(argv=None) -> int:
     b.add_argument("--cmudict", dest="batch_cmudict",
                    help="CMUdict file for better G2P on naive-path files")
     b.add_argument("--fps", type=float, default=60.0)
+    b.add_argument("--machine-readable", action="store_true",
+                   help="stream an NDJSON event log to stderr (one JSON object "
+                        "per line: start/progress/warning/failure/done) so a "
+                        "supervising process can track a large run live. Events "
+                        "are in processing order; stdout and batch_summary.json "
+                        "are unchanged")
+    b.add_argument("--quiet", action="store_true",
+                   help="suppress the human progress table on stdout; the "
+                        "batch_summary.json and any --machine-readable/--ledger "
+                        "output are still written")
+    b.add_argument("--ledger", metavar="FILE",
+                   help="append one NDJSON record per run to FILE (args snapshot, "
+                        "per-input size/mtime, outcome counts) for reproducibility"
+                        "/audit. Survives --modified-only; the run id is a "
+                        "deterministic, wall-clock-free hash of the inputs")
+    b.add_argument("--cue-warnings", action="store_true",
+                   help="add a too-short/too-long phoneme-cue count (qa.cue_flags) "
+                        "to each summary row and fold it into the worst-first "
+                        "ranking. Opt-in: without it the table and summary JSON "
+                        "are byte-identical to before")
+    b.add_argument("--min-cue", type=float, default=None, metavar="SECONDS",
+                   help="cue shorter than this counts toward --cue-warnings "
+                        "(default 0.03; needs --cue-warnings)")
+    b.add_argument("--max-cue", type=float, default=None, metavar="SECONDS",
+                   help="cue longer than this counts toward --cue-warnings "
+                        "(default 0.5; needs --cue-warnings)")
 
     de = sub.add_parser("diff-edits",
                         help="capture hand-edits: diff a BASE track vs an EDITED "
@@ -983,11 +1009,16 @@ def main(argv=None) -> int:
 
     if args.cmd == "batch":
         from .batch import run_batch
+        lo, hi = _cue_thresholds(args) if args.cue_warnings else (None, None)
         return run_batch(args.dir, args.out, recurse=args.recurse,
                          modified_only=args.modified_only, jobs=args.jobs,
                          mapping=args.batch_mapping,
                          cmudict=args.batch_cmudict,
-                         fps=args.fps, ext=args.ext)
+                         fps=args.fps, ext=args.ext,
+                         machine_readable=args.machine_readable,
+                         quiet=args.quiet, ledger=args.ledger,
+                         cue_warnings=args.cue_warnings,
+                         min_cue=lo, max_cue=hi)
 
     mapping = Mapping.from_json(args.mapping) if args.mapping else None
     params = (_coart_params(args)

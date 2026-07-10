@@ -8,11 +8,44 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Batch NDJSON progress stream, run ledger, and cue-flag QA** (closes
+  [#35](https://github.com/OpenFaceFX/OpenFaceFX/issues/35) and, with it, the
+  batch half of [#23](https://github.com/OpenFaceFX/OpenFaceFX/issues/23)): three
+  opt-in additions to `batch`, each byte-identical when its flag is absent — the
+  printed table and `batch_summary.json` are unchanged, verified against a
+  captured baseline. Deterministic across Python 3.9/3.13.
+  - `--machine-readable` streams an NDJSON event log to **stderr** (one JSON
+    object per line, `event` in `start|progress|warning|failure|done`) so a
+    supervising process can follow a large run live instead of scraping the
+    table. `start` carries the input/todo/skipped counts; one `progress` per
+    processed file in processing order (`status`, `mode`, `channels`,
+    `keyframes`, `oov`, `cue_warnings`, `min_confidence`, `warnings`); dedicated
+    `warning`/`failure` events to filter on; `done` with the outcome counts and
+    exit code. Fixed, documented field set and `ensure_ascii`, so the stream is
+    pure ASCII and safe to line-parse. `--quiet` drops the human table from
+    stdout while still writing the summary JSON and any NDJSON/ledger.
+  - `--ledger FILE` appends one NDJSON record per run (never rewrites the file,
+    so it survives `--modified-only`): the args snapshot, every discovered
+    input's relative path + size + mtime + transcript kind, and the outcome
+    counts — a reproducibility/audit trail for dialogue-scale runs. The `run` id
+    is a SHA-256 over that identity, so it is **deterministic and wall-clock-
+    free**: two identical re-runs hash the same, an edited input or arg hashes
+    differently (`mtime` is file metadata for audit, never `Date.now`). Schema
+    `format: openfacefx.batch.ledger`, `version: 1`.
+  - `--cue-warnings` folds `qa.cue_flags()` (made public in #23) into the batch
+    summary: each row gains an integer `cue_warnings` count of phoneme cues
+    shorter than `--min-cue` (default 0.03 s) or longer than `--max-cue` (default
+    0.5 s), and the worst-first ranking gains it as a final tiebreaker — a strict
+    superset of the old failures/confidence/OOV key, so the order (and bytes) are
+    unchanged without the flag. It is opt-in precisely because adding the count
+    would otherwise change `batch_summary.json`.
+
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — engine-side
 distribution (#28 Pyodide, #29 Unity, #30 Unreal, #31 conda-forge), one large
-unspecced feature (#8 i18n), P3 follow-ups (#19 JALI rules, #35 batch QA), the
-manual PyPI publisher step (#24), and in-game confirmation of the `.lip` writer
-+ FaceFXWrapper shim (#12, #33).
+unspecced feature (#8 i18n), the JALI rules follow-up (#19), the manual PyPI
+publisher step (#24), and in-game confirmation of the `.lip` writer +
+FaceFXWrapper shim (#12, #33).
 
 ## [0.11.0] — 2026-07-11
 

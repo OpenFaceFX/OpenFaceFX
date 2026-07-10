@@ -203,6 +203,10 @@ incremental re-runs:
 python -m openfacefx batch --dir voice/ --out tracks/ --recurse --modified-only --jobs 8
 ```
 
+For dialogue-scale runs, `--machine-readable` streams a live NDJSON progress log,
+`--ledger` keeps an append-only run trail, and `--cue-warnings` ranks cue
+outliers — see [Batch runs](#batch-runs-live-progress-a-run-ledger-and-cue-qa).
+
 Weighted many-to-many phoneme mapping and coarticulation timing are
 data/parameters, not code — see `examples/mappings/` and `CoartParams`.
 JALI-style artistic dials tune articulation strength without retiming: `--intensity`
@@ -555,6 +559,67 @@ short_long = ofx.cue_flags(segments, min_dur=0.03, max_dur=0.5)
 ```
 
 `summarize(track)` is deterministic and JSON-ready (same inputs, same bytes).
+
+## Batch runs: live progress, a run ledger, and cue QA
+
+`batch` turns a whole dialogue tree into tracks in one command. Three opt-in
+flags make a large run observable and auditable **without changing its default
+output** — with none of them the printed table and `batch_summary.json` are
+byte-identical to before.
+
+**`--machine-readable`** streams an NDJSON event log to **stderr** (one JSON
+object per line), so a supervising process can follow the run live while stdout
+keeps the human table — or add **`--quiet`** to drop the table and keep only the
+machine output:
+
+```console
+$ openfacefx batch --dir voice/ --out tracks/ --recurse --machine-readable --quiet
+{"event": "start", "total": 1200, "todo": 1200, "skipped": 0, "jobs": 8, "ext": "json", "recurse": true}
+{"event": "progress", "index": 0, "file": "mq01/l01.wav", "out": "mq01/l01.json", "status": "ok", "mode": "mfa", "channels": 12, "keyframes": 210, "oov": [], "cue_warnings": 0, "min_confidence": 0.62, "warnings": []}
+{"event": "warning", "index": 3, "file": "mq01/l04.wav", "message": "2 word(s) fell back to G2P rules: zorblat, awakens"}
+{"event": "failure", "index": 7, "file": "mq01/l08.wav", "error": "FileNotFoundError: no transcript: expected same-stem .TextGrid or .txt"}
+{"event": "done", "processed": 1200, "failed": 1, "skipped": 0, "exit": 1}
+```
+
+| event | when | fields |
+|-------|------|--------|
+| `start` | once, first | `total`, `todo`, `skipped`, `jobs`, `ext`, `recurse` |
+| `progress` | once per processed file, in processing order | `index`, `file`, `out`, `status` (`ok`/`failed`), `mode`, `channels`, `keyframes`, `oov`, `cue_warnings`, `min_confidence`, `warnings` |
+| `warning` | per per-file warning | `index`, `file`, `message` |
+| `failure` | per failed file | `index`, `file`, `error` |
+| `done` | once, last | `processed`, `failed`, `skipped`, `exit` |
+
+Events stream in **processing order** (`os.walk` + sorted), while the summary
+table stays worst-first sorted. The field set is fixed and `ensure_ascii`, so the
+stream is pure ASCII and safe to parse a line at a time.
+
+**`--ledger FILE`** appends one NDJSON record per run — it never rewrites the
+file, so a `--modified-only` re-run simply adds another line: the args snapshot,
+every discovered input's size/mtime, and the outcome counts, i.e. a
+reproducibility/audit trail for dialogue-scale runs.
+
+```json
+{"format": "openfacefx.batch.ledger", "version": 1, "run": "9f9731688453cc8f",
+ "args": {"dir": "voice/", "out": "tracks/", "recurse": true, "modified_only": false,
+          "jobs": 8, "ext": "json", "mapping": null, "cmudict": null, "fps": 60.0,
+          "cue_warnings": false, "min_cue": 0.03, "max_cue": 0.5},
+ "inputs": {"count": 1200, "files": [
+   {"file": "mq01/l01.wav", "mtime": 1783711018.36, "size": 512044, "transcript": "mfa"}]},
+ "outcome": {"processed": 1200, "failed": 1, "skipped": 0, "exit": 1}, "ext": "json"}
+```
+
+The `run` id is a SHA-256 over the run's identity (the args plus each input's
+path/size/mtime) — **deterministic and wall-clock-free**, so two identical
+re-runs hash the same and a changed input or arg hashes differently. `mtime` is
+file metadata for audit, never `Date.now`, so the ledger stays reproducible.
+
+**`--cue-warnings`** folds the phoneme-cue check (`qa.cue_flags`, the same one
+behind the generate commands' `cue_warnings`) into the summary: each row gains an
+integer count of cues shorter than `--min-cue` (default 0.03 s) or longer than
+`--max-cue` (default 0.5 s), and the worst-first ranking gains it as a final
+tiebreaker so cue-heavy files surface alongside failures, low confidence and OOV.
+It is opt-in because adding the count would otherwise change `batch_summary.json`;
+without the flag the summary is byte-identical.
 
 ## Plugging in a real aligner (stage 1)
 
