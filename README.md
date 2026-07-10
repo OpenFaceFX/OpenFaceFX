@@ -497,6 +497,57 @@ stays `1`. Readers ignore unknown top-level keys, so this is forward-compatible:
 }
 ```
 
+## Scripting / CI (machine-readable output & embedding)
+
+The four generate commands (`naive`, `mfa`, `from-timing`, `energy`) take
+`--json`, which prints a **single-line JSON QA summary** to stdout instead of the
+human `wrote …` line, so a wrapping tool or CI job parses one object rather than
+scraping console text. The written track file is **byte-identical** with or
+without the flag; `--report FILE` writes the same JSON (indented) to a file while
+keeping the human line.
+
+```console
+$ openfacefx naive --text "it's a teszt" --wav vo.wav -o vo.json --json
+{"format": "openfacefx.qa", "version": 1, "command": "naive", "output": "vo.json",
+ "fps": 60.0, "duration": 1.6, "channels": 10, "keyframes": 148, "gestures": 0,
+ "events": 0, "oov_words": ["teszt"], "substitutions": [{"from": "\u2019", "to": "'", "count": 1}],
+ "cue_warnings": [{"phoneme": "T", "start": 0.94, "duration": 0.02, "kind": "short"}],
+ "warnings": ["1 word(s) fell back to G2P rules (add to a pronunciation dict): teszt"]}
+```
+
+Every key is always present (lists empty rather than absent), so the schema is
+stable to assert on. `oov_words` are words that fell through to the crude G2P
+rule fallback — worth adding to a CMUdict; `cue_warnings` are phoneme cues below
+`--min-cue` (default 0.03 s) or above `--max-cue` (default 0.5 s), each with its
+clip, `start` and `duration`; `substitutions` reports the transcript
+normalization pass (below). The process exit code is nonzero on a real error
+(`batch` returns nonzero if any file failed), so `set -e` scripts stop as
+expected.
+
+**Transcript normalization.** Before G2P, `naive` folds the Unicode punctuation a
+TTS engine or a pasted script tends to carry — ellipsis `…`, en/em dashes,
+curly quotes `‘’“”`, non-breaking space — down to ASCII, and reports each fold in
+`substitutions`. The load-bearing case is the curly apostrophe: `it’s` typed with
+U+2019 otherwise splits into two tokens. ASCII transcripts are unaffected;
+`--no-normalize` opts out.
+
+**Embedding without the CLI.** The core is a plain library — `generate_naive`,
+`generate_from_alignment`, `generate_from_energy` return a `FaceTrack`. The same
+QA signals are public functions, so an embedding app or notebook gets the summary
+without shelling out:
+
+```python
+import openfacefx as ofx
+
+text, subs = ofx.normalize_transcript("it’s a teszt…")   # ("it's a teszt...", [...])
+track = ofx.generate_naive(text, duration=1.6)
+oov = ofx.G2P().oov_words(text)                            # ["teszt"]
+summary = ofx.summarize(track, segments=None, oov_words=oov)   # the dict above
+short_long = ofx.cue_flags(segments, min_dur=0.03, max_dur=0.5)
+```
+
+`summarize(track)` is deterministic and JSON-ready (same inputs, same bytes).
+
 ## Plugging in a real aligner (stage 1)
 
 The naive aligner spaces phonemes by duration priors — fine for prototyping,

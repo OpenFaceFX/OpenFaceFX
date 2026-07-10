@@ -20,6 +20,7 @@ from .g2p import G2P
 from .alignment import load_mfa_textgrid, dump_segments
 from .pipeline import generate_from_alignment, wav_duration
 from .io_export import write_json, write_csv
+from .qa import normalize_transcript, summarize
 from .export_unity import write_unity_anim
 from .export_live2d import write_live2d_motion, lipsync_param_ids
 from .export_godot import write_godot_anim
@@ -75,6 +76,22 @@ _VISEME_TABLES = {"azure": AZURE_VISEME_TO_TARGET, "polly": POLLY_VISEME_TO_TARG
 _CUE_EXT = {".tsv": "tsv", ".xml": "xml", ".dat": "dat", ".pgo": "pgo"}
 
 
+def _say(args, msg: str) -> None:
+    """Print a human status line, unless --json has taken over stdout for the
+    machine-readable QA summary (which must stay a single JSON object)."""
+    if not getattr(args, "json", False):
+        print(msg)
+
+
+def _warn(args, msg: str) -> None:
+    """Collect a warning for the QA summary and print it (``warning: <msg>``)
+    unless --json owns stdout, where it surfaces only in the summary's
+    ``warnings`` list. Byte-identical to the old inline prints without --json."""
+    getattr(args, "_warnings", []).append(msg)
+    if not getattr(args, "json", False):
+        print(f"warning: {msg}")
+
+
 def _cue_format(out: str, explicit):
     """Cue format for this output, from --cue-format or the file extension."""
     if explicit:
@@ -107,7 +124,7 @@ def _write_cue(track, out: str, fmt: str, args) -> None:
         write_pgo(track, out, fps=fps, sound_path=sound)
     else:
         raise SystemExit(f"unknown cue format {fmt!r}")
-    print(f"wrote {out}: {fmt} cue list, {track.duration:.2f}s")
+    _say(args, f"wrote {out}: {fmt} cue list, {track.duration:.2f}s")
 
 
 def _load_str_map(path: str, flag: str) -> dict:
@@ -209,7 +226,7 @@ def _write_live2d(track, out: str, args) -> None:
                 "supply --live2d-params to assign visemes to them")
         mouth = ids[0]
     write_live2d_motion(track, out, params=params, mouth_param=mouth)
-    print(f"wrote {out}: Live2D motion3.json, {track.duration:.2f}s")
+    _say(args, f"wrote {out}: Live2D motion3.json, {track.duration:.2f}s")
 
 
 def _write_godot(track, out: str, args) -> None:
@@ -223,7 +240,7 @@ def _write_godot(track, out: str, args) -> None:
     write_godot_anim(track, out,
                      naming=getattr(args, "godot_naming", "oculus"),
                      node=getattr(args, "godot_node", "Head"), names=names)
-    print(f"wrote {out}: Godot .tres Animation, {track.duration:.2f}s")
+    _say(args, f"wrote {out}: Godot .tres Animation, {track.duration:.2f}s")
 
 
 def _write(track, out: str, args=None) -> None:
@@ -269,9 +286,9 @@ def _write(track, out: str, args=None) -> None:
                          mesh_path=args.anim_path if args else "Body")
     else:
         write_json(track, out)
-    print(f"wrote {out}: {len(track.channels)} channels, "
-          f"{sum(len(c.keys) for c in track.channels)} keyframes, "
-          f"{track.duration:.2f}s")
+    _say(args, f"wrote {out}: {len(track.channels)} channels, "
+         f"{sum(len(c.keys) for c in track.channels)} keyframes, "
+         f"{track.duration:.2f}s")
 
 
 def _add_output_options(p) -> None:
@@ -535,6 +552,70 @@ def _add_edits_options(p) -> None:
                         "discards it for the fresh output. Either way it is warned")
 
 
+def _add_qa_options(p) -> None:
+    """Machine-readable QA output for scripting/CI (issue #23), shared by naive/
+    mfa/from-timing/energy. All opt-in: without --json/--report the console and
+    the written track are byte-identical to before."""
+    p.add_argument("--json", action="store_true",
+                   help="emit a single-line machine-readable JSON QA summary "
+                        "(format openfacefx.qa) to stdout INSTEAD of the human "
+                        "'wrote ...' line: output, fps, duration, channel/keyframe"
+                        "/gesture/event counts, oov_words, cue_warnings, "
+                        "normalization substitutions and warnings[]. The written "
+                        "track file itself is unchanged")
+    p.add_argument("--report", metavar="FILE",
+                   help="also write the JSON QA summary (see --json) to FILE, "
+                        "indented, keeping the human console output as-is")
+    p.add_argument("--min-cue", type=float, default=None, metavar="SECONDS",
+                   help="flag phoneme cues shorter than this in the QA summary's "
+                        "cue_warnings (default 0.03; a too-short viseme clicks)")
+    p.add_argument("--max-cue", type=float, default=None, metavar="SECONDS",
+                   help="flag phoneme cues longer than this in the QA summary's "
+                        "cue_warnings (default 0.5; a too-long one sticks)")
+
+
+def _want_summary(args) -> bool:
+    return bool(getattr(args, "json", False) or getattr(args, "report", None))
+
+
+def _cue_thresholds(args):
+    """Validated (min, max) cue-duration thresholds in seconds; --min-cue/
+    --max-cue override qa's defaults, at this CLI boundary."""
+    from .qa import MIN_CUE, MAX_CUE
+    lo, hi = getattr(args, "min_cue", None), getattr(args, "max_cue", None)
+    for name, v in (("--min-cue", lo), ("--max-cue", hi)):
+        if v is not None and (not math.isfinite(v) or v < 0.0):
+            raise SystemExit(f"{name} must be a finite, non-negative number of "
+                             f"seconds, got {v}")
+    lo = MIN_CUE if lo is None else lo
+    hi = MAX_CUE if hi is None else hi
+    if lo > hi:
+        raise SystemExit(f"--min-cue ({lo}) must not exceed --max-cue ({hi})")
+    return lo, hi
+
+
+def _emit_summary(args, track, *, segments=None, oov_words=None,
+                  substitutions=None) -> None:
+    """Emit the machine-readable QA summary for a generate command: --json prints
+    a single-line JSON object to stdout, --report FILE writes it indented. A
+    no-op without either flag, so default runs stay byte-identical."""
+    if not _want_summary(args):
+        return
+    lo, hi = _cue_thresholds(args)
+    doc = summarize(track, output=args.out, command=args.cmd, segments=segments,
+                    oov_words=oov_words, substitutions=substitutions,
+                    warnings=args._warnings, min_cue=lo, max_cue=hi)
+    report = getattr(args, "report", None)
+    if report:
+        try:
+            with open(report, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh, indent=2)
+        except OSError as e:
+            raise SystemExit(f"--report: cannot write {report!r}: {e}")
+    if getattr(args, "json", False):
+        print(json.dumps(doc))
+
+
 def _apply_edits_layer(track, args):
     """Overlay an --edits sidecar (issue #9) onto ``track`` and return the merged
     track. A no-op returning ``track`` unchanged without --edits, so output stays
@@ -550,7 +631,7 @@ def _apply_edits_layer(track, args):
     merged, conflicts = apply_edits(
         track, doc, on_conflict=getattr(args, "on_conflict", "keep-edit"))
     for c in conflicts:
-        print(f"warning: edit conflict on {c['channel']}: {c['detail']}")
+        _warn(args, f"edit conflict on {c['channel']}: {c['detail']}")
     return merged
 
 
@@ -604,7 +685,7 @@ def _event_layer(track, args, segments=None, env_times=None, env=None) -> None:
         track.events = resolve(track)          # bake the chosen take into events
         track.variants = None
     for w in validate_events(track.events):
-        print(f"warning: {w}")
+        _warn(args, w)
 
 
 def _apply_retarget(track, preset, available=None, fallbacks=None):
@@ -672,8 +753,8 @@ def _emit_segments(segs, args) -> None:
         return
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(dump_segments(segs), fh, indent=2)
-    print(f"wrote {path}: {len(segs)} phoneme segments "
-          "(preview with build_preview.py --segments)")
+    _say(args, f"wrote {path}: {len(segs)} phoneme segments "
+         "(preview with build_preview.py --segments)")
 
 
 def _write_lip(segs, dur, args) -> None:
@@ -682,9 +763,9 @@ def _write_lip(segs, dur, args) -> None:
         write_lip(segs, dur, args.out, game=getattr(args, "lip_game", "skyrim"))
     except (NotImplementedError, ValueError) as e:
         raise SystemExit(str(e))
-    print(f"wrote {args.out}: EXPERIMENTAL Bethesda .lip "
-          f"({getattr(args, 'lip_game', 'skyrim')}), {dur:.2f}s — "
-          "UNVERIFIED in-game, please report on issue #12")
+    _say(args, f"wrote {args.out}: EXPERIMENTAL Bethesda .lip "
+         f"({getattr(args, 'lip_game', 'skyrim')}), {dur:.2f}s — "
+         "UNVERIFIED in-game, please report on issue #12")
 
 
 def main(argv=None) -> int:
@@ -724,6 +805,12 @@ def main(argv=None) -> int:
     _add_event_options(n)
     _add_prosody_options(n)
     _add_edits_options(n)
+    _add_qa_options(n)
+    n.add_argument("--no-normalize", action="store_true",
+                   help="disable the default transcript normalization pass "
+                        "(Unicode ellipsis/dashes/curly-quotes/NBSP -> ASCII "
+                        "before G2P). Substitutions are reported in --json/"
+                        "--report; ASCII transcripts are unaffected either way")
 
     m = sub.add_parser("mfa", help="MFA TextGrid -> curves (accurate)")
     m.add_argument("--textgrid", required=True)
@@ -743,6 +830,7 @@ def main(argv=None) -> int:
     _add_event_options(m)
     _add_prosody_options(m)
     _add_edits_options(m)
+    _add_qa_options(m)
 
     t = sub.add_parser("from-timing",
                        help="TTS phoneme/viseme timing -> curves (skip the "
@@ -763,6 +851,7 @@ def main(argv=None) -> int:
     _add_coart_options(t)
     _add_smoothing_options(t)
     _add_edits_options(t)
+    _add_qa_options(t)
 
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
@@ -781,6 +870,7 @@ def main(argv=None) -> int:
     _add_event_options(e)
     _add_prosody_options(e)
     _add_edits_options(e)
+    _add_qa_options(e)
 
     lc = sub.add_parser("lip-calibrate",
                         help="EXPERIMENTAL: write one .lip per grid slot "
@@ -825,6 +915,7 @@ def main(argv=None) -> int:
                     help="WAV whose sha1 keys the sidecar to its audio (source_id)")
 
     args = p.parse_args(argv)
+    args._warnings = []          # QA summary sink; see _warn / _emit_summary
 
     if args.cmd == "diff-edits":
         from .io_export import read_json
@@ -868,14 +959,20 @@ def main(argv=None) -> int:
             raise SystemExit(
                 "--anchors and --anchors-format are only valid together")
         dur = args.duration if args.duration else wav_duration(args.wav)
+        subs = []
+        if args.text and not args.no_normalize:
+            args.text, subs = normalize_transcript(args.text)
         g2p = G2P()
         if args.cmudict:
             added = g2p.load_cmudict(args.cmudict)
-            print(f"loaded {added} CMUdict entries")
+            _say(args, f"loaded {added} CMUdict entries")
         segs = _naive_input_segments(args, dur, g2p)
+        oov = g2p.oov_words(args.text) if (args.text and _want_summary(args)) else []
         _emit_segments(segs, args)
         if args.out.endswith(".lip"):
             _write_lip(segs, dur, args)
+            _emit_summary(args, None, segments=segs, oov_words=oov,
+                          substitutions=subs)
         else:
             track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
                                             params=params,
@@ -884,11 +981,14 @@ def main(argv=None) -> int:
             track = _apply_edits_layer(track, args)
             _event_layer(track, args, segments=segs)
             _write(track, args.out, args)
+            _emit_summary(args, track, segments=segs, oov_words=oov,
+                          substitutions=subs)
     elif args.cmd == "mfa":
         segs = load_mfa_textgrid(args.textgrid)
         _emit_segments(segs, args)
         if args.out.endswith(".lip"):
             _write_lip(segs, segs[-1].end if segs else 0.0, args)
+            _emit_summary(args, None, segments=segs)
         else:
             track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
                                             params=params,
@@ -897,6 +997,7 @@ def main(argv=None) -> int:
             track = _apply_edits_layer(track, args)
             _event_layer(track, args, segments=segs)
             _write(track, args.out, args)
+            _emit_summary(args, track, segments=segs)
     elif args.cmd == "from-timing":
         parser_fn, is_viseme = _TIMING_PARSERS[args.format]
         with open(args.file, encoding="utf-8") as fh:
@@ -916,7 +1017,7 @@ def main(argv=None) -> int:
             table = _VISEME_TABLES[args.format]
             segs, warnings = viseme_events_to_segments(events, table)
             for w in warnings:
-                print(f"warning: {w}")
+                _warn(args, w)
             track = generate_from_alignment(segs, fps=args.fps,
                                             mapping=build_vendor_mapping(table),
                                             params=params)
@@ -930,11 +1031,12 @@ def main(argv=None) -> int:
                 # silence with a QA warning, once per distinct symbol.
                 active = IPA_MAPPING
                 for w in ipa_unknown_symbols(e.symbol for e in events):
-                    print(f"warning: {w}")
+                    _warn(args, w)
             track = generate_from_alignment(segs, fps=args.fps, mapping=active,
                                             params=params)
         track = _apply_edits_layer(track, args)
         _write(track, args.out, args)
+        _emit_summary(args, track, segments=segs)
     elif args.cmd == "energy":
         from .energy import generate_from_energy
         track = generate_from_energy(args.wav, fps=args.fps,
@@ -949,6 +1051,7 @@ def main(argv=None) -> int:
             et, ev = energy_envelope(args.wav, fps=args.fps)
         _event_layer(track, args, env_times=et, env=ev)
         _write(track, args.out, args)
+        _emit_summary(args, track)
     return 0
 
 

@@ -20,6 +20,7 @@ from .events import (Event, Alternative, VariantGroup, Variants, EVENT_TYPES,
                      resolve, choose, add_event, attach_events, read_events,
                      validate_events)
 from .io_export import to_dict, write_json, write_csv, from_dict, read_json
+from .qa import summarize, normalize_transcript, cue_flags
 from .edits import (EditsDoc, diff_edits, apply_edits, load_edits, save_edits,
                     sample)
 from .export_unity import write_unity_anim, NAMING_PRESETS
@@ -66,6 +67,7 @@ __all__ = [
     "resolve", "choose", "add_event", "attach_events", "read_events",
     "validate_events",
     "to_dict", "write_json", "write_csv", "from_dict", "read_json",
+    "summarize", "normalize_transcript", "cue_flags",
     "EditsDoc", "diff_edits", "apply_edits", "load_edits", "save_edits", "sample",
     "write_unity_anim", "NAMING_PRESETS",
     "write_unreal_notifies", "notifies_to_dict",

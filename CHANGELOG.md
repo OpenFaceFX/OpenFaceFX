@@ -8,11 +8,42 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Machine-readable QA output and an embeddable summary API**
+  ([#23](https://github.com/OpenFaceFX/OpenFaceFX/issues/23), partial): the four
+  generate commands (`naive`/`mfa`/`from-timing`/`energy`) take `--json` — a
+  single-line JSON QA summary (`format: openfacefx.qa`) to stdout **instead of**
+  the human `wrote …` line — and `--report FILE` to also write that JSON
+  (indented) to a file while keeping the console line. The summary is
+  deterministic and self-describing: `output`, `fps`, `duration`, channel/
+  keyframe/gesture/event counts, `oov_words`, `cue_warnings`, normalization
+  `substitutions`, and `warnings[]`. Warnings that were previously only printed
+  (unknown vendor symbols, edit conflicts) now **also** surface in the summary,
+  joined by two it derives itself — OOV words that fell back to the G2P rules,
+  and an empty/silent track. The written track file is **byte-identical** with or
+  without the flag, and without either flag the console output is unchanged. The
+  same signals are public API for embedding without the CLI: `summarize(track) ->
+  dict`, `normalize_transcript(text) -> (text, subs)`, and `cue_flags(segments,
+  min_dur, max_dur)`, alongside the existing `G2P().oov_words` and `generate_*`.
+- **Transcript normalization ahead of G2P** (part of #23): `naive` folds the
+  Unicode punctuation a TTS engine or a pasted script carries — ellipsis `…`,
+  en/em dashes, curly quotes `‘’“”`, non-breaking space — to ASCII before
+  phonemisation and reports each fold in `substitutions`. The curly apostrophe
+  (`it’s` typed with U+2019, otherwise split into two tokens) is the case that
+  actually changes phonemes. On by default; `--no-normalize` opts out; ASCII
+  transcripts are byte-identical either way.
+- **Cue-duration flags** (part of #23): phoneme cues shorter than `--min-cue`
+  (default 0.03 s) or longer than `--max-cue` (default 0.5 s) appear in the QA
+  summary's `cue_warnings` with clip, time and duration — the analogue of the
+  over-short/over-long cues a lip-sync editor flags for manual attention.
+
+Still open on #23: the `batch` `--machine-readable` NDJSON event stream, the
+append-only run ledger, and wiring the new `cue_flags` into the batch summary.
+
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — larger
-unspecced features (#8 i18n, #18 style presets/stress, #19 JALI coart rules,
-#23 QA ergonomics), engine-side distribution (#28–#31), the manual PyPI
-publisher step (#24), and in-game confirmation of the `.lip` writer +
-FaceFXWrapper shim (#12, #33).
+unspecced features (#8 i18n, #18 style presets/stress, #19 JALI coart rules),
+engine-side distribution (#28–#31), the manual PyPI publisher step (#24), and
+in-game confirmation of the `.lip` writer + FaceFXWrapper shim (#12, #33).
 
 ## [0.10.0] — 2026-07-11
 
