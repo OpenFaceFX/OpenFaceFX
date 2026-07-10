@@ -12,6 +12,7 @@ From an MFA alignment (accurate):
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 
 from .g2p import G2P
@@ -23,7 +24,8 @@ from .export_cues import (
     write_rhubarb_tsv, write_rhubarb_xml, write_rhubarb_json,
     write_moho_dat, write_pgo, _RHUBARB_SHAPES,
 )
-from .mapping import Mapping
+from .mapping import Mapping, ARTICULATOR_CLASSES
+from .coarticulation import CoartParams
 from .retarget import retarget, PRESETS
 from .timing import (
     parse_pho, parse_piper_alignments, parse_cartesia, parse_azure_visemes,
@@ -166,7 +168,65 @@ def _add_output_options(p) -> None:
                         "to a basic shape per the documented table")
 
 
-def _anchored_track(args, dur, g2p, mapping):
+def _add_coart_options(p) -> None:
+    """Artistic intensity dials, shared by the coarticulation-driven commands
+    (naive/mfa/from-timing). The energy command keeps its own --intensity: it
+    never builds coarticulated curves (no articulator-class channels — it
+    synthesizes an aa/E/O/sil partition straight from an RMS envelope), so the
+    CoartParams master does not apply there; its --intensity is an envelope gain
+    with different (multiply-then-clamp) semantics, kept as-is."""
+    p.add_argument("--intensity", type=float, default=1.0,
+                   help="master articulation gain (JALI-style): 1.0 = as-is "
+                        "(byte-identical no-op), <1 mumbles, >1 hyper-"
+                        "articulates, 0 closes the mouth. Scales every channel's "
+                        "opening; 'sil' absorbs the slack; lip closures still win")
+    p.add_argument("--gain", action="append", metavar="CLASS=VALUE",
+                   help="per-articulator-class gain, repeatable (e.g. --gain "
+                        "tongue=0.6 --gain jaw=1.2). CLASS is one of "
+                        f"{'/'.join(ARTICULATOR_CLASSES)}; VALUE >= 0 (0 mutes "
+                        "the class). Multiplies with --intensity")
+
+
+def _parse_gains(items):
+    """``['class=value', ...]`` -> ``{class: float}``, validated at this CLI
+    boundary: a clear SystemExit on an unknown class or non-finite/negative
+    value (argparse never sees the value, so we own the errors)."""
+    gains = {}
+    for item in items or []:
+        cls, sep, val = item.partition("=")
+        cls = cls.strip()
+        if not sep or not cls:
+            raise SystemExit(f"--gain expects CLASS=VALUE, got {item!r}")
+        if cls not in ARTICULATOR_CLASSES:
+            raise SystemExit(f"--gain: unknown articulator class {cls!r} "
+                             f"(use one of {', '.join(ARTICULATOR_CLASSES)})")
+        try:
+            g = float(val)
+        except ValueError:
+            raise SystemExit(f"--gain {cls}=: {val!r} is not a number")
+        if not math.isfinite(g) or g < 0.0:
+            raise SystemExit(f"--gain {cls}=: value must be finite and >= 0, "
+                             f"got {val!r}")
+        gains[cls] = g
+    return gains
+
+
+def _coart_params(args):
+    """CoartParams from --intensity/--gain, or None when both are neutral so the
+    default (byte-identical) code path is taken unchanged."""
+    intensity = getattr(args, "intensity", 1.0)
+    if not math.isfinite(intensity) or intensity < 0.0:
+        raise SystemExit(f"--intensity must be finite and >= 0, got {intensity}")
+    gains = _parse_gains(getattr(args, "gain", None))
+    if intensity == 1.0 and not gains:
+        return None
+    p = CoartParams()
+    p.intensity = intensity
+    p.gains = {**p.gains, **gains}
+    return p
+
+
+def _anchored_track(args, dur, g2p, mapping, params):
     """Build a track from the naive aligner pinned at --anchors. Only `srt` can
     supply its own transcript (concatenated cue text); every other format needs
     --text, and `google` needs it up front to resolve its wN marks to words."""
@@ -185,7 +245,8 @@ def _anchored_track(args, dur, g2p, mapping):
         anchors = (from_google_timepoints(text, transcript) if fmt == "google"
                    else _ANCHOR_PARSERS[fmt](text))
     segs = anchored_segments(transcript, dur, anchors, g2p=g2p)
-    return generate_from_alignment(segs, fps=args.fps, mapping=mapping)
+    return generate_from_alignment(segs, fps=args.fps, mapping=mapping,
+                                   params=params)
 
 
 def main(argv=None) -> int:
@@ -207,12 +268,14 @@ def main(argv=None) -> int:
     n.add_argument("--fps", type=float, default=60.0)
     n.add_argument("-o", "--out", required=True)
     _add_output_options(n)
+    _add_coart_options(n)
 
     m = sub.add_parser("mfa", help="MFA TextGrid -> curves (accurate)")
     m.add_argument("--textgrid", required=True)
     m.add_argument("--fps", type=float, default=60.0)
     m.add_argument("-o", "--out", required=True)
     _add_output_options(m)
+    _add_coart_options(m)
 
     t = sub.add_parser("from-timing",
                        help="TTS phoneme/viseme timing -> curves (skip the "
@@ -230,6 +293,7 @@ def main(argv=None) -> int:
     t.add_argument("--fps", type=float, default=60.0)
     t.add_argument("-o", "--out", required=True)
     _add_output_options(t)
+    _add_coart_options(t)
 
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
@@ -270,6 +334,8 @@ def main(argv=None) -> int:
                          fps=args.fps, ext=args.ext)
 
     mapping = Mapping.from_json(args.mapping) if args.mapping else None
+    params = (_coart_params(args)
+              if args.cmd in ("naive", "mfa", "from-timing") else None)
 
     if args.cmd == "naive":
         if bool(args.anchors) != bool(args.anchors_format):
@@ -281,17 +347,18 @@ def main(argv=None) -> int:
             added = g2p.load_cmudict(args.cmudict)
             print(f"loaded {added} CMUdict entries")
         if args.anchors:
-            track = _anchored_track(args, dur, g2p, mapping)
+            track = _anchored_track(args, dur, g2p, mapping, params)
         else:
             if not args.text:
                 raise SystemExit(
                     "--text is required (or pass --anchors with --anchors-format)")
             track = generate_naive(args.text, dur, fps=args.fps, g2p=g2p,
-                                   mapping=mapping)
+                                   mapping=mapping, params=params)
         _write(track, args.out, args)
     elif args.cmd == "mfa":
         segs = load_mfa_textgrid(args.textgrid)
-        track = generate_from_alignment(segs, fps=args.fps, mapping=mapping)
+        track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
+                                        params=params)
         _write(track, args.out, args)
     elif args.cmd == "from-timing":
         parser_fn, is_viseme = _TIMING_PARSERS[args.format]
@@ -314,10 +381,12 @@ def main(argv=None) -> int:
             for w in warnings:
                 print(f"warning: {w}")
             track = generate_from_alignment(segs, fps=args.fps,
-                                            mapping=build_vendor_mapping(table))
+                                            mapping=build_vendor_mapping(table),
+                                            params=params)
         else:
             segs = to_segments(events)
-            track = generate_from_alignment(segs, fps=args.fps, mapping=mapping)
+            track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
+                                            params=params)
         _write(track, args.out, args)
     elif args.cmd == "energy":
         from .energy import generate_from_energy

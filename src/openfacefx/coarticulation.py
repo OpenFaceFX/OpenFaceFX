@@ -50,6 +50,13 @@ class CoartParams:
     The "basic"/"jaw" defaults reproduce the classic symmetric model; lips
     and especially tongue targets are tighter, so a quick stop does not smear
     across neighbouring vowels.
+
+    ``intensity`` (master) and ``gains`` (per-articulator-class) are JALI-style
+    artistic dials: after the curves are normalized, every channel's opening is
+    scaled by ``intensity * gains[class]`` and the freed weight flows into
+    ``sil`` (see ``_apply_intensity``). All ``1.0`` is a byte-identical no-op;
+    ``<1`` mumbles / softens a class, ``>1`` hyper-articulates, ``0`` mutes it.
+    Enforced lip closures still win afterwards, so a whispered bilabial seals.
     """
     lead: Dict[str, Tuple[float, float]] = field(default_factory=lambda: {
         "basic": (0.40, 0.45),
@@ -62,6 +69,10 @@ class CoartParams:
     split_diphthongs: bool = True
     preroll: float = 0.0          # anticipation seconds sampled before onset
     allow_negative_time: bool = False  # preroll below t=0 instead of clamping
+    intensity: float = 1.0        # master articulation gain (all channels)
+    gains: Dict[str, float] = field(default_factory=lambda: {
+        "basic": 1.0, "jaw": 1.0, "lips": 1.0, "tongue": 1.0,
+    })
 
 # Diphthong -> component vowels (split at 55% of the segment).
 _DIPHTHONGS = {
@@ -178,12 +189,59 @@ def build_viseme_curves(
     for v in range(n_targets):
         matrix[:, v] = (dom * weights[None, :, v]).sum(axis=1) / denom[:, 0]
 
-    # Clean numerical dust and clamp, then enforce closures so enforced
-    # frames end up summing to exactly 1.
+    # Clean numerical dust and clamp, apply the artistic intensity/gain dials
+    # (a no-op at defaults), then enforce closures so enforced frames end up
+    # summing to exactly 1 (closures win over the dials).
     matrix[matrix < 1e-4] = 0.0
     np.clip(matrix, 0.0, 1.0, out=matrix)
+    _apply_intensity(matrix, mapping, params)
     _enforce_closures(times, matrix, segments, mapping, weights, params)
     return times, matrix
+
+
+def _apply_intensity(matrix, mapping, params) -> None:
+    """Scale every channel's opening by ``intensity * gains[its class]`` and let
+    ``sil`` reabsorb the freed weight, in place.
+
+    Each column's articulator class is read the same way ``_segment_class`` reads
+    a segment's — from the mapping target (or the built-in ``_DEFAULT_CLASSES``).
+    The invariant is that a normalized frame sums to ~1, i.e. openness (all the
+    non-``sil`` weight) plus ``sil`` equals 1. We scale only the openness and put
+    whatever it gives up (or takes) back into ``sil``:
+
+        open' = sum_{v != sil} scale_v * matrix[v]      (scale_v >= 0)
+        matrix[v != sil] *= scale_v / max(open', 1)      (cap total open at 1)
+        matrix[sil]       = max(1 - open', 0)
+
+    so the row sums to exactly 1 again: for open' <= 1, open' + (1 - open') = 1;
+    for open' > 1 (dialled past a full-open mouth) the non-``sil`` channels are
+    renormalized to fill the frame and ``sil`` is 0. Because every scaled channel
+    is then <= the frame total, all values stay within [0, 1] without clipping.
+
+    Defaults (``intensity`` 1.0, all ``gains`` 1.0) make ``scale`` all ones, so
+    this returns before touching ``matrix`` — a byte-identical no-op. ``sil`` is
+    the designated absorber and is never itself scaled; a mapping with no ``sil``
+    target has nowhere to bank the slack, so its channels are scaled and clipped
+    in place and the sum-to-1 invariant is not maintained (documented)."""
+    names = mapping.target_names if mapping is not None else list(VISEMES)
+    scale = np.ones(len(names))
+    for j, name in enumerate(names):
+        cls = (mapping.targets[j].articulator if mapping is not None
+               else _DEFAULT_CLASSES.get(name, "basic"))
+        scale[j] = max(params.intensity * params.gains.get(cls, 1.0), 0.0)
+    sil = names.index("sil") if "sil" in names else None
+    if sil is not None:
+        scale[sil] = 1.0                      # absorber is never scaled itself
+    if np.all(scale == 1.0):
+        return                                # neutral dials: exact no-op
+
+    matrix *= scale[None, :]
+    if sil is None:
+        np.clip(matrix, 0.0, 1.0, out=matrix)
+        return
+    openness = matrix.sum(axis=1) - matrix[:, sil]
+    matrix *= (1.0 / np.maximum(openness, 1.0))[:, None]
+    matrix[:, sil] = np.maximum(1.0 - openness, 0.0)
 
 
 def _enforce_closures(times, matrix, segments, mapping, weights, params):

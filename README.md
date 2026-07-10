@@ -118,6 +118,9 @@ python -m openfacefx batch --dir voice/ --out tracks/ --recurse --modified-only 
 
 Weighted many-to-many phoneme mapping and coarticulation timing are
 data/parameters, not code — see `examples/mappings/` and `CoartParams`.
+JALI-style artistic dials tune articulation strength without retiming: `--intensity`
+(master, `<1` mumbles, `>1` hyper-articulates) and repeatable `--gain class=value`
+(e.g. `--gain tongue=0.6 --gain jaw=1.2`); all `1.0` is a byte-identical no-op.
 
 Library use:
 

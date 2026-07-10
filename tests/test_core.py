@@ -256,6 +256,80 @@ def test_coart_preroll_onset_policy():
     assert t_neg[0] < -0.19                  # true anticipation keys
 
 
+def test_intensity_defaults_are_byte_identical():
+    # gains all 1.0 + intensity 1.0 must be a behavioural no-op: an explicit
+    # default CoartParams produces the same track as passing none at all. This
+    # pins the byte-identity guarantee the dials are built to preserve.
+    from openfacefx.coarticulation import CoartParams
+    from openfacefx import generate_from_alignment
+    from openfacefx.pipeline import naive_segments
+    segs = naive_segments("the quick brown fox jumps", duration=2.5)
+    assert to_dict(generate_from_alignment(segs)) == to_dict(
+        generate_from_alignment(segs, params=CoartParams()))
+
+
+def test_gain_zero_mutes_its_class_only():
+    # --gain tongue=0 zeroes the tongue-class channels while the jaw channel is
+    # left bit-for-bit intact — dialling one class down never touches another.
+    from openfacefx.coarticulation import CoartParams, build_viseme_curves
+    segs = [PhonemeSegment("sil", 0.0, 0.1), PhonemeSegment("T", 0.1, 0.25),
+            PhonemeSegment("AA", 0.25, 0.6), PhonemeSegment("sil", 0.6, 0.7)]
+    dd, aa = VISEMES.index("DD"), VISEMES.index("aa")
+    _, base = build_viseme_curves(segs, fps=120)
+    p = CoartParams(); p.gains = dict(p.gains, tongue=0.0)
+    _, muted = build_viseme_curves(segs, fps=120, params=p)
+    assert base[:, dd].max() > 0.2           # tongue (DD) fires by default...
+    assert muted[:, dd].max() < 1e-9         # ...and is silenced at gain 0
+    assert np.array_equal(muted[:, aa], base[:, aa])   # jaw (aa) untouched
+
+
+def test_intensity_scales_openness_with_sil_absorbing_slack():
+    # intensity 0.5 halves every frame's openness (all non-sil weight); sil
+    # takes up the freed weight so each frame still partitions unit energy.
+    from openfacefx.coarticulation import CoartParams, build_viseme_curves
+    segs = [PhonemeSegment("sil", 0.0, 0.1), PhonemeSegment("AA", 0.1, 0.5),
+            PhonemeSegment("sil", 0.5, 0.6)]
+    sil = VISEMES.index("sil")
+    _, base = build_viseme_curves(segs, fps=120)
+    p = CoartParams(); p.intensity = 0.5
+    _, half = build_viseme_curves(segs, fps=120, params=p)
+    open_base = base.sum(axis=1) - base[:, sil]
+    open_half = half.sum(axis=1) - half[:, sil]
+    assert np.allclose(open_half, 0.5 * open_base, atol=1e-9)   # openness halved
+    assert np.allclose(half.sum(axis=1), 1.0, atol=2e-3)        # invariant holds
+    assert np.all(half[:, sil] >= base[:, sil] - 1e-9)          # mouth closes more
+
+
+def test_closure_enforced_under_low_intensity():
+    # A whispered bilabial still fully seals: closure enforcement runs after the
+    # dials and wins, so PP reaches the 0.9 floor even at intensity 0.5.
+    from openfacefx.coarticulation import CoartParams, build_viseme_curves
+    segs = [PhonemeSegment("AA", 0.0, 0.25), PhonemeSegment("P", 0.25, 0.33),
+            PhonemeSegment("AA", 0.33, 0.6)]
+    p = CoartParams(); p.intensity = 0.5
+    times, m = build_viseme_curves(segs, fps=120, params=p)
+    mid = int(np.argmin(np.abs(times - 0.29)))
+    assert m[mid, VISEMES.index("PP")] >= 0.89
+    assert np.allclose(m.sum(axis=1), 1.0, atol=2e-3)
+
+
+def test_cli_intensity_and_gain_parse_errors(tmp_path):
+    import pytest
+    from openfacefx.cli import main as cli_main
+    out = str(tmp_path / "o.json")
+    base = ["naive", "--text", "hi", "--duration", "0.5", "-o", out]
+    for bad in (["--gain", "nose=0.5"],     # unknown articulator class
+                ["--gain", "jaw=abc"],      # value is not a number
+                ["--gain", "jaw=-1"],       # negative gain
+                ["--gain", "jawopen"],      # missing '='
+                ["--intensity", "-2"]):     # negative master intensity
+        with pytest.raises(SystemExit):
+            cli_main(base + bad)
+    # a valid dial run still succeeds and writes a track
+    assert cli_main(base + ["--gain", "tongue=0.6", "--intensity", "0.8"]) == 0
+    assert os.path.exists(out)
+
+
 def test_mapping_default_matches_builtin():
     from openfacefx.mapping import Mapping
     m = Mapping.default()

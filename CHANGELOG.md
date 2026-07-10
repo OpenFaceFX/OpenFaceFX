@@ -13,6 +13,30 @@ the remaining P1/P2 items (#18–#23, #26–#32) and the sample-blocked `.LIP`
 writer (#12).
 
 ### Added
+- **Articulation-intensity dials** (#18, partial — the JALI-style gain layer):
+  `--intensity` (master) and repeatable `--gain class=value` (e.g. `--gain
+  tongue=0.6 --gain jaw=1.2`) on `naive`/`mfa`/`from-timing` scale how strongly
+  each articulator class opens, so one curve set spans mumble to hyper-
+  articulated without retiming — `CoartParams.intensity` and `CoartParams.gains`
+  for library callers. The scale is applied *after* normalization: every
+  channel's opening is multiplied by `intensity * gains[its class]` (the class
+  read from the mapping target, exactly as the coarticulation model reads a
+  segment's) and `sil` reabsorbs the freed weight, so a frame still sums to ~1
+  and the mouth genuinely opens/closes rather than the curve just being
+  rescaled (`open' = Σ scale·open`, then `sil = max(1 − open', 0)` with the
+  non-`sil` channels capped to fill the frame — proof of the sum-to-1 invariant
+  in `_apply_intensity`). Enforced lip closures run afterwards and still win, so
+  a whispered bilabial (`--intensity 0.5`) still seals to the 0.9 floor.
+  **Defaults are a byte-identical no-op**: all `1.0` makes the per-channel scale
+  a vector of ones and the step returns before touching the matrix (verified on
+  the two reference commands and by a `params=None` vs `CoartParams()` equality
+  test). Bad dials fail fast at the CLI boundary (unknown class, non-number,
+  negative). The `energy` command keeps its own `--intensity`: it never builds
+  coarticulated curves (no articulator-class channels — it synthesises an
+  aa/E/O/sil partition from an RMS envelope), so the `CoartParams` master does
+  not apply and its envelope-gain semantics are left unchanged. Not yet from
+  #18: shipped style presets, the lexical-stress amplitude pass, and time-
+  varying (keyframed) dials.
 - **Audio-energy fallback lip-sync** (#17): `openfacefx energy --wav voice.wav
   -o track.json` drives a mouth from loudness alone — the first path that needs
   *no transcript and no aligner* (`energy.py`, numpy + stdlib `wave` only). This
