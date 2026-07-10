@@ -1,0 +1,36 @@
+{
+  "format": "openfacefx.mapping",
+  "version": 1,
+  "targets": [
+    {"name": "rest", "class": "basic"},
+    {"name": "MBP", "class": "lips"},
+    {"name": "FV", "class": "lips"},
+    {"name": "consonant", "class": "tongue"},
+    {"name": "open", "class": "jaw"},
+    {"name": "mid", "class": "jaw"},
+    {"name": "wide", "class": "jaw"},
+    {"name": "round", "class": "jaw"},
+    {"name": "pucker", "class": "jaw", "max": 0.9}
+  ],
+  "phonemes": {
+    "sil": {"rest": 1.0},
+    "P": {"MBP": 1.0}, "B": {"MBP": 1.0}, "M": {"MBP": 1.0},
+    "F": {"FV": 1.0}, "V": {"FV": 1.0},
+    "TH": {"consonant": 1.0}, "DH": {"consonant": 1.0},
+    "T": {"consonant": 1.0}, "D": {"consonant": 1.0}, "L": {"consonant": 1.0},
+    "N": {"consonant": 1.0}, "NG": {"consonant": 1.0},
+    "K": {"consonant": 1.0}, "G": {"consonant": 1.0}, "HH": {"consonant": 0.6},
+    "CH": {"consonant": 0.7, "round": 0.3}, "JH": {"consonant": 0.7, "round": 0.3},
+    "SH": {"consonant": 0.7, "round": 0.3}, "ZH": {"consonant": 0.7, "round": 0.3},
+    "S": {"consonant": 1.0}, "Z": {"consonant": 1.0},
+    "R": {"consonant": 0.5, "round": 0.5}, "ER": {"mid": 0.6, "round": 0.4},
+    "W": {"pucker": 1.0}, "Y": {"wide": 1.0},
+    "AA": {"open": 1.0}, "AE": {"open": 0.8, "wide": 0.2},
+    "AH": {"open": 0.7, "mid": 0.3}, "AY": {"open": 0.6, "wide": 0.4},
+    "EH": {"mid": 1.0}, "EY": {"mid": 0.6, "wide": 0.4}, "IH": {"mid": 0.7, "wide": 0.3},
+    "IY": {"wide": 1.0},
+    "AO": {"round": 1.0}, "OW": {"round": 1.0}, "OY": {"round": 0.6, "wide": 0.4},
+    "AW": {"open": 0.6, "round": 0.4},
+    "UW": {"pucker": 1.0}, "UH": {"round": 0.6, "pucker": 0.4}
+  }
+}

@@ -67,7 +67,8 @@ def retarget(track: FaceTrack, mapping: Mapping) -> FaceTrack:
             keys.append(Keyframe(t, round(min(max(v, 0.0), 1.0), 4)))
         channels.append(Channel(target, keys))
     channels.sort(key=lambda c: c.name)
-    return FaceTrack(fps=track.fps, channels=channels)
+    all_targets = sorted({t for targets in mapping.values() for t, _ in targets})
+    return FaceTrack(fps=track.fps, channels=channels, target_set=all_targets)
 
 
 def rename_only(prefix: str = "", names: Dict[str, str] = None) -> Mapping:

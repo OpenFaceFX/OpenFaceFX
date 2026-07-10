@@ -12,6 +12,7 @@ from .pipeline import (generate_from_alignment, generate_naive,
                        naive_segments, wav_duration)
 from .io_export import to_dict, write_json, write_csv
 from .export_unity import write_unity_anim, NAMING_PRESETS
+from .mapping import Mapping, Target
 from .retarget import retarget, rename_only, PRESETS
 from .visemes import VISEMES, phoneme_to_viseme
 
@@ -23,6 +24,7 @@ __all__ = [
     "reduce_to_track", "generate_from_alignment", "generate_naive",
     "naive_segments", "wav_duration", "to_dict", "write_json", "write_csv",
     "write_unity_anim", "NAMING_PRESETS",
+    "Mapping", "Target",
     "retarget", "rename_only", "PRESETS",
     "VISEMES", "phoneme_to_viseme",
 ]

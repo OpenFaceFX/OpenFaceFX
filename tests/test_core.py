@@ -171,6 +171,70 @@ def test_unity_anim_vrchat_naming():
     os.unlink(out)
 
 
+def test_mapping_default_matches_builtin():
+    from openfacefx.mapping import Mapping
+    m = Mapping.default()
+    track_m = generate_naive("the quick brown fox", duration=2.0)
+    from openfacefx import generate_from_alignment
+    from openfacefx.pipeline import naive_segments
+    segs = naive_segments("the quick brown fox", duration=2.0)
+    track_d = generate_from_alignment(segs, mapping=m)
+    assert to_dict(track_m) == to_dict(track_d)
+
+
+def test_mapping_weighted_many_to_many():
+    from openfacefx.mapping import Mapping, Target
+    from openfacefx import generate_from_alignment
+    from openfacefx.alignment import PhonemeSegment
+    m = Mapping(
+        [Target("jaw"), Target("lips")],
+        {"AA": {"jaw": 0.7, "lips": 0.3}, "sil": {}},
+    )
+    segs = [PhonemeSegment("sil", 0.0, 0.2), PhonemeSegment("AA1", 0.2, 0.8),
+            PhonemeSegment("sil", 0.8, 1.0)]
+    track = generate_from_alignment(segs, mapping=m)
+    by = {c.name: max(k.value for k in c.keys) for c in track.channels}
+    assert set(by) == {"jaw", "lips"}
+    # both peaks driven by the same phoneme, scaled 0.7 : 0.3
+    assert abs(by["jaw"] / by["lips"] - 0.7 / 0.3) < 0.05
+    # stress digit was stripped to find the AA row
+    assert by["jaw"] > 0.5
+
+
+def test_mapping_clamps_applied():
+    from openfacefx.mapping import Mapping, Target
+    from openfacefx import generate_from_alignment
+    from openfacefx.alignment import PhonemeSegment
+    m = Mapping([Target("jaw", hi=0.4)], {"AA": {"jaw": 1.0}, "sil": {}})
+    segs = [PhonemeSegment("AA", 0.0, 1.0)]
+    track = generate_from_alignment(segs, mapping=m)
+    assert all(k.value <= 0.4 + 1e-9 for c in track.channels for k in c.keys)
+
+
+def test_mapping_validation_errors():
+    import pytest
+    from openfacefx.mapping import Mapping, Target
+    with pytest.raises(ValueError, match="unknown phoneme"):
+        Mapping([Target("x")], {"QQ": {"x": 1.0}})
+    with pytest.raises(ValueError, match="undeclared target"):
+        Mapping([Target("x")], {"AA": {"y": 1.0}})
+    with pytest.raises(ValueError, match="weight"):
+        Mapping([Target("x")], {"AA": {"x": -1.0}})
+    with pytest.raises(ValueError, match="articulator"):
+        Mapping([Target("x", articulator="nose")], {"AA": {"x": 1.0}})
+    with pytest.raises(ValueError, match="clamp"):
+        Mapping([Target("x", lo=0.9, hi=0.1)], {"AA": {"x": 1.0}})
+
+
+def test_mapping_files_load():
+    from openfacefx.mapping import Mapping
+    root = os.path.join(os.path.dirname(__file__), "..", "examples", "mappings")
+    m = Mapping.from_json(os.path.join(root, "oculus15.json"))
+    assert m.target_names == list(VISEMES)
+    m2 = Mapping.from_json(os.path.join(root, "minimal9.json"))
+    assert "MBP" in m2.target_names and len(m2.rows) >= 39
+
+
 def test_fuz_container_roundtrip():
     import tempfile
     from openfacefx.bethesda import read_fuz, write_fuz

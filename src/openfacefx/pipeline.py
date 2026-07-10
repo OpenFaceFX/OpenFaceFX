@@ -32,9 +32,12 @@ def generate_from_alignment(
     segments: List[PhonemeSegment],
     fps: float = 60.0,
     epsilon: float = 0.015,
+    mapping=None,
 ) -> FaceTrack:
-    times, matrix = build_viseme_curves(segments, fps=fps)
-    return reduce_to_track(times, matrix, fps=fps, epsilon=epsilon)
+    times, matrix = build_viseme_curves(segments, fps=fps, mapping=mapping)
+    targets = mapping.targets if mapping is not None else None
+    return reduce_to_track(times, matrix, fps=fps, epsilon=epsilon,
+                           targets=targets)
 
 
 def naive_segments(
@@ -59,6 +62,8 @@ def generate_naive(
     fps: float = 60.0,
     epsilon: float = 0.015,
     g2p: Optional[G2P] = None,
+    mapping=None,
 ) -> FaceTrack:
     segs = naive_segments(text, duration, g2p=g2p)
-    return generate_from_alignment(segs, fps=fps, epsilon=epsilon)
+    return generate_from_alignment(segs, fps=fps, epsilon=epsilon,
+                                   mapping=mapping)

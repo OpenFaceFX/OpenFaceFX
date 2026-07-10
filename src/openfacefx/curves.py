@@ -32,6 +32,9 @@ class Channel:
 class FaceTrack:
     fps: float
     channels: List[Channel]
+    # Full target vocabulary the channels are drawn from; None means the
+    # built-in Oculus viseme set (visemes.VISEMES).
+    target_set: List[str] = None
 
     @property
     def duration(self) -> float:
@@ -64,13 +67,25 @@ def _rdp(times: np.ndarray, values: np.ndarray, eps: float) -> List[int]:
 
 
 def reduce_to_track(times: np.ndarray, matrix: np.ndarray, fps: float,
-                    epsilon: float = 0.015) -> FaceTrack:
+                    epsilon: float = 0.015, targets=None) -> FaceTrack:
+    """``targets``: optional list of ``mapping.Target`` — supplies channel
+    names and per-target min/max clamps. Defaults to the Oculus viseme set
+    with no clamping (identical to previous releases)."""
+    if targets is None:
+        names, clamps = VISEMES, [None] * len(VISEMES)
+    else:
+        names = [t.name for t in targets]
+        clamps = [(t.lo, t.hi) if (t.lo, t.hi) != (0.0, 1.0) else None
+                  for t in targets]
     channels: List[Channel] = []
-    for v, name in enumerate(VISEMES):
+    for v, name in enumerate(names):
         col = matrix[:, v]
+        if clamps[v] is not None:
+            col = np.clip(col, clamps[v][0], clamps[v][1])
         if not np.any(col > 1e-3):
             continue  # channel never fires; skip entirely
         idx = _rdp(times, col, epsilon)
         keys = [Keyframe(float(times[i]), round(float(col[i]), 4)) for i in idx]
         channels.append(Channel(name, keys))
-    return FaceTrack(fps=fps, channels=channels)
+    return FaceTrack(fps=fps, channels=channels,
+                     target_set=None if targets is None else list(names))

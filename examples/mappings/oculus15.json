@@ -1,0 +1,218 @@
+{
+  "format": "openfacefx.mapping",
+  "version": 1,
+  "targets": [
+    {
+      "name": "sil",
+      "class": "basic",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "PP",
+      "class": "lips",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "FF",
+      "class": "lips",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "TH",
+      "class": "tongue",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "DD",
+      "class": "tongue",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "kk",
+      "class": "tongue",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "CH",
+      "class": "tongue",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "SS",
+      "class": "tongue",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "nn",
+      "class": "tongue",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "RR",
+      "class": "tongue",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "aa",
+      "class": "jaw",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "E",
+      "class": "jaw",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "I",
+      "class": "jaw",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "O",
+      "class": "jaw",
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "U",
+      "class": "jaw",
+      "min": 0.0,
+      "max": 1.0
+    }
+  ],
+  "phonemes": {
+    "P": {
+      "PP": 1.0
+    },
+    "B": {
+      "PP": 1.0
+    },
+    "M": {
+      "PP": 1.0
+    },
+    "F": {
+      "FF": 1.0
+    },
+    "V": {
+      "FF": 1.0
+    },
+    "TH": {
+      "TH": 1.0
+    },
+    "DH": {
+      "TH": 1.0
+    },
+    "T": {
+      "DD": 1.0
+    },
+    "D": {
+      "DD": 1.0
+    },
+    "L": {
+      "DD": 1.0
+    },
+    "N": {
+      "nn": 1.0
+    },
+    "NG": {
+      "nn": 1.0
+    },
+    "K": {
+      "kk": 1.0
+    },
+    "G": {
+      "kk": 1.0
+    },
+    "HH": {
+      "kk": 1.0
+    },
+    "CH": {
+      "CH": 1.0
+    },
+    "JH": {
+      "CH": 1.0
+    },
+    "SH": {
+      "CH": 1.0
+    },
+    "ZH": {
+      "CH": 1.0
+    },
+    "S": {
+      "SS": 1.0
+    },
+    "Z": {
+      "SS": 1.0
+    },
+    "R": {
+      "RR": 1.0
+    },
+    "ER": {
+      "RR": 1.0
+    },
+    "W": {
+      "U": 1.0
+    },
+    "Y": {
+      "I": 1.0
+    },
+    "AA": {
+      "aa": 1.0
+    },
+    "AE": {
+      "aa": 1.0
+    },
+    "AH": {
+      "aa": 1.0
+    },
+    "AY": {
+      "aa": 1.0
+    },
+    "EH": {
+      "E": 1.0
+    },
+    "EY": {
+      "E": 1.0
+    },
+    "IH": {
+      "E": 1.0
+    },
+    "IY": {
+      "I": 1.0
+    },
+    "AO": {
+      "O": 1.0
+    },
+    "OW": {
+      "O": 1.0
+    },
+    "OY": {
+      "O": 1.0
+    },
+    "AW": {
+      "O": 1.0
+    },
+    "UW": {
+      "U": 1.0
+    },
+    "UH": {
+      "U": 1.0
+    },
+    "sil": {
+      "sil": 1.0
+    }
+  }
+}

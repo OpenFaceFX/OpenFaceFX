@@ -16,11 +16,12 @@ The result is smooth, overlapping viseme curves rather than hard switches.
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
 from .alignment import PhonemeSegment
+from .mapping import Mapping
 from .visemes import VISEMES, VISEME_INDEX, phoneme_to_viseme
 from .phonemes import is_vowel
 
@@ -42,13 +43,19 @@ def _theta(seg: PhonemeSegment) -> float:
 def build_viseme_curves(
     segments: List[PhonemeSegment],
     fps: float = 60.0,
+    mapping: Optional[Mapping] = None,
 ) -> tuple:
-    """Return (times, matrix) where matrix[frame, viseme] in [0,1].
+    """Return (times, matrix) where matrix[frame, target] in [0,1].
 
-    ``times`` is a 1-D array of sample times; columns follow ``visemes.VISEMES``.
+    ``times`` is a 1-D array of sample times. Without ``mapping``, columns
+    follow ``visemes.VISEMES`` and each phoneme drives exactly one viseme —
+    identical to previous releases. With a ``Mapping``, columns follow
+    ``mapping.target_names`` and any phoneme may drive several targets with
+    fractional weights.
     """
+    n_targets = len(mapping.targets) if mapping is not None else len(VISEMES)
     if not segments:
-        return np.zeros(0), np.zeros((0, len(VISEMES)))
+        return np.zeros(0), np.zeros((0, n_targets))
 
     t0 = segments[0].start
     t1 = segments[-1].end
@@ -58,7 +65,17 @@ def build_viseme_curves(
     centres = np.array([(s.start + s.end) / 2 for s in segments])
     alphas = np.array([_alpha(s) for s in segments])
     thetas = np.array([_theta(s) for s in segments])
-    targets = np.array([VISEME_INDEX[phoneme_to_viseme(s.phoneme)] for s in segments])
+
+    # Per-segment target weights: shape (n_seg, n_targets). The built-in
+    # table is one-hot, so the weighted path reproduces it bit-for-bit.
+    weights = np.zeros((len(segments), n_targets))
+    if mapping is not None:
+        for i, s in enumerate(segments):
+            for idx, w in mapping.row(s.phoneme).items():
+                weights[i, idx] = w
+    else:
+        idx = [VISEME_INDEX[phoneme_to_viseme(s.phoneme)] for s in segments]
+        weights[np.arange(len(segments)), idx] = 1.0
 
     # Dominance of every segment at every sample time: shape (n, n_seg)
     dt = np.abs(times[:, None] - centres[None, :])
@@ -67,10 +84,9 @@ def build_viseme_curves(
     denom = dom.sum(axis=1, keepdims=True)
     denom[denom == 0] = 1.0
 
-    matrix = np.zeros((n, len(VISEMES)))
-    for v in range(len(VISEMES)):
-        mask = (targets == v).astype(float)  # (n_seg,)
-        matrix[:, v] = (dom * mask[None, :]).sum(axis=1) / denom[:, 0]
+    matrix = np.zeros((n, n_targets))
+    for v in range(n_targets):
+        matrix[:, v] = (dom * weights[None, :, v]).sum(axis=1) / denom[:, 0]
 
     # Clean numerical dust and clamp.
     matrix[matrix < 1e-4] = 0.0

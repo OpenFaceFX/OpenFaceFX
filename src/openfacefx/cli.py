@@ -19,6 +19,7 @@ from .alignment import load_mfa_textgrid
 from .pipeline import generate_naive, generate_from_alignment, wav_duration
 from .io_export import write_json, write_csv
 from .export_unity import write_unity_anim
+from .mapping import Mapping
 from .retarget import retarget, PRESETS
 
 
@@ -42,6 +43,9 @@ def _write(track, out: str, args=None) -> None:
 
 
 def _add_output_options(p) -> None:
+    p.add_argument("--mapping",
+                   help="JSON phoneme->target mapping file (weighted, "
+                        "many-to-many; default: built-in Oculus-15 table)")
     p.add_argument("--retarget", choices=sorted(PRESETS),
                    help="remap viseme channels onto another rig's shapes "
                         "(JSON/CSV output; see docs/retargeting.md)")
@@ -74,6 +78,7 @@ def main(argv=None) -> int:
     _add_output_options(m)
 
     args = p.parse_args(argv)
+    mapping = Mapping.from_json(args.mapping) if args.mapping else None
 
     if args.cmd == "naive":
         dur = args.duration if args.duration else wav_duration(args.wav)
@@ -81,11 +86,12 @@ def main(argv=None) -> int:
         if args.cmudict:
             added = g2p.load_cmudict(args.cmudict)
             print(f"loaded {added} CMUdict entries")
-        track = generate_naive(args.text, dur, fps=args.fps, g2p=g2p)
+        track = generate_naive(args.text, dur, fps=args.fps, g2p=g2p,
+                               mapping=mapping)
         _write(track, args.out, args)
     elif args.cmd == "mfa":
         segs = load_mfa_textgrid(args.textgrid)
-        track = generate_from_alignment(segs, fps=args.fps)
+        track = generate_from_alignment(segs, fps=args.fps, mapping=mapping)
         _write(track, args.out, args)
     return 0
 

@@ -24,7 +24,7 @@ def to_dict(track: FaceTrack) -> Dict:
         "version": 1,
         "fps": track.fps,
         "duration": round(track.duration, 4),
-        "viseme_set": VISEMES,
+        "viseme_set": track.target_set if track.target_set is not None else VISEMES,
         "channels": [
             {
                 "name": ch.name,
