@@ -1,14 +1,32 @@
 """RESEARCH TOOL — Bethesda .lip payload codec (issue #12; not a supported API).
 
-Clean-room, derived purely from byte analysis of three mod-author-generated
-sample files (July 2026). Status: the structural container is SOLVED — this
-codec parses each known sample exactly to EOF and re-serializes it
-byte-identically from decoded fields. The SEMANTICS are partially decoded:
-values are FaceFX curve floats (weight envelopes in [0,1] plus signed Hermite
-tangents stored as doubled values), but the marker bytes' meaning and the
-per-key time representation are still unknown, which is what blocks a real
-.lip exporter. Confidence tags: [V]=verified across all samples,
-[I]=inferred, [U]=unknown.
+Clean-room, derived purely from byte analysis of four sample files (three
+mod-author-generated placeholders plus one REAL vanilla Skyrim asset; July
+2026). Status: the structural container AND the per-key curve routing are now
+SOLVED — this codec parses each known sample exactly to EOF, re-serializes it
+byte-identically from decoded fields, AND decodes each frame-major value to its
+(curve, frame). Values are FaceFX curve floats (weight envelopes in [0,1] plus
+signed Hermite tangents stored as doubled values). Confidence tags:
+[V]=verified across all samples, [I]=inferred, [U]=unknown.
+
+CURVE ROUTING — RESOLVED (see decode_curves + time_model):
+  The payload is a FRAME-MAJOR rigid grid. Conceptually each frame is a fixed
+  strip of R "slots" (R=33 for Skyrim-lineage, R=60 for Fallout 4-lineage;
+  R == total_slots/frame_count, exact on the real vanilla file: 33*74=2442).
+  Walk the token stream accumulating a flattened position:
+      pos(token) = running total of  num_floats + (marker//4)
+      num_floats = 2 for a dup token (value carries an equal Hermite tangent),
+                   else 1;   (marker//4) = COUNT OF EMPTY SLOTS to skip, i.e.
+                   inactive curves between this stored value and the next.
+  Then  frame = pos // R  and  curve = pos % R  (routing is POSITIONAL; the
+  marker does NOT name a curve, it advances past resting curves). A resting
+  curve is written with the sentinel float 0x268ae8f9 (~9.6e-16). Decoding the
+  real vanilla file this way yields exactly 13 distinct smooth curves (one
+  stored as an identical value+tangent slot pair) == header num_curves, and the
+  per-curve envelopes are 6.3x smoother than a random-routing null (4.5-6.9x
+  across all four samples; round-2 marker-as-curve-index schemes never beat
+  ~1.1x). The gaps are exactly recoverable from the (frame,curve) grid, so the
+  format is writable. This unblocks a real .lip exporter.
 
 Structural model (verified by byte-exact round-trip):
 
@@ -51,10 +69,9 @@ def time_model(h):
     ticks_per_frame an integer per game (Skyrim 132, Fallout 4 240). Keys sit
     on a uniform frame grid running neg16 .. count12-1 (t=0 at audio start);
     at the standard 30 fps, time_s(frame) = frame / 30. Per-key time is NOT
-    stored (const14=3: value + two slopes only). The one remaining unknown is
-    per-key CURVE ROUTING (which of the num_curves active curves each
-    frame-major value belongs to) — markers are in curve-index range but the
-    decode is unproven; see issue #12."""
+    stored (const14=3: value + two slopes only). Per-key CURVE ROUTING is now
+    resolved too: frame-major positional on a rigid R-slot grid (see the module
+    docstring and decode_curves)."""
     tpf = (h["duration"] - 28) / h["count12"]
     return {
         "frame_count": h["count12"],
@@ -115,6 +132,50 @@ def serialize_from_fields(header_bytes, toks):
     return bytes(out)
 
 
+# Resting-curve sentinel written for a listed-but-inactive curve (~9.6e-16).
+SENTINEL = struct.unpack("<f", bytes.fromhex("f9e88a26"))[0]
+
+# Frame stride R (slots per frame) by target-vocabulary field u20. Verified
+# exact on the real vanilla file (33 * 74 frames == 2442 slots). Placeholders
+# from TTS tools may leave the final frame partial (frames == ceil(total/R)).
+STRIDE_BY_U20 = {16: 33, 43: 60}  # Skyrim, Fallout 4
+
+
+def _is_sentinel(v):
+    return struct.pack("<f", v) == b"\xf9\xe8\x8a\x26"
+
+
+def frame_stride(h):
+    """Slots per frame R for this file's game (from header u20)."""
+    return STRIDE_BY_U20.get(h["u20"])
+
+
+def decode_curves(d, R=None):
+    """RESOLVED per-key routing. Return dict with:
+        'records': list of (frame, curve, value, is_sentinel) in stream order,
+        'grid'   : {curve_slot: {frame: value}}   (sentinel -> 0.0 = rest),
+        'stride' : R,   'frames': frame count.
+    Routing is frame-major positional: a flattened position accumulates
+    num_floats + (marker//4) per token; frame = pos//R, curve = pos%R. The
+    marker is the number of resting curves to skip, NOT a curve id. Curves that
+    share an identical series are one curve stored as value+equal-tangent."""
+    h = parse_header(d)
+    toks, _ = parse_payload(d)
+    if R is None:
+        R = frame_stride(h)
+    if R is None:
+        raise ValueError("unknown frame stride for u20=%d; pass R" % h["u20"])
+    records, grid, pos = [], {}, 0
+    for t in toks:
+        frame, curve = pos // R, pos % R
+        sent = _is_sentinel(t["value"])
+        records.append((frame, curve, t["value"], sent))
+        grid.setdefault(curve, {})[frame] = 0.0 if sent else t["value"]
+        pos += (2 if t["dup"] else 1) + (t["marker"] // 4 if t["marker"] is not None else 0)
+    frames = (pos + R - 1) // R
+    return {"records": records, "grid": grid, "stride": R, "frames": frames}
+
+
 def report(path):
     d = open(path, "rb").read()
     h = parse_header(d)
@@ -134,6 +195,13 @@ def report(path):
     print(f"  roundtrip_raw    = {'EXACT' if rt_raw == d else 'FAIL'}")
     print(f"  roundtrip_fields = {'EXACT' if rt_fld == d else 'FAIL'}")
     print(f"  values in [0,1] = {in01}/{len(vals)}   negatives (slopes) = {neg}")
+    R = frame_stride(h)
+    if R is not None:
+        cv = decode_curves(d, R)
+        used = sorted(cv["grid"])
+        exact = "EXACT" if len(toks) and cv["frames"] == h["count12"] else "approx"
+        print(f"  curves: stride R={R}  frames={cv['frames']} (count12={h['count12']}: {exact})"
+              f"  distinct slots used={len(used)} (num_curves={h['num_curves']})")
 
 
 if __name__ == "__main__":
