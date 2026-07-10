@@ -1000,6 +1000,27 @@ def main(argv=None) -> int:
     _add_output_options(cv)
     _add_edits_options(cv)
 
+    ins = sub.add_parser("inspect",
+                         help="read-only stats for a track.json: duration, "
+                              "channel/keyframe counts, per-channel coverage, "
+                              "event/variant counts (issue #47)")
+    ins.add_argument("file", help="the .track.json to inspect")
+    ins.add_argument("--json", action="store_true",
+                     help="emit the schema-stable JSON stats instead of the "
+                          "human table")
+
+    val = sub.add_parser("validate",
+                         help="lint a track / *.edits.json / events file against "
+                              "the format contract; exits nonzero on a violation "
+                              "(a CI gate, issue #47)")
+    val.add_argument("file", help="the .track.json, *.edits.json, or events JSON")
+    val.add_argument("--strict", action="store_true",
+                     help="promote warnings (empty channels, zero-length track) "
+                          "to errors")
+    val.add_argument("--json", action="store_true",
+                     help="emit the deterministic JSON problem list instead of "
+                          "the human summary")
+
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
                             "transcript; amplitude fallback, not viseme sync)")
@@ -1207,6 +1228,28 @@ def main(argv=None) -> int:
         track = _apply_edits_layer(track, args)
         _write(track, args.out, args)
         return 0
+
+    if args.cmd == "inspect":
+        from .io_export import read_json
+        from .inspect import inspect_track, render_inspect
+        try:
+            track = read_json(args.file)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"inspect: {ex}")
+        doc = inspect_track(track)
+        print(json.dumps(doc) if args.json else render_inspect(doc))
+        return 0
+
+    if args.cmd == "validate":
+        from .inspect import validate_file, render_problems
+        kind, problems = validate_file(args.file, strict=args.strict)
+        ok = not any(p["severity"] == "error" for p in problems)
+        if args.json:
+            print(json.dumps({"format": "openfacefx.validate", "version": 1,
+                              "kind": kind, "ok": ok, "problems": problems}))
+        else:
+            print(render_problems(kind, problems))
+        return 0 if ok else 1
 
     mapping = Mapping.from_json(args.mapping) if args.mapping else None
     params = (_coart_params(args)

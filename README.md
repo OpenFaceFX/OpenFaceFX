@@ -574,6 +574,30 @@ track's frame times are 4-dp-representable, and for CSV/cues/JSON always.) Pure
 re-serialisation plus the existing transforms — no solver, no RNG. `.lip` stays
 guarded exactly as in the generate path (it needs phonemes a viseme track lacks).
 
+## Inspect & validate (CI lint)
+
+Two deterministic, **read-only** commands (issue
+[#47](https://github.com/OpenFaceFX/OpenFaceFX/issues/47)) answer *"what's in this
+track?"* and *"is it well-formed?"* without opening the previewer:
+
+```bash
+python -m openfacefx inspect track.json            # human table (or --json)
+python -m openfacefx validate track.json           # lint gate; exits nonzero on a violation
+python -m openfacefx validate line.edits.json --json --strict
+```
+
+`inspect` reports duration, fps, channel/keyframe counts, per-channel coverage and
+the weight/pose/gesture split, with a schema-stable `--json` (every key always
+present). `validate` auto-detects a `.track.json`, an `*.edits.json` sidecar, or a
+standalone events file and checks the contract — monotonic in-bounds key times,
+weight channels in `[0,1]` (signed head/eye **pose** angles flagged only when
+wildly out of range), `viseme_set` consistency, and event/variant blocks — exiting
+nonzero with a deterministic, sorted problem list so a CI job fails cleanly on a
+malformed asset. It exits `0` on every track the generators and importers produce.
+Library callers get `inspect_track`, `validate_asset`/`validate_file`,
+`detect_kind`; stdlib only, deterministic. See
+[docs/api/inspect.md](docs/api/inspect.md).
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -853,6 +877,7 @@ src/openfacefx/
   emotion.py        additive emotion/expression layer, valence/arousal table (#38) ← emotion command
   importers.py      read Rhubarb/Moho/Papagayo cue files back into a track (#44) ← from-cues command
   importers_csv.py  read ARKit/Live Link Face blendshape-weight CSV into a track (#45) ← from-csv command
+  inspect.py        read-only track stats + a CI format/contract linter (#47) ← inspect, validate commands
   gestures_layers.py  gesture event-extraction + per-layer curve synthesis (gestures.py's engine)
   pipeline.py       orchestration
   cli.py            command line

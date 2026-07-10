@@ -104,5 +104,6 @@ nav:
       - Retargeting: api/retarget.md
       - Exporters: api/exporters.md
       - Importing cue files: api/importers.md
+      - Inspect & validate: api/inspect.md
       - Batch & CLI: api/batch.md
   - Changelog: changelog.md

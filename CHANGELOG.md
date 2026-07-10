@@ -9,6 +9,28 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **`inspect` and `validate` commands: read-only track stats + a CI format
+  linter** (closes [#47](https://github.com/OpenFaceFX/OpenFaceFX/issues/47)): a
+  new `openfacefx.inspect` module (`inspect_track`, `validate_asset`/
+  `validate_file`, `detect_kind`) and two read-only CLI commands.
+  - **`inspect FILE [--json]`** — duration, fps, channel/keyframe counts,
+    per-channel key count / min / max / start / end / time-coverage, event &
+    variant counts, and the weight/pose/gesture channel split. Reuses
+    `qa.summarize` / `cue_flags`; `--json` is **schema-stable** (every documented
+    key always present, lists empty rather than absent) and deterministic.
+  - **`validate FILE [--strict] [--json]`** — a lint gate that auto-detects a
+    `.track.json`, an `*.edits.json` sidecar, or a standalone events file, checks
+    the format contract (monotonic in-bounds key times; weight channels in
+    `[0,1]`; signed head/eye **pose** angle channels flagged only when *wildly*
+    out of range; `viseme_set`/`target_set` consistency; event/variant blocks via
+    `events.validate_events` plus a known-`EVENT_TYPES` check), and **exits
+    nonzero** with a deterministic, sorted, machine-readable problem list
+    (`{severity, code, where, detail}`) so CI diffs stay clean. `--strict`
+    promotes warnings (empty channels, zero-length track) to errors. It exits `0`
+    on every track the generators and importers produce and nonzero on a
+    corrupted one.
+  - Read-only (never writes), additive, stdlib only, deterministic across Python
+    3.9/3.13.
 - **`convert` command: re-export or retarget an existing track without the
   solver** (closes [#46](https://github.com/OpenFaceFX/OpenFaceFX/issues/46)):
   `convert IN.track.json -o OUT.ext` loads an existing track and emits any
