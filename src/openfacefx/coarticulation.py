@@ -16,14 +16,15 @@ The result is smooth, overlapping viseme curves rather than hard switches.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
 from .alignment import PhonemeSegment
-from .mapping import Mapping
+from .mapping import Mapping, _DEFAULT_CLASSES
 from .visemes import VISEMES, VISEME_INDEX, phoneme_to_viseme
-from .phonemes import is_vowel
+from .phonemes import SILENCE, is_vowel, strip_stress
 
 
 # Vowels dominate (mouth opens broadly); consonants are sharper/briefer.
@@ -40,24 +41,100 @@ def _theta(seg: PhonemeSegment) -> float:
     return base * (0.09 / dur) ** 0.5
 
 
+@dataclass
+class CoartParams:
+    """Component-model tunables (FaceFX-style ca_* knobs).
+
+    ``lead`` gives per-articulator-class (lead_in, lead_out) extents in
+    seconds — how far a segment's influence reaches before/after its centre.
+    The "basic"/"jaw" defaults reproduce the classic symmetric model; lips
+    and especially tongue targets are tighter, so a quick stop does not smear
+    across neighbouring vowels.
+    """
+    lead: Dict[str, Tuple[float, float]] = field(default_factory=lambda: {
+        "basic": (0.40, 0.45),
+        "jaw": (0.40, 0.45),
+        "lips": (0.30, 0.30),
+        "tongue": (0.15, 0.15),
+    })
+    short_silence: float = 0.27   # absorb interior silences shorter than this
+    closure_floor: float = 0.90   # enforced lip-target weight at closures
+    split_diphthongs: bool = True
+    preroll: float = 0.0          # anticipation seconds sampled before onset
+    allow_negative_time: bool = False  # preroll below t=0 instead of clamping
+
+# Diphthong -> component vowels (split at 55% of the segment).
+_DIPHTHONGS = {
+    "AY": ("AA", "IY"), "AW": ("AA", "UW"), "EY": ("EH", "IY"),
+    "OW": ("AO", "UW"), "OY": ("AO", "IY"),
+}
+
+# Articulator classes whose targets get closure enforcement.
+_CLOSURE_CLASSES = ("lips",)
+
+
+def _preprocess(segments: List[PhonemeSegment],
+                params: CoartParams) -> List[PhonemeSegment]:
+    # Absorb short interior silences into the preceding phoneme so the mouth
+    # does not flap shut between words (FaceFX ca_shortsilenceduration).
+    out: List[PhonemeSegment] = []
+    last = len(segments) - 1
+    for i, s in enumerate(segments):
+        if (out and 0 < i < last and s.phoneme == SILENCE
+                and s.dur < params.short_silence):
+            prev = out[-1]
+            out[-1] = PhonemeSegment(prev.phoneme, prev.start, s.end)
+            continue
+        out.append(s)
+    if not params.split_diphthongs:
+        return out
+    split: List[PhonemeSegment] = []
+    for s in out:
+        parts = _DIPHTHONGS.get(strip_stress(s.phoneme).upper())
+        if parts and s.dur > 1e-3:
+            cut = s.start + s.dur * 0.55
+            split.append(PhonemeSegment(parts[0], s.start, cut))
+            split.append(PhonemeSegment(parts[1], cut, s.end))
+        else:
+            split.append(s)
+    return split
+
+
+def _segment_class(seg: PhonemeSegment, mapping: Optional[Mapping]) -> str:
+    """Articulator class of a segment = class of its highest-weight target."""
+    if mapping is None:
+        return _DEFAULT_CLASSES.get(phoneme_to_viseme(seg.phoneme), "basic")
+    row = mapping.row(seg.phoneme)
+    if not row:
+        return "basic"
+    idx = max(row, key=row.get)
+    return mapping.targets[idx].articulator
+
+
 def build_viseme_curves(
     segments: List[PhonemeSegment],
     fps: float = 60.0,
     mapping: Optional[Mapping] = None,
+    params: Optional[CoartParams] = None,
 ) -> tuple:
     """Return (times, matrix) where matrix[frame, target] in [0,1].
 
     ``times`` is a 1-D array of sample times. Without ``mapping``, columns
-    follow ``visemes.VISEMES`` and each phoneme drives exactly one viseme —
-    identical to previous releases. With a ``Mapping``, columns follow
+    follow ``visemes.VISEMES``; with a ``Mapping`` they follow
     ``mapping.target_names`` and any phoneme may drive several targets with
-    fractional weights.
+    fractional weights. ``params`` tunes the component coarticulation model
+    (per-articulator lead in/out, silence absorption, closure enforcement,
+    diphthong splitting, onset pre-roll).
     """
+    params = params or CoartParams()
     n_targets = len(mapping.targets) if mapping is not None else len(VISEMES)
     if not segments:
         return np.zeros(0), np.zeros((0, n_targets))
+    segments = _preprocess(segments, params)
 
-    t0 = segments[0].start
+    t0 = segments[0].start - params.preroll
+    if not params.allow_negative_time:
+        t0 = max(t0, 0.0) if segments[0].start >= 0.0 else segments[0].start
     t1 = segments[-1].end
     n = max(int(round((t1 - t0) * fps)) + 1, 1)
     times = t0 + np.arange(n) / fps
@@ -65,6 +142,15 @@ def build_viseme_curves(
     centres = np.array([(s.start + s.end) / 2 for s in segments])
     alphas = np.array([_alpha(s) for s in segments])
     thetas = np.array([_theta(s) for s in segments])
+
+    # Per-class asymmetric influence: scale the decay rate on each side by
+    # (basic_lead / class_lead), so "basic"/"jaw" reproduce the classic
+    # symmetric model and tighter articulators rise/decay faster.
+    base_in, base_out = 0.40, 0.45
+    lead = [params.lead.get(_segment_class(s, mapping), (base_in, base_out))
+            for s in segments]
+    scale_in = np.array([base_in / max(li, 1e-3) for li, _ in lead])
+    scale_out = np.array([base_out / max(lo, 1e-3) for _, lo in lead])
 
     # Per-segment target weights: shape (n_seg, n_targets). The built-in
     # table is one-hot, so the weighted path reproduces it bit-for-bit.
@@ -79,7 +165,11 @@ def build_viseme_curves(
 
     # Dominance of every segment at every sample time: shape (n, n_seg)
     dt = np.abs(times[:, None] - centres[None, :])
-    dom = alphas[None, :] * np.exp(-thetas[None, :] * dt)
+    before = times[:, None] < centres[None, :]
+    theta_eff = np.where(before,
+                         (thetas * scale_in)[None, :],
+                         (thetas * scale_out)[None, :])
+    dom = alphas[None, :] * np.exp(-theta_eff * dt)
 
     denom = dom.sum(axis=1, keepdims=True)
     denom[denom == 0] = 1.0
@@ -88,7 +178,38 @@ def build_viseme_curves(
     for v in range(n_targets):
         matrix[:, v] = (dom * weights[None, :, v]).sum(axis=1) / denom[:, 0]
 
-    # Clean numerical dust and clamp.
+    # Clean numerical dust and clamp, then enforce closures so enforced
+    # frames end up summing to exactly 1.
     matrix[matrix < 1e-4] = 0.0
     np.clip(matrix, 0.0, 1.0, out=matrix)
+    _enforce_closures(times, matrix, segments, mapping, weights, params)
     return times, matrix
+
+
+def _enforce_closures(times, matrix, segments, mapping, weights, params):
+    """Guarantee lip seals: at the midpoint of every lips-class segment,
+    raise its main target to at least ``closure_floor`` and rescale the other
+    channels so each frame still sums to ~1 (a bilabial between open vowels
+    must fully close the mouth — FaceFX inserts an OPEN/closure key here)."""
+    floor = params.closure_floor
+    if floor <= 0.0 or len(times) == 0:
+        return
+    for i, s in enumerate(segments):
+        if _segment_class(s, mapping) not in _CLOSURE_CLASSES:
+            continue
+        v = int(np.argmax(weights[i]))
+        if weights[i, v] <= 0.0:
+            continue
+        centre = (s.start + s.end) / 2.0
+        half = max(s.dur * 0.25, 1.0 / 120.0)
+        sel = np.abs(times - centre) <= half
+        if not np.any(sel):
+            sel = np.array([int(np.argmin(np.abs(times - centre)))])
+        for f in np.nonzero(sel)[0] if sel.dtype == bool else sel:
+            cur = matrix[f, v]
+            if cur >= floor:
+                continue
+            others = matrix[f].sum() - cur
+            if others > 1e-9:
+                matrix[f] *= (1.0 - floor) / others
+            matrix[f, v] = floor

@@ -13,6 +13,8 @@ from openfacefx import (
 )
 from openfacefx.visemes import VISEMES
 
+# silence-tolerance: several coart tests build segment lists by hand
+
 
 def test_phoneme_to_viseme_groups_bilabials():
     assert phoneme_to_viseme("P") == "PP"
@@ -44,9 +46,10 @@ def test_curves_are_bounded_and_partition_energy():
     segs = NaiveAligner().align(["P", "AA1", "T"], total_duration=0.6)
     times, m = build_viseme_curves(segs, fps=60)
     assert m.min() >= 0.0 and m.max() <= 1.0
-    # dominance-weighted average => each frame's channels sum to ~1
+    # dominance-weighted average => each frame's channels sum to ~1, up to
+    # the 1e-4 dust-zeroing threshold applied per channel after normalizing
     row_sums = m.sum(axis=1)
-    assert np.allclose(row_sums, 1.0, atol=1e-6)
+    assert np.allclose(row_sums, 1.0, atol=2e-3)
 
 
 def test_pipeline_produces_valid_track():
@@ -169,6 +172,83 @@ def test_unity_anim_vrchat_naming():
             if l.strip().startswith("value:")]
     assert vals and all(0.0 <= v <= 100.0 for v in vals)
     os.unlink(out)
+
+
+def _channel(track_or_matrix_names, name):
+    times, matrix, names = track_or_matrix_names
+    return times, matrix[:, names.index(name)]
+
+
+def test_coart_bilabial_closure_between_vowels():
+    from openfacefx.coarticulation import build_viseme_curves
+    segs = [PhonemeSegment("AA", 0.0, 0.25), PhonemeSegment("P", 0.25, 0.33),
+            PhonemeSegment("AA", 0.33, 0.6)]
+    times, m = build_viseme_curves(segs, fps=120)
+    pp = m[:, VISEMES.index("PP")]
+    mid = int(np.argmin(np.abs(times - 0.29)))
+    assert pp[mid] >= 0.89, pp[mid]
+    # rows still partition energy
+    assert np.allclose(m.sum(axis=1), 1.0, atol=2e-3)
+
+
+def test_coart_short_silence_absorbed_long_kept():
+    from openfacefx.coarticulation import build_viseme_curves
+    sil_i = VISEMES.index("sil")
+
+    def sil_at_gap(gap):
+        segs = [PhonemeSegment("sil", 0.0, 0.1),
+                PhonemeSegment("AA", 0.1, 0.5),
+                PhonemeSegment("sil", 0.5, 0.5 + gap),
+                PhonemeSegment("AA", 0.5 + gap, 0.9 + gap),
+                PhonemeSegment("sil", 0.9 + gap, 1.0 + gap)]
+        times, m = build_viseme_curves(segs, fps=60)
+        mid = int(np.argmin(np.abs(times - (0.5 + gap / 2))))
+        return m[mid, sil_i]
+
+    assert sil_at_gap(0.1) < 0.15          # short pause: mouth stays open
+    assert sil_at_gap(0.6) > 0.5           # long pause: mouth relaxes
+
+
+def test_coart_tongue_lead_is_tunable_and_local():
+    from openfacefx.coarticulation import CoartParams, build_viseme_curves
+    segs = [PhonemeSegment("AA", 0.0, 0.3), PhonemeSegment("D", 0.3, 0.38),
+            PhonemeSegment("AA", 0.38, 0.7)]
+    loose = CoartParams()
+    loose.lead = dict(loose.lead); loose.lead["tongue"] = (0.40, 0.45)
+    _, m_tight = build_viseme_curves(segs, fps=60)
+    _, m_loose = build_viseme_curves(segs, fps=60, params=loose)
+    dd = VISEMES.index("DD"); aa = VISEMES.index("aa")
+    # tongue channel responds strongly to its own lead parameter...
+    dd_delta = np.abs(m_tight[:, dd] - m_loose[:, dd]).max()
+    assert dd_delta > 0.05, dd_delta
+    # ...while the jaw channel's peak barely moves (normalized model, so
+    # strict independence is impossible; near-independence is the contract)
+    aa_peak_delta = abs(m_tight[:, aa].max() - m_loose[:, aa].max())
+    assert aa_peak_delta < 0.05, aa_peak_delta
+
+
+def test_coart_diphthong_splits_into_two_peaks():
+    from openfacefx.coarticulation import build_viseme_curves
+    segs = [PhonemeSegment("sil", 0.0, 0.1), PhonemeSegment("AY1", 0.1, 0.6),
+            PhonemeSegment("sil", 0.6, 0.7)]
+    times, m = build_viseme_curves(segs, fps=120)
+    aa = m[:, VISEMES.index("aa")]; ii = m[:, VISEMES.index("I")]
+    assert aa.max() > 0.3 and ii.max() > 0.3
+    # open component peaks before the spread component
+    assert times[int(np.argmax(aa))] < times[int(np.argmax(ii))]
+
+
+def test_coart_preroll_onset_policy():
+    from openfacefx.coarticulation import CoartParams, build_viseme_curves
+    segs = [PhonemeSegment("AA", 0.0, 0.5)]
+    t_default, _ = build_viseme_curves(segs, fps=60)
+    assert t_default[0] == 0.0
+    p = CoartParams(); p.preroll = 0.2
+    t_clamped, _ = build_viseme_curves(segs, fps=60, params=p)
+    assert t_clamped[0] == 0.0              # clamped at zero by default
+    p2 = CoartParams(); p2.preroll = 0.2; p2.allow_negative_time = True
+    t_neg, _ = build_viseme_curves(segs, fps=60, params=p2)
+    assert t_neg[0] < -0.19                  # true anticipation keys
 
 
 def test_mapping_default_matches_builtin():
