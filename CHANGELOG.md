@@ -14,6 +14,20 @@ infrastructure (#24, #27–#31), and in-game confirmation of the `.lip` writer
 (#12).
 
 ### Added
+- **HTML preview: audio playback, waveform & phoneme lane**
+  ([#11](https://github.com/OpenFaceFX/OpenFaceFX/issues/11)):
+  `tools/build_preview.py` gains `--wav` (embeds the voice line as a base64
+  `data:` URI; the transport plays in sync with the playhead and draws a
+  client-side min/max waveform via the Web Audio API) and `--segments` (a
+  clickable phoneme/word lane above the transport — click a segment to seek, or
+  to hear just that slice when audio is embedded; optional per-segment
+  `confidence` tints blocks red→green so low-confidence alignments stand out for
+  QA). `--segments` accepts a segments JSON (`[{"phoneme", "start", "end"}, ...]`,
+  optionally wrapped with a `words` lane) or a Praat `.TextGrid`; the
+  `naive`/`mfa` commands dump that JSON with a new `--emit-segments PATH` flag.
+  The page stays a single self-contained file with no network requests
+  (openable from `file://`), and output is byte-identical to previous releases
+  when neither flag is given.
 - **Documentation site** ([#27](https://github.com/OpenFaceFX/OpenFaceFX/issues/27)):
   a MkDocs Material + mkdocstrings site published to
   [openfacefx.github.io/OpenFaceFX/docs/](https://openfacefx.github.io/OpenFaceFX/docs/),

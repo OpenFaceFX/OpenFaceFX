@@ -17,7 +17,7 @@ import math
 import sys
 
 from .g2p import G2P
-from .alignment import load_mfa_textgrid
+from .alignment import load_mfa_textgrid, dump_segments
 from .pipeline import generate_from_alignment, wav_duration
 from .io_export import write_json, write_csv
 from .export_unity import write_unity_anim
@@ -350,6 +350,19 @@ def _naive_input_segments(args, dur, g2p):
     return naive_segments(args.text, dur, g2p=g2p)
 
 
+def _emit_segments(segs, args) -> None:
+    """Dump the phoneme segments as JSON for the HTML previewer's --segments
+    lane, when --emit-segments PATH was given (naive/mfa). Independent of the
+    track output, so it works alongside any -o format including .lip."""
+    path = getattr(args, "emit_segments", None)
+    if not path:
+        return
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(dump_segments(segs), fh, indent=2)
+    print(f"wrote {path}: {len(segs)} phoneme segments "
+          "(preview with build_preview.py --segments)")
+
+
 def _write_lip(segs, dur, args) -> None:
     """Dispatch ``-o out.lip`` (naive/mfa). EXPERIMENTAL, unverified in-game."""
     try:
@@ -379,6 +392,9 @@ def main(argv=None) -> int:
                         "google (only valid together with --anchors)")
     n.add_argument("--fps", type=float, default=60.0)
     n.add_argument("-o", "--out", required=True)
+    n.add_argument("--emit-segments", metavar="PATH",
+                   help="also write phoneme segments as JSON for the HTML "
+                        "previewer's --segments lane (see tools/build_preview.py)")
     _add_output_options(n)
     _add_coart_options(n)
 
@@ -386,6 +402,9 @@ def main(argv=None) -> int:
     m.add_argument("--textgrid", required=True)
     m.add_argument("--fps", type=float, default=60.0)
     m.add_argument("-o", "--out", required=True)
+    m.add_argument("--emit-segments", metavar="PATH",
+                   help="also write phoneme segments as JSON for the HTML "
+                        "previewer's --segments lane (see tools/build_preview.py)")
     _add_output_options(m)
     _add_coart_options(m)
 
@@ -478,6 +497,7 @@ def main(argv=None) -> int:
             added = g2p.load_cmudict(args.cmudict)
             print(f"loaded {added} CMUdict entries")
         segs = _naive_input_segments(args, dur, g2p)
+        _emit_segments(segs, args)
         if args.out.endswith(".lip"):
             _write_lip(segs, dur, args)
         else:
@@ -486,6 +506,7 @@ def main(argv=None) -> int:
             _write(track, args.out, args)
     elif args.cmd == "mfa":
         segs = load_mfa_textgrid(args.textgrid)
+        _emit_segments(segs, args)
         if args.out.endswith(".lip"):
             _write_lip(segs, segs[-1].end if segs else 0.0, args)
         else:

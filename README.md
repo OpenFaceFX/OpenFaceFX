@@ -231,11 +231,35 @@ scrubbing playhead. Rebuild it for your own track:
 python tools/build_preview.py track.json preview.html
 ```
 
+To answer the usual QA question — *is the timing right against the audio?* —
+embed the voice line and a phoneme lane. `--wav` bakes the audio in as a data
+URI (decoded client-side, no network) so playback stays in sync with the
+playhead and draws a waveform; `--segments` adds a clickable phoneme/word lane
+above the transport — click a segment to seek there, or to hear just that slice
+when audio is embedded, and low-`confidence` blocks are tinted red so alignment
+errors stand out. The `naive`/`mfa` commands dump the lane data with
+`--emit-segments`:
+
+```bash
+openfacefx naive --text "hello world" --wav voice.wav \
+  -o track.json --emit-segments segs.json
+python tools/build_preview.py track.json preview.html \
+  --wav voice.wav --segments segs.json
+```
+
+`--segments` accepts that JSON — a list of `{"phoneme", "start", "end"}`
+objects (optional `confidence` in `[0, 1]`), optionally wrapped as
+`{"segments": [...], "words": [...]}` to draw a word lane too — or a Praat
+`.TextGrid` straight from the Montreal Forced Aligner. Output is byte-identical
+to before when neither flag is given, and the page stays a single file with no
+network requests.
+
 <img src="docs/preview.png" width="850" alt="OpenFaceFX previewer: schematic mouth animating next to the viseme channel curves of a generated track"/>
 
 *The built-in previewer playing a track generated from `examples/voice.wav` —
 schematic articulator on the left, the exported viseme curves with a scrubbing
-playhead on the right. [Try it live.](https://openfacefx.github.io/OpenFaceFX/demo/)*
+playhead on the right; building with `--wav`/`--segments` adds synced audio, a
+waveform, and the phoneme lane. [Try it live.](https://openfacefx.github.io/OpenFaceFX/demo/)*
 
 ## Output format
 

@@ -156,6 +156,74 @@ def test_e2e_preview_builder(tmp_path):
     assert "render(0);btn.click();" in open(out, encoding="utf-8").read()
 
 
+def _build_preview():
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import build_preview
+    return build_preview
+
+
+def test_e2e_preview_builder_no_extras_byte_identical(tmp_path):
+    """The upgrade must not touch the plain page: with no audio/segments the
+    output is the template with only the track substituted — byte for byte."""
+    bp = _build_preview()
+    track = str(tmp_path / "p.json")
+    cli_main(["naive", "--text", "preview me", "--duration", "1.0", "-o", track])
+    out = str(tmp_path / "plain.html")
+    bp.main(track, out)
+    with open(track, encoding="utf-8") as fh:
+        expected = bp.TEMPLATE.replace("/*__TRACK__*/null", json.dumps(json.load(fh)))
+    html = open(out, encoding="utf-8").read()
+    assert html == expected
+    for marker in ("ofx-audio", "ofx-lane", "ofx-wave", "data:audio", "const OFX ="):
+        assert marker not in html
+
+
+def test_e2e_preview_builder_with_audio(tmp_path):
+    """--audio embeds the WAV as a data URI + <audio> the transport syncs to,
+    and a client-side waveform; the page stays a well-formed single file."""
+    import base64
+    bp = _build_preview()
+    track = str(tmp_path / "p.json")
+    cli_main(["naive", "--text", "preview me", "--wav", VOICE, "-o", track])
+    out = str(tmp_path / "audio.html")
+    bp.main(track, out, audio_path=VOICE)
+    html = open(out, encoding="utf-8").read()
+    assert "data:audio/wav;base64," in html and '<audio id="ofx-audio"' in html
+    assert 'id="ofx-wave"' in html and "decodeAudioData" in html
+    assert base64.b64encode(open(VOICE, "rb").read()).decode() in html  # real bytes
+    assert html.startswith("<!DOCTYPE html>") and html.rstrip().endswith("</html>")
+    # --autoplay transforms exactly the one template anchor, never the new JS
+    out2 = str(tmp_path / "audio_auto.html")
+    bp.main(track, out2, autoplay=True, audio_path=VOICE)
+    assert open(out2, encoding="utf-8").read().count("render(0);btn.click();") == 1
+
+
+def test_e2e_preview_builder_with_segments_and_emit(tmp_path):
+    """naive --emit-segments dumps the JSON the previewer's --segments lane
+    consumes; the lane renders with click-to-seek and confidence tinting."""
+    bp = _build_preview()
+    track = str(tmp_path / "p.json")
+    segs = str(tmp_path / "segs.json")
+    cli_main(["naive", "--text", "hello world", "--duration", "1.0",
+              "-o", track, "--emit-segments", segs])
+    seg_data = json.load(open(segs))
+    assert seg_data and all({"phoneme", "start", "end"} <= set(s) for s in seg_data)
+    assert all(s["start"] <= s["end"] for s in seg_data)
+
+    conf = str(tmp_path / "conf.json")
+    with open(conf, "w", encoding="utf-8") as fh:
+        json.dump([{"phoneme": "HH", "start": 0.0, "end": 0.4, "confidence": 0.3},
+                   {"phoneme": "OW", "start": 0.4, "end": 1.0, "confidence": 0.95}], fh)
+    out = str(tmp_path / "seg.html")
+    bp.main(track, out, segments_path=conf)
+    html = open(out, encoding="utf-8").read()
+    assert 'id="ofx-lane"' in html and '"HH"' in html
+    assert "confidence" in html and "playSpan" in html and "hsl(" in html
+    # segments-only page carries no audio element or waveform
+    assert "data:audio" not in html and 'id="ofx-wave"' not in html
+    assert html.rstrip().endswith("</html>")
+
+
 def test_e2e_batch_dialogue_example(tmp_path):
     demo = os.path.join(ROOT, "examples", "dialogue")
     out = str(tmp_path / "tracks")

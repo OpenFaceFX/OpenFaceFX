@@ -36,6 +36,21 @@ class PhonemeSegment:
         return self.end - self.start
 
 
+def dump_segments(segments: List["PhonemeSegment"]) -> List[dict]:
+    """Serialise phoneme segments to the plain-JSON shape the HTML previewer
+    consumes (``tools/build_preview.py --segments``): a list of
+    ``{"phoneme", "start", "end"[, "confidence"]}``. ``confidence`` is emitted
+    only when the aligner supplied one."""
+    out = []
+    for s in segments:
+        d = {"phoneme": s.phoneme, "start": round(s.start, 4),
+             "end": round(s.end, 4)}
+        if s.confidence is not None:
+            d["confidence"] = round(s.confidence, 4)
+        out.append(d)
+    return out
+
+
 # Rough relative-duration priors (unitless). Vowels last longer than stops.
 _DUR_PRIOR = {
     "AA": 1.6, "AE": 1.5, "AH": 1.0, "AO": 1.6, "AW": 1.8, "AY": 1.8,

@@ -28,11 +28,18 @@ jobs:
         run: |
           python -m openfacefx naive \
             --text "hello world this is a test of open face f x" \
-            --wav examples/voice.wav -o demo_track.json
+            --wav examples/voice.wav -o demo_track.json \
+            --emit-segments demo_segments.json
       - name: Build site
         run: |
           mkdir -p site/demo
-          python tools/build_preview.py demo_track.json site/demo/index.html --autoplay
+          # --segments adds the clickable phoneme lane to the live demo. Audio
+          # (--wav) is intentionally left off the autoplay demo: browsers block
+          # autoplaying sound without a user gesture, which would stall the
+          # on-load animation; the lane needs no gesture. Local builds add --wav
+          # for synced audio + waveform (see the README preview section).
+          python tools/build_preview.py demo_track.json site/demo/index.html \
+            --segments demo_segments.json --autoplay
           cp docs/logo.svg site/logo.svg
           cat > site/index.html <<'EOF'
           <!doctype html>
