@@ -74,4 +74,39 @@ visemes, not phonemes.)
 Deterministic; stdlib + numpy only (`xml.etree`, `json`, `re`, string splitting).
 A purely additive command and module: no existing command's output changes.
 
+## Blendshape-weight CSV (ARKit / Live Link Face)
+
+A lot of face animation lives as per-frame **blendshape-weight CSV** — Apple
+ARKit's 52 coefficients recorded by Epic's Live Link Face app, or exported by
+capture tools and DCCs. `from-csv` reads two layouts, auto-detected from the
+header row:
+
+```bash
+python -m openfacefx from-csv track.csv -o out.json                 # OpenFaceFX long
+python -m openfacefx from-csv capture.csv --fps 60 -o out.anim       # wide, Live Link Face
+python -m openfacefx from-csv capture.csv --timecode-col Timecode -o out.json
+```
+
+- **OpenFaceFX long CSV** `time,channel,value` — the exact inverse of
+  [`io_export.write_csv`](exporters.md); a byte-clean round-trip
+  (`read_csv(write_csv(track))` reconstructs the channels and keyframes).
+- **Wide per-frame CSV** — one row per frame, one column per blendshape name,
+  with an optional leading `Timecode` / `BlendShapeCount` header as Live Link
+  Face emits. A `Timecode` column (SMPTE `HH:MM:SS:FF`, sized by `--fps`) or the
+  row index (`i / fps`) drives the timeline, and each column is RDP-thinned via
+  `reduce_to_track` into sparse keys.
+
+Channel names are kept **verbatim in rig space** (`jawOpen`, `mouthSmileLeft`, …)
+and values are clamped to `[0, 1]` — a column carrying out-of-range values (e.g. a
+non-blendshape head-rotation angle) is clamped and **reported**. Because the
+forward viseme→ARKit map is many-to-one, this deliberately does **not** recover
+visemes: it brings the raw rig-space channels in so they can be conditioned
+(`--smooth`/`--lag`), layered and re-exported through Unity / Godot / Live2D. The
+`from-csv` command is kept separate from `from-cues` — blendshape weights and
+mouth-shape cues are different sources. Library callers get `read_csv(path, *,
+fps, timecode_col)`. numpy + stdlib (`csv`), deterministic across Python
+3.9/3.13.
+
 ::: openfacefx.importers
+
+::: openfacefx.importers_csv

@@ -969,6 +969,23 @@ def main(argv=None) -> int:
     _add_output_options(fc)
     _add_qa_options(fc)
 
+    cs = sub.add_parser("from-csv",
+                        help="import a blendshape-weight CSV into a track: the "
+                             "OpenFaceFX long time,channel,value format or a wide "
+                             "per-frame ARKit / Live Link Face CSV (issue #45)")
+    cs.add_argument("file", help="the blendshape-weight CSV to import")
+    cs.add_argument("--fps", type=float, default=60.0,
+                    help="frame rate timing the wide per-frame rows "
+                         "(frame/timecode -> seconds; default 60). The long "
+                         "time,channel,value format carries its own times")
+    cs.add_argument("--timecode-col", metavar="NAME",
+                    help="column holding a SMPTE 'HH:MM:SS:FF' timecode in a wide "
+                         "CSV (else a literal 'Timecode' column, else the row "
+                         "index drives the timeline)")
+    cs.add_argument("-o", "--out", required=True)
+    _add_output_options(cs)
+    _add_qa_options(cs)
+
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
                             "transcript; amplitude fallback, not viseme sync)")
@@ -1142,6 +1159,19 @@ def main(argv=None) -> int:
                                           coarticulate=args.coarticulate)
         except (OSError, ValueError) as ex:
             raise SystemExit(f"from-cues: {ex}")
+        for w in warnings:
+            _warn(args, w)
+        _write(track, args.out, args)
+        _emit_summary(args, track)
+        return 0
+
+    if args.cmd == "from-csv":
+        from .importers_csv import read_csv
+        try:
+            track, warnings = read_csv(args.file, fps=args.fps,
+                                       timecode_col=args.timecode_col)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"from-csv: {ex}")
         for w in warnings:
             _warn(args, w)
         _write(track, args.out, args)

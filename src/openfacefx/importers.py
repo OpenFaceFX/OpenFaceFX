@@ -44,6 +44,10 @@ from .phonemes import SILENCE
 from .retarget import PRESETS
 from .visemes import PHONEME_TO_VISEME, VISEME_INDEX, VISEMES
 
+# Blendshape-weight CSV reader (issue #45) lives in its own module to keep this
+# one under the size budget; re-exported here so `importers.read_csv` resolves.
+from .importers_csv import read_csv  # noqa: E402,F401
+
 Interval = Tuple[float, float, str]     # (start_sec, end_sec, shape or viseme)
 
 _FORMATS = ("tsv", "xml", "json", "dat", "pgo")

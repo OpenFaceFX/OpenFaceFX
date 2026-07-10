@@ -8,6 +8,29 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Import ARKit / Live Link Face blendshape-weight CSV** (closes
+  [#45](https://github.com/OpenFaceFX/OpenFaceFX/issues/45)): a new
+  `openfacefx.importers_csv` module (`read_csv`, re-exported from `importers`) and
+  a `from-csv` command, extending the cue importers to the other big source of
+  existing face animation — per-frame blendshape weights. Two layouts are
+  auto-detected from the header: the OpenFaceFX **long** `time,channel,value`
+  format (the exact inverse of `io_export.write_csv` — a byte-clean round-trip),
+  and a **wide** per-frame CSV (Apple ARKit's 52 coefficients as recorded by Epic's
+  Live Link Face, or any DCC/capture export) where a `Timecode` column (SMPTE
+  `HH:MM:SS:FF`, sized by `--fps`/`--timecode-col`) or the row index converts to
+  seconds and each column is RDP-thinned via `reduce_to_track` into sparse keys.
+  - Channel names land in **rig space** verbatim (`jawOpen`, `mouthSmileLeft`, …)
+    and values are clamped to `[0, 1]`; an out-of-range column (e.g. a
+    non-blendshape head-rotation angle) is clamped and reported. It deliberately
+    does **not** recover visemes (the forward viseme→ARKit map is many-to-one) —
+    it brings the raw channels in to condition (`--smooth`/`--lag`), layer and
+    re-export. Malformed rows/values raise a clear `ValueError`.
+  - The imported track validates through `io_export.from_dict`/`to_dict` and
+    re-exports through Unity/Godot/Live2D unchanged. numpy + stdlib (`csv`) only,
+    deterministic across Python 3.9/3.13 (fixed RDP thinner, stable 4-dp
+    rounding), and **purely additive** — no existing command's output changes.
+
 ## [0.12.0] — 2026-07-11
 
 ### Added

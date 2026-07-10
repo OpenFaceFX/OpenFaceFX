@@ -533,6 +533,22 @@ the `RHUBARB_TO_VISEME` / `PRESTON_BLAIR_TO_VISEME` tables; stdlib + numpy,
 deterministic, and purely additive (no existing output changes). See
 [docs/api/importers.md](docs/api/importers.md).
 
+The sibling `from-csv` command imports **blendshape-weight CSV** (issue
+[#45](https://github.com/OpenFaceFX/OpenFaceFX/issues/45)) — the OpenFaceFX long
+`time,channel,value` format (exact inverse of `write_csv`) or a wide per-frame
+Apple ARKit / Epic Live Link Face export (row = frame, columns = blendshape
+names, optional `Timecode`):
+
+```bash
+python -m openfacefx from-csv capture.csv --fps 60 -o track.anim   # ARKit / Live Link Face
+```
+
+Channel names land in **rig space** verbatim (`jawOpen`, `mouthSmileLeft`, …),
+values clamped `[0,1]`, timecode/frame → seconds, and each column RDP-thinned via
+`reduce_to_track`. It deliberately does not recover visemes (the viseme→ARKit map
+is many-to-one) — it brings the raw channels in to condition and re-export.
+`read_csv(path)` is the library entry; numpy + stdlib, deterministic.
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -811,6 +827,7 @@ src/openfacefx/
   edits.py          edit-preservation sidecar: diff/apply hand-edits (#9) ← --edits, diff-edits
   emotion.py        additive emotion/expression layer, valence/arousal table (#38) ← emotion command
   importers.py      read Rhubarb/Moho/Papagayo cue files back into a track (#44) ← from-cues command
+  importers_csv.py  read ARKit/Live Link Face blendshape-weight CSV into a track (#45) ← from-csv command
   gestures_layers.py  gesture event-extraction + per-layer curve synthesis (gestures.py's engine)
   pipeline.py       orchestration
   cli.py            command line
