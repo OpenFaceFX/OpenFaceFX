@@ -9,6 +9,35 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Edit preservation: hand-tweaks that survive regeneration**
+  ([#9](https://github.com/OpenFaceFX/OpenFaceFX/issues/9)): a new
+  `openfacefx.edits` module (numpy + stdlib only) lets an animator's manual curve
+  edits outlive a pipeline re-run, mirroring FaceFX's two-layer ownership model —
+  analysis *owns* the generated curves, the user keeps edits in a separate
+  **sidecar** `*.edits.json` (never inline, so the `.track` stays clean interchange
+  and its `version` stays `1`). `diff_edits(base, edited)` captures what changed
+  into the sidecar; `apply_edits(regenerated, edits)` overlays it back onto a fresh
+  `FaceTrack`. Two per-channel modes mirror FaceFX's *offset curve* and *owned-off*
+  editing: **`offset`** stores the delta from the baseline and re-applies as
+  `clamp(analysis + offset)` — being *relative*, it survives an `--intensity` /
+  `--gain` / coarticulation change (the primary case); **`replace`** stores absolute
+  values (full ownership), and an optional `span` locks just a **time region** while
+  the fresh curve shows through elsewhere. Conflicts are conservative: an edit whose
+  channel the regeneration dropped is **preserved and reported** (`keep-edit`
+  default — a hand-edit is never silently lost) or discarded (`take-generated`); a
+  locked region always wins inside its span. New CLI: `diff-edits BASE EDITED -o
+  OUT [--mode offset|replace] [--span T0 T1] [--source WAV]` to capture, and
+  `--edits FILE [--on-conflict …]` on `naive`/`mfa`/`from-timing`/`energy` to apply
+  during generation. `openfacefx.io_export` gains the inverse loaders `from_dict` /
+  `read_json` (to read a hand-edited `.track.json` back for diffing) and an optional
+  `source_id` on `to_dict` / `write_json`. The merge is **deterministic** (numpy
+  `interp`/`clip` + the existing RDP thinner, no RNG — identical on Python 3.9/3.13,
+  with a hard-coded golden merge pinned in the tests) and **fully backward-compatible**:
+  without `--edits`, output is byte-identical to previous releases. **Out of scope**
+  (stays numpy + stdlib, deterministic, non-ML): no Bezier/tangent handles, no
+  phoneme-anchored *rebase* of edit times onto a rewritten transcript (offsets on the
+  same audio are the supported robustness path; a channel a transcript change drops is
+  flagged, not auto-migrated), no 3-way / multi-user merge beyond keep / take.
 - **Prosody events from a numpy pitch tracker**
   ([#4](https://github.com/OpenFaceFX/OpenFaceFX/issues/4)): a new
   `openfacefx.prosody` module (numpy + stdlib `wave` only) follows the *pitch* of
@@ -40,7 +69,7 @@ its `version` field.
   without `--prosody`, output is byte-identical to previous releases.
 
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — P2/P3
-features (#9 edit-preservation, #10 smoothing, #18/#19/#22/#23), adoption
+features (#10 smoothing, #18/#19/#22/#23), adoption
 infrastructure (#24 PyPI, #28–#31), and in-game confirmation of the `.lip`
 writer + FaceFXWrapper shim (#12, #33).
 

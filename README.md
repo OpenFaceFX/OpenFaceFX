@@ -345,6 +345,67 @@ rule-based cue layers, not phonological labelling. That is fine here — the eve
 only need *relative* pitch movement to land in the right place, not calibrated Hz.
 Input is 16-bit PCM WAV (convert first with `ffmpeg -c:a pcm_s16le`).
 
+## Preserving hand-edits across a re-run
+
+The pipeline is a pure function, so re-running it — to re-tune `--intensity`, a
+`--gain`, the coarticulation, or a new alignment — throws away any manual tweak an
+animator made to the curves. OpenFaceFX solves this the way FaceFX does, with a
+two-layer ownership model (issue [#9](https://github.com/OpenFaceFX/OpenFaceFX/issues/9)):
+analysis **owns** the generated curves, and a user keeps their edits in a small,
+separate **sidecar** `*.edits.json` — never inline, so the `.track` stays clean,
+versioned interchange and `version` stays `1`.
+
+Capture what you changed by diffing a hand-edited track against the baseline it
+came from, then apply the sidecar on any later run with `--edits`:
+
+```bash
+python -m openfacefx naive --text "..." --wav voice.wav -o base.json      # generate
+#   ...an animator hand-edits base.json -> edited.json in a curve editor...
+python -m openfacefx diff-edits base.json edited.json -o line.edits.json   # capture
+python -m openfacefx naive --text "..." --wav voice.wav \
+       --intensity 1.2 --edits line.edits.json -o final.json               # re-run, edits kept
+```
+
+Two per-channel modes mirror FaceFX's *offset curve* and *owned-off* editing:
+
+- **`offset`** (default) stores the delta from the baseline. Being *relative*, it
+  rides on top of whatever the solver now produces — so an offset survives an
+  intensity / gain / coarticulation change, which is the common case. The result
+  is `clamp(analysis + offset)`, exactly FaceFX's "virtual curve".
+- **`replace`** stores absolute values (full manual ownership). Add `--span T0 T1`
+  to lock only a **time region**: that window is user-owned and the freshly
+  generated curve shows through everywhere else.
+
+Conflicts are handled conservatively. An edit whose channel the regeneration
+dropped (a renamed shape, or a word removed on re-alignment) is **preserved and
+reported** by default (`--on-conflict keep-edit` — a hand-edit is never silently
+lost); `take-generated` discards it for the fresh output instead. A locked region
+always wins inside its span. Library callers get `diff_edits(base, edited)`,
+`apply_edits(regenerated, edits)` and `load_edits`/`save_edits`; the merge is
+deterministic (numpy `interp`/`clip` + the same RDP thinner, no RNG — identical on
+Python 3.9/3.13) and **opt-in**: without `--edits`, output is byte-identical.
+
+The sidecar is plain JSON — a stable `base_hash` of the baseline for provenance,
+`source_id` (optionally the audio's sha1, via `diff-edits --source`), and one
+record per edited channel:
+
+```jsonc
+{
+  "format": "openfacefx.edits", "version": 1,
+  "base_hash": "sha1:…", "fps": 60.0,
+  "channels": {
+    "aa": { "mode": "offset",  "keys": [[0.0, 0.15], [0.8, 0.15]], "clamp": [0.0, 1.0] },
+    "PP": { "mode": "replace", "span": [1.20, 1.80], "keys": [[1.20, 0.9], [1.80, 0.9]] }
+  }
+}
+```
+
+**Out of scope** (issue #9 keeps it numpy + stdlib, deterministic, non-ML): no
+Bezier/tangent handles (curves are linear by design), no phoneme-anchored *rebase*
+of edit times onto a changed transcript (offsets on the *same* audio are the
+supported robustness story; a transcript rewrite that drops a channel is flagged,
+not auto-migrated), and no 3-way / multi-user merge beyond keep / take.
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -508,6 +569,7 @@ src/openfacefx/
   prosody.py        numpy autocorrelation pitch tracker → emphasis/boundary/question events (#4) ← --prosody
   events.py         timed/typed events + deterministic takes (#6) ← --events, game-engine notifies
   gestures.py       procedural blinks/brows/head/eyes, GestureParams (#5) ← opt-in, deterministic
+  edits.py          edit-preservation sidecar: diff/apply hand-edits (#9) ← --edits, diff-edits
   gestures_layers.py  gesture event-extraction + per-layer curve synthesis (gestures.py's engine)
   pipeline.py       orchestration
   cli.py            command line

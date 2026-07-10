@@ -390,6 +390,43 @@ def _add_prosody_options(p) -> None:
                         "--gestures; ignored by the mouth-only cue/.lip formats")
 
 
+def _add_edits_options(p) -> None:
+    """Opt-in edit-preservation layer (issue #9), shared by naive/mfa/from-timing/
+    energy. Overlays a hand-edit sidecar onto the freshly generated curves so
+    manual tweaks survive a re-run. OFF by default (no --edits) => byte-identical."""
+    p.add_argument("--edits", metavar="FILE",
+                   help="apply an openfacefx.edits sidecar (author one with the "
+                        "'diff-edits' command): user-owned offset/replace channels "
+                        "and locked regions overlay the generated curves so hand-"
+                        "edits survive regeneration. Deterministic; composes with "
+                        "--gestures/--events. OFF by default (byte-identical)")
+    p.add_argument("--on-conflict", choices=["keep-edit", "take-generated"],
+                   default="keep-edit",
+                   help="when an edit targets a channel the regeneration dropped "
+                        "(renamed / word removed): keep-edit re-injects it "
+                        "(default, a hand-edit is never lost), take-generated "
+                        "discards it for the fresh output. Either way it is warned")
+
+
+def _apply_edits_layer(track, args):
+    """Overlay an --edits sidecar (issue #9) onto ``track`` and return the merged
+    track. A no-op returning ``track`` unchanged without --edits, so output stays
+    byte-identical. Conflicts (edits on now-absent channels) are printed."""
+    path = getattr(args, "edits", None)
+    if not path:
+        return track
+    from .edits import load_edits, apply_edits
+    try:
+        doc = load_edits(path)
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"--edits: cannot load {path!r}: {e}")
+    merged, conflicts = apply_edits(
+        track, doc, on_conflict=getattr(args, "on_conflict", "keep-edit"))
+    for c in conflicts:
+        print(f"warning: edit conflict on {c['channel']}: {c['detail']}")
+    return merged
+
+
 def _attach_prosody(track, args, segments) -> None:
     """Run the issue-#4 pitch/loudness event detector on --wav and append the
     typed events onto the track. Errors clearly if the command has no audio (a
@@ -555,6 +592,7 @@ def main(argv=None) -> int:
     _add_gesture_options(n)
     _add_event_options(n)
     _add_prosody_options(n)
+    _add_edits_options(n)
 
     m = sub.add_parser("mfa", help="MFA TextGrid -> curves (accurate)")
     m.add_argument("--textgrid", required=True)
@@ -572,6 +610,7 @@ def main(argv=None) -> int:
     _add_gesture_options(m)
     _add_event_options(m)
     _add_prosody_options(m)
+    _add_edits_options(m)
 
     t = sub.add_parser("from-timing",
                        help="TTS phoneme/viseme timing -> curves (skip the "
@@ -590,6 +629,7 @@ def main(argv=None) -> int:
     t.add_argument("-o", "--out", required=True)
     _add_output_options(t)
     _add_coart_options(t)
+    _add_edits_options(t)
 
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
@@ -606,6 +646,7 @@ def main(argv=None) -> int:
     _add_gesture_options(e)
     _add_event_options(e)
     _add_prosody_options(e)
+    _add_edits_options(e)
 
     lc = sub.add_parser("lip-calibrate",
                         help="EXPERIMENTAL: write one .lip per grid slot "
@@ -633,7 +674,40 @@ def main(argv=None) -> int:
                    help="CMUdict file for better G2P on naive-path files")
     b.add_argument("--fps", type=float, default=60.0)
 
+    de = sub.add_parser("diff-edits",
+                        help="capture hand-edits: diff a BASE track vs an EDITED "
+                             "track into an openfacefx.edits sidecar (issue #9)")
+    de.add_argument("base", help="the generated baseline .track.json")
+    de.add_argument("edited", help="the hand-edited .track.json")
+    de.add_argument("-o", "--out", required=True, help="output .edits.json sidecar")
+    de.add_argument("--mode", choices=["offset", "replace"], default="offset",
+                    help="offset (default) stores deltas relative to the baseline "
+                         "-- survives later intensity/coart/energy changes; "
+                         "replace stores absolute edited values (full ownership)")
+    de.add_argument("--span", type=float, nargs=2, metavar=("T0", "T1"),
+                    help="restrict capture to a time window (a locked region); "
+                         "the rest of each channel stays analysis-owned")
+    de.add_argument("--source", metavar="WAV",
+                    help="WAV whose sha1 keys the sidecar to its audio (source_id)")
+
     args = p.parse_args(argv)
+
+    if args.cmd == "diff-edits":
+        from .io_export import read_json
+        from .edits import diff_edits, save_edits, _sha1_source
+        try:
+            base = read_json(args.base)
+            edited = read_json(args.edited)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"diff-edits: {ex}")
+        source_id = _sha1_source(args.source) if args.source else None
+        doc = diff_edits(base, edited, mode=args.mode,
+                         span=tuple(args.span) if args.span else None,
+                         source_id=source_id)
+        save_edits(doc, args.out)
+        print(f"wrote {args.out}: {len(doc.channels)} edited channel(s), "
+              f"mode={args.mode}" + (f", span={args.span}" if args.span else ""))
+        return 0
 
     if args.cmd == "lip-calibrate":
         written = lip_calibrate(args.out, game=args.lip_game,
@@ -673,6 +747,7 @@ def main(argv=None) -> int:
                                             params=params,
                                             gestures=_gesture_params(args),
                                             wav=args.wav)
+            track = _apply_edits_layer(track, args)
             _event_layer(track, args, segments=segs)
             _write(track, args.out, args)
     elif args.cmd == "mfa":
@@ -685,6 +760,7 @@ def main(argv=None) -> int:
                                             params=params,
                                             gestures=_gesture_params(args),
                                             wav=getattr(args, "wav", None))
+            track = _apply_edits_layer(track, args)
             _event_layer(track, args, segments=segs)
             _write(track, args.out, args)
     elif args.cmd == "from-timing":
@@ -723,12 +799,14 @@ def main(argv=None) -> int:
                     print(f"warning: {w}")
             track = generate_from_alignment(segs, fps=args.fps, mapping=active,
                                             params=params)
+        track = _apply_edits_layer(track, args)
         _write(track, args.out, args)
     elif args.cmd == "energy":
         from .energy import generate_from_energy
         track = generate_from_energy(args.wav, fps=args.fps,
                                      intensity=args.intensity, mapping=mapping,
                                      gestures=_gesture_params(args))
+        track = _apply_edits_layer(track, args)
         et = ev = None
         if getattr(args, "events", False):
             from .energy import energy_envelope

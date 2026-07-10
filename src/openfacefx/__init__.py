@@ -18,7 +18,9 @@ from .gestures import (GestureParams, generate_gestures, gestures_from_wav,
 from .events import (Event, Alternative, VariantGroup, Variants, EVENT_TYPES,
                      resolve, choose, add_event, attach_events, read_events,
                      validate_events)
-from .io_export import to_dict, write_json, write_csv
+from .io_export import to_dict, write_json, write_csv, from_dict, read_json
+from .edits import (EditsDoc, diff_edits, apply_edits, load_edits, save_edits,
+                    sample)
 from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_unreal_notifies import write_unreal_notifies, notifies_to_dict
 from .export_live2d import write_live2d_motion, lipsync_param_ids
@@ -60,7 +62,8 @@ __all__ = [
     "Event", "Alternative", "VariantGroup", "Variants", "EVENT_TYPES",
     "resolve", "choose", "add_event", "attach_events", "read_events",
     "validate_events",
-    "to_dict", "write_json", "write_csv",
+    "to_dict", "write_json", "write_csv", "from_dict", "read_json",
+    "EditsDoc", "diff_edits", "apply_edits", "load_edits", "save_edits", "sample",
     "write_unity_anim", "NAMING_PRESETS",
     "write_unreal_notifies", "notifies_to_dict",
     "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",
