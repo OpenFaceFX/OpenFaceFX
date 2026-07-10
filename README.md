@@ -313,6 +313,38 @@ emits an `AnimNotify` sidecar JSON that a short editor-Python snippet stamps ont
 snippet ships in that module's docstring. The mouth-only cue/`.lip` exporters
 ignore events.
 
+## Prosody events from the audio (pitch & loudness)
+
+`--events` reads accents from the *timing* (stress digits, loudness peaks).
+`--prosody` reads them from the **pitch** of the voice as well — a numpy
+autocorrelation pitch tracker follows the fundamental frequency (F0), and where
+pitch **and** loudness spike together you get an `emphasis`; a silent pause or the
+end of the line is a `phrase_boundary`; a rising terminal F0 (the yes/no-question
+cue) is a `question_rise` (issue [#4](https://github.com/OpenFaceFX/OpenFaceFX/issues/4)).
+It needs the audio, so pass `--wav`:
+
+```bash
+python -m openfacefx naive  --text "are you going" --wav voice.wav --prosody -o track.json
+python -m openfacefx mfa    --textgrid voice.TextGrid --wav voice.wav --prosody -o track.anim
+python -m openfacefx energy --wav voice.wav                          --prosody -o track.json
+```
+
+The events are ordinary [`Event`s](#events--takes-game-engine-notifies), so they
+ride the same JSON / Unity `.anim` / Unreal notify path and **compose** with
+`--events` and `--gestures` (the audio-derived `phrase_boundary` sits happily
+beside a timing-derived `phrase`). Library callers get `prosody_events(wav, fps)`,
+the `prosody_features(wav)` bundle (F0, voicing, loudness, speaking rate) and the
+raw `pitch_track(wav)`. It is fully deterministic (no RNG — identical events on
+Python 3.9/3.13) and **opt-in**: without `--prosody`, output is byte-identical.
+
+**This is DSP, not an ML prosody model.** Autocorrelation F0 is within a few
+percent on clean voiced speech but makes octave errors and mislabels voicing on
+whispered/breathy/creaky voice or low SNR, and it will misbehave on music,
+background noise and overlapping speakers; prominence and question detection are
+rule-based cue layers, not phonological labelling. That is fine here — the events
+only need *relative* pitch movement to land in the right place, not calibrated Hz.
+Input is 16-bit PCM WAV (convert first with `ffmpeg -c:a pcm_s16le`).
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -438,7 +470,7 @@ The full backlog lives in the [issues](https://github.com/OpenFaceFX/OpenFaceFX/
 - [x] Data-driven weighted phoneme→target mapping ([#2](https://github.com/OpenFaceFX/OpenFaceFX/issues/2))
 - [x] Batch directory processing with QA reports ([#3](https://github.com/OpenFaceFX/OpenFaceFX/issues/3))
 - [~] Bethesda `.LIP` exporter — **experimental Skyrim writer shipped** (`-o out.lip`; re-encodes the real samples byte-exact, in-game verification pending) ([#12](https://github.com/OpenFaceFX/OpenFaceFX/issues/12))
-- [~] Prosody, gestures, events, text tags, i18n ([#4](https://github.com/OpenFaceFX/OpenFaceFX/issues/4)–[#8](https://github.com/OpenFaceFX/OpenFaceFX/issues/8)) — **procedural gestures shipped**: opt-in blinks/brows/head/eyes coupled to speech (`--gestures`, [#5](https://github.com/OpenFaceFX/OpenFaceFX/issues/5))
+- [~] Prosody, gestures, events, text tags, i18n ([#4](https://github.com/OpenFaceFX/OpenFaceFX/issues/4)–[#8](https://github.com/OpenFaceFX/OpenFaceFX/issues/8)) — **shipped**: procedural gestures (`--gestures`, [#5](https://github.com/OpenFaceFX/OpenFaceFX/issues/5)), the event/take layer (`--events`, [#6](https://github.com/OpenFaceFX/OpenFaceFX/issues/6)), and audio prosody events from a numpy pitch tracker (`--prosody`: emphasis / phrase-boundary / question-rise, [#4](https://github.com/OpenFaceFX/OpenFaceFX/issues/4))
 
 ## Scope & honesty
 
@@ -473,6 +505,8 @@ src/openfacefx/
   export_lip.py     Bethesda Skyrim .lip writer (EXPERIMENTAL, #12) ← unverified in-game
   batch.py          directory batch runner + QA summary
   energy.py         audio-loudness fallback lip-sync (no transcript) ← amplitude-driven
+  prosody.py        numpy autocorrelation pitch tracker → emphasis/boundary/question events (#4) ← --prosody
+  events.py         timed/typed events + deterministic takes (#6) ← --events, game-engine notifies
   gestures.py       procedural blinks/brows/head/eyes, GestureParams (#5) ← opt-in, deterministic
   gestures_layers.py  gesture event-extraction + per-layer curve synthesis (gestures.py's engine)
   pipeline.py       orchestration

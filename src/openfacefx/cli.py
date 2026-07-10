@@ -377,20 +377,55 @@ def _add_event_options(p) -> None:
                         "on write")
 
 
+def _add_prosody_options(p) -> None:
+    """Opt-in audio-derived prosody events (issue #4), shared by naive/mfa/energy.
+    OFF by default so existing output stays byte-identical."""
+    p.add_argument("--prosody", action="store_true",
+                   help="auto-author prosody events (issue #4) from the audio's "
+                        "pitch and loudness: 'emphasis' beats (coincident pitch+"
+                        "energy peaks), 'phrase_boundary' markers (pauses / end) "
+                        "and 'question_rise' markers (rising terminal F0). Needs "
+                        "--wav (naive/mfa/energy). DSP heuristics, not an ML "
+                        "prosody model; deterministic. Composes with --events/"
+                        "--gestures; ignored by the mouth-only cue/.lip formats")
+
+
+def _attach_prosody(track, args, segments) -> None:
+    """Run the issue-#4 pitch/loudness event detector on --wav and append the
+    typed events onto the track. Errors clearly if the command has no audio (a
+    naive run given --duration, or an mfa run without --wav): prosody is audio-
+    derived and cannot fall back to timing alone."""
+    wav = getattr(args, "wav", None)
+    if not wav:
+        raise SystemExit(
+            "--prosody needs audio to analyse (pitch + loudness): pass --wav. "
+            "For 'naive' use --wav rather than --duration; 'mfa' takes an "
+            "optional --wav alongside the TextGrid.")
+    from .prosody import prosody_events
+    from .events import attach_events
+    # Analysed at the module's own ~100 Hz rate (event times are absolute
+    # seconds), so the events are independent of the render --fps.
+    attach_events(track, events=prosody_events(wav, segments=segments))
+
+
 def _event_layer(track, args, segments=None, env_times=None, env=None) -> None:
     """Attach / auto-derive / bake the issue-#6 event layer per --events /
-    --events-file / --line-id. A no-op (byte-identical output) when none are set.
-    Variant 'takes' are baked into concrete events once a line id is known (from
-    --line-id or embedded in the file); otherwise the authoring form is kept."""
+    --events-file / --line-id, plus issue-#4 audio prosody events per --prosody.
+    A no-op (byte-identical output) when none are set. Variant 'takes' are baked
+    into concrete events once a line id is known (from --line-id or embedded in
+    the file); otherwise the authoring form is kept."""
     want = getattr(args, "events", False)
     efile = getattr(args, "events_file", None)
     line_id = getattr(args, "line_id", None)
-    if not (want or efile or line_id):
+    prosody = getattr(args, "prosody", False)
+    if not (want or efile or line_id or prosody):
         return
     from .events import attach_events, read_events, resolve, validate_events
     if want:
         from .pipeline import derive_events
         attach_events(track, events=derive_events(segments, env_times, env))
+    if prosody:
+        _attach_prosody(track, args, segments)
     if efile:
         try:
             with open(efile, encoding="utf-8") as fh:
@@ -519,9 +554,14 @@ def main(argv=None) -> int:
     _add_coart_options(n)
     _add_gesture_options(n)
     _add_event_options(n)
+    _add_prosody_options(n)
 
     m = sub.add_parser("mfa", help="MFA TextGrid -> curves (accurate)")
     m.add_argument("--textgrid", required=True)
+    m.add_argument("--wav", help="optional 16-bit PCM WAV the audio-driven layers "
+                   "read: energy-scaled --gestures and --prosody events (the "
+                   "TextGrid alone has no audio). Without it those layers degrade "
+                   "to timing-only / are unavailable")
     m.add_argument("--fps", type=float, default=60.0)
     m.add_argument("-o", "--out", required=True)
     m.add_argument("--emit-segments", metavar="PATH",
@@ -531,6 +571,7 @@ def main(argv=None) -> int:
     _add_coart_options(m)
     _add_gesture_options(m)
     _add_event_options(m)
+    _add_prosody_options(m)
 
     t = sub.add_parser("from-timing",
                        help="TTS phoneme/viseme timing -> curves (skip the "
@@ -564,6 +605,7 @@ def main(argv=None) -> int:
     _add_output_options(e)
     _add_gesture_options(e)
     _add_event_options(e)
+    _add_prosody_options(e)
 
     lc = sub.add_parser("lip-calibrate",
                         help="EXPERIMENTAL: write one .lip per grid slot "
@@ -641,7 +683,8 @@ def main(argv=None) -> int:
         else:
             track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
                                             params=params,
-                                            gestures=_gesture_params(args))
+                                            gestures=_gesture_params(args),
+                                            wav=getattr(args, "wav", None))
             _event_layer(track, args, segments=segs)
             _write(track, args.out, args)
     elif args.cmd == "from-timing":

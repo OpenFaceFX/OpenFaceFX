@@ -8,10 +8,41 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Prosody events from a numpy pitch tracker**
+  ([#4](https://github.com/OpenFaceFX/OpenFaceFX/issues/4)): a new
+  `openfacefx.prosody` module (numpy + stdlib `wave` only) follows the *pitch* of
+  the voice, not just its loudness, and derives typed prosodic events from it.
+  `pitch_track()` is a short-time **autocorrelation** F0 tracker in the standard
+  non-ML shape — windowed autocorrelation debiased by the window's own
+  autocorrelation (Boersma/Praat), a two-part voicing gate (energy floor **and**
+  clarity ≥ 0.45), an octave-cost period pick that suppresses the down-octave
+  error, parabolic-interpolation peak refinement, and a reflect-padded median /
+  octave-repair post-filter that rejects boundary spikes. `prosody_features()`
+  bundles F0, voicing, clarity, the reused `energy._frame_rms` loudness follower
+  and a syllable-rate proxy into a `ProsodyTrack`; `prosody_events()` turns those
+  into `emphasis` (coincident pitch **and** loudness prominence), `phrase_boundary`
+  (a silent pause, or the utterance end, tagged `clause`/`sentence`) and
+  `question_rise` (a rising terminal F0 — the yes/no-question cue) records. The
+  events are ordinary [`Event`s](https://github.com/OpenFaceFX/OpenFaceFX/issues/6),
+  so `--prosody` on `naive`/`mfa`/`energy` (each reading the audio from `--wav`;
+  `mfa` gains an optional `--wav`) attaches them onto the track and they ride the
+  same JSON / Unity `.anim` / Unreal-notify path and **compose** with `--events`
+  and `--gestures`. **Deterministic** — no RNG, and byte-identical events across
+  runs, platforms and Python 3.9/3.13 (the FFT pipeline reproduces bit-for-bit,
+  verified on numpy 2.0/2.5). **Honest limitations**: this is DSP heuristics, not
+  an ML prosody model — autocorrelation F0 makes octave errors and mislabels
+  voicing on whispered/breathy/creaky voice and low SNR, prominence/question
+  detection are rule-based cue layers (not ToBI), and it will misbehave on
+  music/noise/overlapping speakers; the animation only needs *relative* pitch
+  movement, so this is acceptable. 16-bit PCM WAV in (convert first with
+  `ffmpeg -c:a pcm_s16le`), same as `energy.py`. **Fully backward-compatible**:
+  without `--prosody`, output is byte-identical to previous releases.
+
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — P2/P3
-features (#4 prosody, #9 edit-preservation, #10 smoothing, #18/#19/#22/#23),
-adoption infrastructure (#24 PyPI, #28–#31), and in-game confirmation of the
-`.lip` writer + FaceFXWrapper shim (#12, #33).
+features (#9 edit-preservation, #10 smoothing, #18/#19/#22/#23), adoption
+infrastructure (#24 PyPI, #28–#31), and in-game confirmation of the `.lip`
+writer + FaceFXWrapper shim (#12, #33).
 
 ## [0.8.0] — 2026-07-11
 
