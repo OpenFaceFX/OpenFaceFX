@@ -627,6 +627,31 @@ Library callers get `retime`, `retime_to_duration`, `mirror`, `trim` and the
 `MIRROR_PAIRS`/`MIRROR_NEGATE` tables; numpy + stdlib, deterministic, additive. See
 [docs/api/transforms.md](docs/api/transforms.md).
 
+## Export LOD variants for distance thinning
+
+Game runtimes thin facial animation with distance. `lod` (issue
+[#36](https://github.com/OpenFaceFX/OpenFaceFX/issues/36)) produces **K detail
+levels from one solve** — a pure re-run of the `_rdp` / `edits.sample` machinery
+we already ship, at a tiered tolerance table:
+
+```bash
+python -m openfacefx lod clip.track.json -o out/clip                       # default 3 tiers
+python -m openfacefx lod clip.track.json --rdp 0.002,0.01,0.04 --fps 60,30,15 -o out/clip
+```
+
+writes `out/clip_lod0.json` … plus an `out/clip_lod.json` metadata sidecar. Two
+tiers: an **RDP tier** re-thins each channel at a rising epsilon (LOD0 dense,
+higher tiers only major inflections — and it never invents a key, so LOD0 at the
+source epsilon is **byte-identical** to the input); an **fps tier** resamples each
+channel onto a coarser grid (60/30/15 fps) before thinning so a distant LOD
+updates less often. Higher tiers carry a monotonically non-increasing keyframe
+count. The sidecar names each variant's epsilon+fps and ships an *advisory*
+screen-coverage → LOD-index switching table (the engine owns the switch — there's
+no camera at export). It does **not** overload `FaceTrack.variants` (that's the
+event-take layer); variants are separate files. Library callers get
+`generate_lods(track)`, `make_lod`, `lod_metadata`; numpy + stdlib, deterministic,
+additive. See [docs/api/lod.md](docs/api/lod.md).
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -908,6 +933,7 @@ src/openfacefx/
   importers_csv.py  read ARKit/Live Link Face blendshape-weight CSV into a track (#45) ← from-csv command
   inspect.py        read-only track stats + a CI format/contract linter (#47) ← inspect, validate commands
   transforms.py     retime/stretch, mirror L/R, trim/slice a track (#48) ← transform command
+  lod.py            offline LOD variant export (RDP-eps + fps-resample tiers) (#36) ← lod command
   gestures_layers.py  gesture event-extraction + per-layer curve synthesis (gestures.py's engine)
   pipeline.py       orchestration
   cli.py            command line

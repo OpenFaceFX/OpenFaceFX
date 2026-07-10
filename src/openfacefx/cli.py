@@ -837,6 +837,20 @@ def _write_lip(segs, dur, args) -> None:
          "UNVERIFIED in-game, please report on issue #12")
 
 
+def _parse_floats(s, name):
+    """Parse a comma-separated float list (e.g. ``0.002,0.01,0.04``) for the lod
+    tiers; ``None`` passes through so the library default applies."""
+    if s is None:
+        return None
+    try:
+        out = [float(x) for x in s.split(",") if x.strip()]
+    except ValueError:
+        raise SystemExit(f"lod: {name} must be comma-separated numbers, got {s!r}")
+    if not out:
+        raise SystemExit(f"lod: {name} is empty")
+    return out
+
+
 def _emotion_clamps(args):
     """Parse repeated ``--clamp CHANNEL LO HI`` triples into a
     ``{channel: (lo, hi)}`` dict for ``bake_emotion`` (None when unset). The
@@ -1042,6 +1056,23 @@ def main(argv=None) -> int:
     tf.add_argument("--trim", type=float, nargs=2, metavar=("T0", "T1"),
                     help="keep [T0, T1] seconds and rebase to 0")
     _add_output_options(tf)
+
+    lo = sub.add_parser("lod",
+                        help="offline LOD export: K thinned/resampled variants "
+                             "of one track, finest first (issue #36)")
+    lo.add_argument("infile", help="the source .track.json to derive LODs from")
+    lo.add_argument("-o", "--out", required=True, metavar="DIR/PREFIX",
+                    help="output path prefix; writes PREFIX_lod0.EXT ... and a "
+                         "PREFIX_lod.json metadata sidecar")
+    lo.add_argument("--rdp", metavar="E1,E2,..",
+                    help="RDP epsilons per tier, finest first "
+                         "(default 0.002,0.01,0.04)")
+    lo.add_argument("--fps", metavar="F1,F2,..",
+                    help="update rate per tier (default 60,30,15); each is capped "
+                         "at the source fps (a tier at the source rate is pure RDP)")
+    lo.add_argument("--format", choices=["json", "csv"], default="json",
+                    help="variant file format (default json); the metadata "
+                         "sidecar is always json")
 
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
@@ -1305,6 +1336,37 @@ def main(argv=None) -> int:
             raise SystemExit("transform: choose at least one of "
                              "--retime/--duration/--wav, --mirror, --trim")
         _write(track, args.out, args)
+        return 0
+
+    if args.cmd == "lod":
+        import os
+        from .io_export import read_json, write_csv, write_json
+        from .lod import generate_lods, lod_metadata
+        try:
+            track = read_json(args.infile)
+            variants, levels = generate_lods(
+                track, rdp=_parse_floats(args.rdp, "--rdp"),
+                fps=_parse_floats(args.fps, "--fps"))
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"lod: {ex}")
+        prefix, ext = args.out, args.format
+        outdir = os.path.dirname(prefix)
+        if outdir:
+            os.makedirs(outdir, exist_ok=True)
+        writer = write_csv if ext == "csv" else write_json
+        files = []
+        for i, v in enumerate(variants):
+            path = f"{prefix}_lod{i}.{ext}"
+            writer(v, path)
+            files.append(os.path.basename(path))
+        meta = lod_metadata(track, levels, variants, files)
+        meta_path = f"{prefix}_lod.json"
+        with open(meta_path, "w", encoding="utf-8") as fh:
+            json.dump(meta, fh, indent=2)
+            fh.write("\n")
+        _say(args, f"wrote {len(variants)} LOD variants + {meta_path}: " +
+             ", ".join(f"lod{m['index']}={m['keyframes']}kf@{m['fps']}fps"
+                       for m in meta["levels"]))
         return 0
 
     mapping = Mapping.from_json(args.mapping) if args.mapping else None

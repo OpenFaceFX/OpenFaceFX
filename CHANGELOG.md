@@ -8,6 +8,30 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **`lod` command: offline LOD (level-of-detail) variant export** (closes
+  [#36](https://github.com/OpenFaceFX/OpenFaceFX/issues/36)): a new
+  `openfacefx.lod` module (`generate_lods`, `make_lod`, `lod_metadata`,
+  `switching_table`, `LOD_DEFAULT_RDP`/`LOD_DEFAULT_FPS`) and a `lod` command that
+  derive **K detail variants from one solved track**, finest first — a pure re-run
+  of the `curves._rdp` / `edits.sample` machinery already shipped, at a tiered
+  tolerance table (no ML, no engine, no camera). numpy + stdlib, deterministic
+  across Python 3.9/3.13, purely additive.
+  - **RDP tier** re-thins each channel at a rising epsilon (default
+    `--rdp 0.002,0.01,0.04`); it only ever *selects* a subset of the source
+    keyframes, never inventing one, so LOD0 at the source epsilon is
+    **byte-identical** to the input. **fps tier** step/linear-resamples each
+    channel onto a coarser grid (default `--fps 60,30,15`, capped at the source
+    rate) before thinning, so the kept keys land only on the coarse grid. Higher
+    tiers carry a monotonically non-increasing keyframe count.
+  - Writes `PREFIX_lod0.json …` (or `--format csv`) plus a `PREFIX_lod.json`
+    metadata sidecar (`format: openfacefx.lod`) that round-trips through JSON and
+    names every variant's epsilon + fps + counts, with an **advisory**
+    screen-coverage → LOD-index switching table (the engine owns the switch).
+    `FaceTrack.variants` (the issue-#6 event-take layer) is **not** overloaded for
+    LOD — variants are separate files, and each carries the event/take layer
+    through unchanged.
+
 ## [0.13.0] — 2026-07-11
 
 ### Added

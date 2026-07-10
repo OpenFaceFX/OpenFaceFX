@@ -36,6 +36,8 @@ from .inspect import (inspect_track, validate_asset, validate_file,
                      detect_kind)
 from .transforms import (retime, retime_to_duration, mirror, trim,
                         MIRROR_PAIRS, MIRROR_NEGATE)
+from .lod import (generate_lods, make_lod, lod_metadata, switching_table,
+                 LOD_DEFAULT_RDP, LOD_DEFAULT_FPS)
 from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_unreal_notifies import write_unreal_notifies, notifies_to_dict
 from .export_live2d import write_live2d_motion, lipsync_param_ids
@@ -92,6 +94,8 @@ __all__ = [
     "inspect_track", "validate_asset", "validate_file", "detect_kind",
     "retime", "retime_to_duration", "mirror", "trim",
     "MIRROR_PAIRS", "MIRROR_NEGATE",
+    "generate_lods", "make_lod", "lod_metadata", "switching_table",
+    "LOD_DEFAULT_RDP", "LOD_DEFAULT_FPS",
     "write_unity_anim", "NAMING_PRESETS",
     "write_unreal_notifies", "notifies_to_dict",
     "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",
