@@ -6,7 +6,8 @@ animation curves  ->  export for your rig.
 
 from .g2p import G2P
 from .alignment import PhonemeSegment, NaiveAligner, load_mfa_textgrid
-from .coarticulation import build_viseme_curves, CoartParams
+from .coarticulation import (build_viseme_curves, CoartParams, STYLE_PRESETS,
+                             style_params)
 from .curves import FaceTrack, Channel, Keyframe, reduce_to_track
 from .postprocess import smooth_matrix, time_shift
 from .pipeline import (generate_from_alignment, generate_naive,
@@ -54,7 +55,8 @@ __version__ = "0.10.0"
 
 __all__ = [
     "G2P", "PhonemeSegment", "NaiveAligner", "load_mfa_textgrid",
-    "build_viseme_curves", "CoartParams", "FaceTrack", "Channel", "Keyframe",
+    "build_viseme_curves", "CoartParams", "STYLE_PRESETS", "style_params",
+    "FaceTrack", "Channel", "Keyframe",
     "reduce_to_track", "smooth_matrix", "time_shift",
     "generate_from_alignment", "generate_naive",
     "naive_segments", "wav_duration", "derive_events",

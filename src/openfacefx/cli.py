@@ -30,7 +30,7 @@ from .export_cues import (
     write_moho_dat, write_pgo, _RHUBARB_SHAPES,
 )
 from .mapping import Mapping, ARTICULATOR_CLASSES
-from .coarticulation import CoartParams
+from .coarticulation import CoartParams, STYLE_PRESETS, style_params
 from .retarget import retarget, apply_adjust, PRESETS, PRESET_FALLBACKS
 from .timing import (
     parse_pho, parse_piper_alignments, parse_cartesia, parse_azure_visemes,
@@ -371,17 +371,38 @@ def _add_coart_options(p) -> None:
     never builds coarticulated curves (no articulator-class channels — it
     synthesizes an aa/E/O/sil partition straight from an RMS envelope), so the
     CoartParams master does not apply there; its --intensity is an envelope gain
-    with different (multiply-then-clamp) semantics, kept as-is."""
-    p.add_argument("--intensity", type=float, default=1.0,
+    with different (multiply-then-clamp) semantics, kept as-is. --style and
+    --stress-emphasis are scoped here for the same reason: energy has no
+    articulator-class channels for a style's gains to act on, nor phoneme stress
+    digits for the emphasis pass to read."""
+    p.add_argument("--style", choices=sorted(STYLE_PRESETS),
+                   help="named delivery-style preset (issue #18) loading JALI-"
+                        f"style intensity/gain dials ({'/'.join(sorted(STYLE_PRESETS))}). "
+                        "'neutral' is byte-identical to no --style; 'mumble'/"
+                        "'whisper' soften and close, 'exaggerated'/'broad' open "
+                        "and hyper-articulate. Explicit --intensity/--gain compose "
+                        "on top and win; lip closures still seal")
+    p.add_argument("--intensity", type=float, default=None,
                    help="master articulation gain (JALI-style): 1.0 = as-is "
                         "(byte-identical no-op), <1 mumbles, >1 hyper-"
                         "articulates, 0 closes the mouth. Scales every channel's "
-                        "opening; 'sil' absorbs the slack; lip closures still win")
+                        "opening; 'sil' absorbs the slack; lip closures still win. "
+                        "Overrides a --style preset's master intensity")
     p.add_argument("--gain", action="append", metavar="CLASS=VALUE",
                    help="per-articulator-class gain, repeatable (e.g. --gain "
                         "tongue=0.6 --gain jaw=1.2). CLASS is one of "
                         f"{'/'.join(ARTICULATOR_CLASSES)}; VALUE >= 0 (0 mutes "
-                        "the class). Multiplies with --intensity")
+                        "the class). Multiplies with --intensity; overrides a "
+                        "--style preset's gain for that class")
+    p.add_argument("--stress-emphasis", type=float, nargs="?", const=0.5,
+                   default=0.0, metavar="AMOUNT",
+                   help="lexical-stress amplitude pass (issue #18): bias the "
+                        "dominance of ARPABET primary/secondary-stressed vowels "
+                        "up and unstressed ones down so stressed syllables "
+                        "articulate more strongly. Bare flag = 0.5; range 0..2; "
+                        "0 = off (byte-identical). Preserves the per-frame "
+                        "partition and lip closures; a graceful no-op on inputs "
+                        "without stress digits (vendor/IPA timing)")
 
 
 def _add_smoothing_options(p) -> None:
@@ -442,23 +463,41 @@ def _parse_gains(items):
     return gains
 
 
+def _stress_emphasis(args) -> float:
+    """Validated --stress-emphasis amount at the CLI boundary (0 = off). The bare
+    flag is 0.5 (argparse const); an explicit value must be finite in [0, 2] (the
+    cap keeps the unstressed-vowel dominance cut positive in ``_stress_gains``)."""
+    amt = getattr(args, "stress_emphasis", 0.0)
+    if amt is None:                    # defensive; argparse supplies const/default
+        return 0.0
+    if not math.isfinite(amt) or not (0.0 <= amt <= 2.0):
+        raise SystemExit(f"--stress-emphasis must be a finite number in [0, 2] "
+                         f"(0 = off), got {amt}")
+    return amt
+
+
 def _coart_params(args):
-    """CoartParams from --intensity/--gain, or None when both are neutral so the
-    default (byte-identical) code path is taken unchanged."""
-    intensity = getattr(args, "intensity", 1.0)
-    if not math.isfinite(intensity) or intensity < 0.0:
-        raise SystemExit(f"--intensity must be finite and >= 0, got {intensity}")
-    gains = _parse_gains(getattr(args, "gain", None))
-    smooth = _smooth_seconds(args)
-    lag = _lag_seconds(args)
-    if intensity == 1.0 and not gains and smooth == 0.0 and lag == 0.0:
-        return None
-    p = CoartParams()
-    p.intensity = intensity
-    p.gains = {**p.gains, **gains}
-    p.smooth = smooth
-    p.lag = lag
-    return p
+    """CoartParams from a --style preset plus the explicit --intensity/--gain/
+    --stress-emphasis/--smooth/--lag dials, or None when they net to the defaults
+    so the byte-identical code path is taken unchanged.
+
+    A --style preset seeds the dials; explicit flags compose on top and win — an
+    omitted --intensity keeps the preset's master, --gain merges per class over
+    it. --style neutral with no other dial collapses to None, exactly like
+    passing no params at all (that is the byte-identity guarantee)."""
+    p = style_params(args.style) if getattr(args, "style", None) else CoartParams()
+    intensity = getattr(args, "intensity", None)
+    if intensity is not None:
+        if not math.isfinite(intensity) or intensity < 0.0:
+            raise SystemExit(f"--intensity must be finite and >= 0, got {intensity}")
+        p.intensity = intensity
+    p.gains = {**p.gains, **_parse_gains(getattr(args, "gain", None))}
+    p.stress_emphasis = _stress_emphasis(args)
+    p.smooth = _smooth_seconds(args)
+    p.lag = _lag_seconds(args)
+    # Nothing actually moved off the defaults -> take the untouched path, so
+    # --style neutral / neutral dials stay byte-identical to no params at all.
+    return None if p == CoartParams() else p
 
 
 def _add_gesture_options(p) -> None:

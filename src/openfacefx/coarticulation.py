@@ -51,6 +51,40 @@ def _theta(seg: PhonemeSegment) -> float:
     return base * (0.09 / dur) ** 0.5
 
 
+def _stress_gains(segments: List[PhonemeSegment], amount: float) -> np.ndarray:
+    """Per-segment dominance multipliers for the lexical-stress amplitude pass.
+
+    Reuses the same ARPABET stress-digit cue the gesture layer reads (a vowel
+    whose phoneme ends in ``1`` is primary-stressed): a primary-stress vowel is
+    scaled to ``1 + amount``, a secondary (``2``) to ``1 + 0.5*amount``, and an
+    explicitly unstressed vowel (``0``) down to ``1 - 0.35*amount``; consonants
+    and digit-less vowels stay ``1.0``. Multiplied into ``alphas``, this makes a
+    stressed syllable win more of the dominance blend (its viseme peaks higher
+    and holds longer) while unstressed ones yield to their neighbours.
+
+    Scaling the dominance *amplitude* — not the normalized weights — is what
+    keeps the row-sum partition invariant intact: the factor multiplies segment
+    ``i`` in both the blend numerator ``sum_i D_i * target(i,v)`` and the shared
+    denominator ``sum_i D_i``, so every frame still sums to the same unit energy
+    (only the balance between segments shifts). ``amount`` is caller-bounded to
+    ``[0, 2]``; the ``0.35`` unstressed cut keeps the multiplier positive there.
+    When no vowel carries a digit (vendor/IPA timing) every factor is ``1.0`` and
+    the multiply is exact, so the pass is a graceful, byte-identical no-op."""
+    gains = np.ones(len(segments))
+    for i, s in enumerate(segments):
+        ph = s.phoneme
+        if not (ph and ph[-1].isdigit() and _seg_is_vowel(s)):
+            continue
+        digit = ph[-1]
+        if digit == "1":
+            gains[i] = 1.0 + amount
+        elif digit == "2":
+            gains[i] = 1.0 + 0.5 * amount
+        elif digit == "0":
+            gains[i] = 1.0 - 0.35 * amount
+    return gains
+
+
 @dataclass
 class CoartParams:
     """Component-model tunables (FaceFX-style ca_* knobs).
@@ -75,6 +109,17 @@ class CoartParams:
     seals stay sharp. ``lag`` slides the reduced keyframes in time (seconds;
     ``>0`` lags / ``<0`` leads the audio) and is applied by the pipeline once
     curves are reduced, not here. ``0.0`` for both is a byte-identical no-op.
+
+    ``stress_emphasis`` (issue #18) is the lexical-stress amplitude pass: with
+    it ``> 0`` a vowel segment carrying an ARPABET primary-stress digit (``1``)
+    has its dominance amplitude raised, secondary (``2``) half as much, and an
+    explicitly unstressed vowel (``0``) slightly lowered, so stressed syllables
+    win more of the blend and articulate more strongly (see ``_stress_gains``).
+    Because it scales the *dominance* — which appears in both the blend and its
+    normalizing denominator — the partition invariant is untouched. It is a
+    graceful no-op on inputs without stress digits (vendor/IPA timing) and, at
+    the ``0.0`` default, byte-identical. Named delivery-style presets that bundle
+    the ``intensity``/``gains`` dials live in ``STYLE_PRESETS`` / ``style_params``.
     """
     lead: Dict[str, Tuple[float, float]] = field(default_factory=lambda: {
         "basic": (0.40, 0.45),
@@ -93,6 +138,7 @@ class CoartParams:
     })
     smooth: float = 0.0           # Gaussian smoothing sigma in seconds (0 = off)
     lag: float = 0.0              # keyframe time-shift seconds (>0 lag, <0 lead)
+    stress_emphasis: float = 0.0  # lexical-stress articulation boost (0 = off)
 
 # Diphthong -> component vowels (split at 55% of the segment).
 _DIPHTHONGS = {
@@ -173,6 +219,13 @@ def build_viseme_curves(
     centres = np.array([(s.start + s.end) / 2 for s in segments])
     alphas = np.array([_alpha(s) for s in segments])
     thetas = np.array([_theta(s) for s in segments])
+
+    # Lexical-stress amplitude pass (issue #18): bias each segment's dominance by
+    # its ARPABET stress digit before the blend. Multiplying alphas by 1.0 (the
+    # default, or any digit-less input) is exact, so this stays a byte-identical
+    # no-op off the stressed path.
+    if params.stress_emphasis > 0.0:
+        alphas = alphas * _stress_gains(segments, params.stress_emphasis)
 
     # Per-class asymmetric influence: scale the decay rate on each side by
     # (basic_lead / class_lead), so "basic"/"jaw" reproduce the classic
@@ -296,3 +349,49 @@ def _enforce_closures(times, matrix, segments, mapping, weights, params):
             if others > 1e-9:
                 matrix[f] *= (1.0 - floor) / others
             matrix[f, v] = floor
+
+
+# Named delivery-style presets (issue #18): each is a small set of CoartParams
+# dial overrides — a JALI-style master ``intensity`` with per-articulator-class
+# ``gains`` — capturing a delivery style as *data*. "neutral" is empty, so
+# ``style_params("neutral")`` is a default ``CoartParams()`` and selecting it is
+# byte-identical to passing no style. A low intensity with tucked-in gains
+# mumbles/softens; a high one with opened jaw/lip gains broadens/hyper-
+# articulates. These only bias amplitude — enforced lip closures still seal
+# afterwards, so a whispered bilabial fully closes — so they stay artistic, not
+# destructive. Compose with the CLI: an explicit --intensity/--gain wins on top.
+STYLE_PRESETS: Dict[str, Dict[str, object]] = {
+    "neutral": {},
+    "whisper": {"intensity": 0.5,
+                "gains": {"jaw": 0.7, "lips": 0.95, "tongue": 0.85}},
+    "mumble": {"intensity": 0.62,
+               "gains": {"jaw": 0.75, "lips": 0.85, "tongue": 0.7}},
+    "tense": {"intensity": 0.95,
+              "gains": {"jaw": 0.8, "lips": 1.12, "tongue": 1.18}},
+    "exaggerated": {"intensity": 1.35,
+                    "gains": {"jaw": 1.3, "lips": 1.2, "tongue": 1.15}},
+    "broad": {"intensity": 1.55,
+              "gains": {"jaw": 1.5, "lips": 1.28, "tongue": 1.1}},
+}
+
+
+def style_params(name: str) -> CoartParams:
+    """A fresh :class:`CoartParams` for the named style in ``STYLE_PRESETS``.
+
+    The preset's dial overrides are laid over the defaults, so unset fields keep
+    their default (byte-identical) values; ``gains``/``lead`` merge onto the
+    all-1.0 defaults, scalar fields replace. ``style_params("neutral")`` is thus
+    a plain ``CoartParams()``. A new instance is returned each call, so callers
+    may mutate it (e.g. compose CLI dials on top) without disturbing the shared
+    table. Unknown ``name`` raises ``KeyError`` (validated at the CLI boundary)."""
+    if name not in STYLE_PRESETS:
+        raise KeyError(name)
+    p = CoartParams()
+    for field_name, value in STYLE_PRESETS[name].items():
+        if field_name in ("gains", "lead"):
+            merged = dict(getattr(p, field_name))
+            merged.update(value)
+            setattr(p, field_name, merged)
+        else:
+            setattr(p, field_name, value)
+    return p

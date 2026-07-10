@@ -208,6 +208,14 @@ data/parameters, not code — see `examples/mappings/` and `CoartParams`.
 JALI-style artistic dials tune articulation strength without retiming: `--intensity`
 (master, `<1` mumbles, `>1` hyper-articulates) and repeatable `--gain class=value`
 (e.g. `--gain tongue=0.6 --gain jaw=1.2`); all `1.0` is a byte-identical no-op.
+Named **`--style` presets** bundle those dials into a delivery style — `neutral`
+(the defaults, byte-identical), `whisper`, `mumble`, `tense`, `exaggerated`,
+`broad` — and explicit `--intensity`/`--gain` still compose on top. **`--stress-emphasis`**
+`[AMOUNT]` articulates lexically stressed syllables more strongly: it biases
+ARPABET primary/secondary-stressed vowels up and unstressed ones down (via the
+dominance blend, so each frame still sums to ~1 and lip closures still seal). Off
+by default; a no-op on inputs without stress digits (`STYLE_PRESETS`,
+`style_params`, `CoartParams.stress_emphasis` for library callers).
 
 FaceFX-style post-solve curve conditioning smooths and retimes the curves
 without re-solving: `--smooth SECONDS` runs a temporal Gaussian (sigma in

@@ -9,6 +9,37 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Delivery-style presets and a lexical-stress amplitude pass** (closes
+  [#18](https://github.com/OpenFaceFX/OpenFaceFX/issues/18)): the two remaining
+  layers on top of the JALI-style intensity/gain dials shipped in 0.10.0, both
+  opt-in and byte-identical when neutral/off, on `naive`/`mfa`/`from-timing`.
+  - `--style NAME` loads a named `CoartParams` dial preset capturing a delivery
+    style — `neutral` (the defaults), `whisper`, `mumble`, `tense`, `exaggerated`,
+    `broad` — as *data*, not code (`STYLE_PRESETS: {name: {field: override}}` and
+    `style_params(name) -> CoartParams` in `coarticulation.py`, both public API).
+    A low master intensity with tucked-in class gains mumbles/softens; a high one
+    with opened jaw/lip gains broadens/hyper-articulates. `style_params("neutral")`
+    **is** a default `CoartParams()`, so `--style neutral` is byte-identical to no
+    `--style` (verified against the reference command). Explicit `--intensity`/
+    `--gain` compose on top of a preset and win per field; enforced lip closures
+    still seal afterwards, so a whispered bilabial fully closes.
+  - `--stress-emphasis [AMOUNT]` (bare flag = 0.5; range 0..2; **0 = off,
+    byte-identical**) reads the same ARPABET stress digit the gesture layer keys
+    on and biases each vowel segment's *dominance* before the blend — primary
+    (`1`) up by `AMOUNT`, secondary (`2`) by half, an explicitly unstressed vowel
+    (`0`) down by `0.35·AMOUNT` — so stressed syllables articulate more strongly
+    (their viseme peaks higher and holds) while unstressed ones yield to their
+    neighbours (`CoartParams.stress_emphasis` for library callers). Scaling the
+    dominance *amplitude* rather than the normalized weights is what keeps the
+    per-frame partition intact: the factor multiplies segment `i` in both the
+    blend numerator and its shared normalizing denominator, so every frame still
+    sums to ~1 (proof in `_stress_gains`); the closure pass runs afterwards and
+    still seals to the 0.9 floor. It is a graceful, byte-identical no-op on inputs
+    without stress digits (vendor/IPA timing paths). The `energy` command is
+    excluded from both flags for the same reason it lacks `--intensity`/`--gain`:
+    it synthesises an amplitude partition with no articulator-class channels or
+    phoneme stress for the dials/pass to act on. Deterministic across Python
+    3.9/3.13.
 - **Machine-readable QA output and an embeddable summary API**
   ([#23](https://github.com/OpenFaceFX/OpenFaceFX/issues/23), partial): the four
   generate commands (`naive`/`mfa`/`from-timing`/`energy`) take `--json` — a
@@ -41,7 +72,7 @@ Still open on #23: the `batch` `--machine-readable` NDJSON event stream, the
 append-only run ledger, and wiring the new `cue_flags` into the batch summary.
 
 Backlog: [issues](https://github.com/OpenFaceFX/OpenFaceFX/issues) — larger
-unspecced features (#8 i18n, #18 style presets/stress, #19 JALI coart rules),
+unspecced features (#8 i18n, #19 JALI coart rules),
 engine-side distribution (#28–#31), the manual PyPI publisher step (#24), and
 in-game confirmation of the `.lip` writer + FaceFXWrapper shim (#12, #33).
 
