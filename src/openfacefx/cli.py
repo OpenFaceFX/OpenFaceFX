@@ -797,17 +797,20 @@ def _naive_input_segments(args, dur, g2p):
     return naive_segments(args.text, dur, g2p=g2p)
 
 
-def _naive_tagged(args, dur, g2p, mapping, params):
+def _naive_tagged(args, dur, g2p, mapping, params, clean=None, tags=None):
     """The ``naive`` command's transcript-text-tag path (issue #7): parse the tags
     out of ``--text``, lip-sync the clean words as usual, and fold the tags back in
     — curve tags as channels, event tags into the event layer, ``[emphasis]`` as a
     local articulation boost, ``<T>``/``[pause]`` as timeline chunking/silence.
     Returns ``(track, segments, clean_text)``. A transcript that parses to no tags
-    takes the plain naive path, so it is byte-identical to a run without --tags."""
+    takes the plain naive path, so it is byte-identical to a run without --tags.
+    ``clean``/``tags`` may be supplied pre-parsed (the ``--ssml`` front-end, issue
+    #52, hands in the same pair from :func:`openfacefx.ssml.parse_ssml`)."""
     from .pipeline import naive_segments
     from .texttags import (parse_tagged_transcript, resolve_tagged_segments,
                            curve_channels, tag_events, emphasis_params)
-    clean, tags = parse_tagged_transcript(args.text or "")
+    if tags is None:
+        clean, tags = parse_tagged_transcript(args.text or "")
     if not tags:
         segs = naive_segments(clean, dur, g2p=g2p)
         track = generate_from_alignment(segs, fps=args.fps, mapping=mapping,
@@ -958,6 +961,13 @@ def main(argv=None) -> int:
                         "silence. Auto-enabled when a clear tag is present. Tags "
                         "are stripped before G2P, so the words are still lip-synced; "
                         "a tagless transcript is byte-identical to no --tags")
+    n.add_argument("--ssml", action="store_true",
+                   help="parse --text as SSML (issue #52): the same W3C markup you "
+                        "feed Azure/Google/Polly TTS drives lip-sync via a thin "
+                        "front-end over #7 — <break>/<emphasis>/<mark>/<sub>/<p>/"
+                        "<s>/<say-as> map onto the text-tag primitives. "
+                        "Auto-enabled when --text opens with a <speak> root; a "
+                        "<speak> with no constructs is byte-identical to plain naive")
 
     m = sub.add_parser("mfa", help="MFA TextGrid -> curves (accurate)")
     m.add_argument("--textgrid", required=True)
@@ -1530,7 +1540,16 @@ def main(argv=None) -> int:
             added = g2p.load_cmudict(args.cmudict)
             _say(args, f"loaded {added} CMUdict entries")
         from .texttags import has_tags
-        use_tags = getattr(args, "tags", False) or (
+        from .ssml import looks_like_ssml, parse_ssml
+        # SSML (issue #52) is a thin front-end over the #7 tag path: parse it to
+        # the same (clean_text, tags) pair and route it through _naive_tagged.
+        # Explicit --ssml or an auto-detected <speak> root; empty tags still land
+        # on the byte-identical plain path.
+        ssml_clean = ssml_tags = None
+        if getattr(args, "ssml", False) or (bool(args.text)
+                                            and looks_like_ssml(args.text)):
+            ssml_clean, ssml_tags = parse_ssml(args.text or "")
+        use_tags = ssml_tags is not None or getattr(args, "tags", False) or (
             bool(args.text) and has_tags(args.text))
         if use_tags:
             if args.anchors:
@@ -1539,7 +1558,8 @@ def main(argv=None) -> int:
                 raise SystemExit(
                     "--tags is not supported for -o .lip output: tags drive "
                     "curves/events, which the phoneme .lip format cannot carry")
-            track, segs, clean = _naive_tagged(args, dur, g2p, mapping, params)
+            track, segs, clean = _naive_tagged(args, dur, g2p, mapping, params,
+                                               clean=ssml_clean, tags=ssml_tags)
             oov = g2p.oov_words(clean) if (clean and _want_summary(args)) else []
             _emit_segments(segs, args)
             track = _apply_edits_layer(track, args)

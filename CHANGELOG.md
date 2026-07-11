@@ -9,6 +9,23 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **SSML input adapter: drive lip-sync from the same SSML you feed your TTS**
+  (closes [#52](https://github.com/OpenFaceFX/OpenFaceFX/issues/52)): a new
+  `openfacefx.ssml` module (`parse_ssml(text) -> (clean_text, tags)`) and a
+  `naive --ssml` flag (auto-enabled when `--text` opens with a `<speak>` root).
+  It is a **thin front-end over the #7 text tags**, not a new animation path:
+  stdlib `xml.etree` parses the W3C markup Azure/Google/Polly consume and emits
+  the **same `(clean_text, tags)`** the bracket front-end yields, then the
+  unchanged naive pipeline runs. `<break time=..>`/`strength` → `[pause]`,
+  `<emphasis level=..>` → `[emphasis]` (level → dominance strength),
+  `<sub alias=..>` substitutes the spoken form, `<mark>`/`<p>`/`<s>` →
+  `[phrase]`, and `<say-as>` routes its text through `qa.normalize_transcript`.
+  `<phoneme ph=..>` pronunciation override is deferred to the i18n framework
+  (#8); unknown elements degrade to their text content and malformed XML raises
+  a clear `ValueError`. Each construct is byte-identical to the equivalent
+  tagged transcript through the whole pipeline, and a construct-free
+  `<speak>hello world</speak>` is byte-identical to plain `naive --text`.
+  Deterministic and stdlib-only (no numpy), fully opt-in.
 - **`concat` / `sequence`: splice finished tracks along a timeline** (closes
   [#51](https://github.com/OpenFaceFX/OpenFaceFX/issues/51)): `transforms.concat(
   tracks, *, gaps=None, crossfade=0.0)` and a `sequence` command that assemble

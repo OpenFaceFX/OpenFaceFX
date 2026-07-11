@@ -380,6 +380,29 @@ that injects a tag is identical to hand-writing it. Deterministic, stdlib-only
 parsing (`re` / `shlex`). `--tags` is rejected with `-o .lip` (no curve/event
 slot) and with `--anchors`.
 
+### SSML input: the same markup you feed your TTS
+
+Author already carrying [SSML](https://www.w3.org/TR/speech-synthesis11/) for
+Azure / Google / Polly? Feed the *same document* in with `--ssml` (or just pass a
+`<speak>` root — it auto-detects) and it drives lip-sync through a **thin
+front-end over the tags above** — `<break>`→`[pause]`, `<emphasis level=..>`→
+`[emphasis]`, `<mark>`/`<p>`/`<s>`→`[phrase]`, `<sub alias=..>` substitutes the
+spoken form, `<say-as>` normalizes its text:
+
+```bash
+python -m openfacefx naive --ssml --duration 3 -o out.track.json \
+  --text '<speak>Say <emphasis level="strong">brave</emphasis> <break time="300ms"/> new world <mark name="beat"/></speak>'
+```
+
+It parses with the stdlib `xml.etree`, produces the **same `(clean_text, tags)`**
+as the equivalent bracket transcript (so an SSML document is byte-identical to
+the tagged one through the whole pipeline, and a construct-free `<speak>` is
+byte-identical to plain `naive --text`), degrades unknown elements to their text,
+and raises a clear `ValueError` on malformed XML. `<phoneme ph=..>` pronunciation
+override is deferred to the i18n framework (#8). See the
+[SSML input](https://openfacefx.github.io/OpenFaceFX/api/ssml/) reference;
+`parse_ssml(text) -> (clean_text, tags)` is the library entry.
+
 ## Prosody events from the audio (pitch & loudness)
 
 `--events` reads accents from the *timing* (stress digits, loudness peaks).

@@ -25,6 +25,8 @@ from .qa import summarize, normalize_transcript, cue_flags
 from .texttags import (parse_tagged_transcript, Tag, has_tags,
                        resolve_tagged_segments, curve_channels, tag_events,
                        build_curve_channel)
+from .ssml import (parse_ssml, looks_like_ssml, EMPHASIS_STRENGTH,
+                   BREAK_STRENGTH)
 from .edits import (EditsDoc, diff_edits, apply_edits, load_edits, save_edits,
                     sample)
 from .emotion import (EmotionEnvelope, bake_emotion, load_envelope,
@@ -92,6 +94,7 @@ __all__ = [
     "summarize", "normalize_transcript", "cue_flags",
     "parse_tagged_transcript", "Tag", "has_tags", "resolve_tagged_segments",
     "curve_channels", "tag_events", "build_curve_channel",
+    "parse_ssml", "looks_like_ssml", "EMPHASIS_STRENGTH", "BREAK_STRENGTH",
     "EditsDoc", "diff_edits", "apply_edits", "load_edits", "save_edits", "sample",
     "EmotionEnvelope", "bake_emotion", "load_envelope", "save_envelope",
     "va_to_pose", "VA_TABLE", "VA_EMOTION_CHANNELS",
