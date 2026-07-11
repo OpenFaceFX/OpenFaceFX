@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-07-11
+
 ### Added
 - **SSML input adapter: drive lip-sync from the same SSML you feed your TTS**
   (closes [#52](https://github.com/OpenFaceFX/OpenFaceFX/issues/52)): a new
