@@ -1087,6 +1087,26 @@ def main(argv=None) -> int:
                           "SubRip .srt")
     _add_caption_options(cap)
 
+    au = sub.add_parser("audit",
+                        help="reconcile a delivered VO folder against a loc-table "
+                             "manifest — missing / orphan / duration / empty / "
+                             "naming + a language-coverage matrix (read-only QA "
+                             "gate, issue #42)")
+    au.add_argument("--manifest", required=True, help="the loc-table manifest "
+                    "(the #40 CSV/TSV; audio paths resolve under --delivered)")
+    au.add_argument("--delivered", required=True,
+                    help="the delivered audio folder (read-only)")
+    au.add_argument("--duration-tolerance", type=float, default=0.5,
+                    dest="duration_tolerance", metavar="FRACTION",
+                    help="allowed +/- fraction of the len(text)/CPS length "
+                         "estimate before a take is a duration outlier (0.5)")
+    au.add_argument("--cps", type=float, default=14.0, metavar="CHARS",
+                    help="speaking rate (characters/sec) for the length estimate "
+                         "(default 14)")
+    au.add_argument("--json", action="store_true",
+                    help="emit the full itemized report as JSON instead of the "
+                         "human worst-first table")
+
     cs = sub.add_parser("from-csv",
                         help="import a blendshape-weight CSV into a track: the "
                              "OpenFaceFX long time,channel,value format or a wide "
@@ -1426,6 +1446,18 @@ def main(argv=None) -> int:
                               max_lines=args.max_lines, gap=args.caption_gap)
         _say(args, f"wrote {args.out}: {len(cues)} caption cue(s)")
         return 0
+
+    if args.cmd == "audit":
+        from .vo_audit import audit_delivery, audit_report_text
+        try:
+            report = audit_delivery(args.manifest, args.delivered,
+                                    duration_tolerance=args.duration_tolerance,
+                                    cps=args.cps)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"audit: {ex}")
+        print(json.dumps(report, indent=2) if args.json
+              else audit_report_text(report))
+        return 1 if report["counts"]["issues"] else 0    # nonzero = QA gate
 
     if args.cmd == "from-csv":
         from .importers_csv import read_csv

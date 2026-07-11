@@ -113,4 +113,5 @@ nav:
       - Channel budget: api/budget.md
       - Layered export: api/layers.md
       - Batch & CLI: api/batch.md
+      - VO delivery audit: api/vo_audit.md
   - Changelog: changelog.md

@@ -45,6 +45,7 @@ from .budget import (channel_energy, rank_channels, keep_channels,
 from .layers import (Layer, build_layers, flatten_layers, layers_to_dict,
                     layers_from_dict)
 from .batch_manifest import read_manifest, manifest_jobs, COLUMN_ALIASES
+from .vo_audit import audit_delivery, audit_report_text
 from .trackdiff import diff_tracks, render_diff
 from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_unreal_notifies import write_unreal_notifies, notifies_to_dict
@@ -115,6 +116,7 @@ __all__ = [
     "Layer", "build_layers", "flatten_layers", "layers_to_dict",
     "layers_from_dict",
     "read_manifest", "manifest_jobs", "COLUMN_ALIASES",
+    "audit_delivery", "audit_report_text",
     "diff_tracks", "render_diff",
     "write_unity_anim", "NAMING_PRESETS",
     "write_unreal_notifies", "notifies_to_dict",

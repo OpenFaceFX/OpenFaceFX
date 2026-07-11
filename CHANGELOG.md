@@ -9,6 +9,23 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **VO delivery QA auditor (`audit`)** (closes
+  [#42](https://github.com/OpenFaceFX/OpenFaceFX/issues/42)): a new
+  `openfacefx.vo_audit` module (`audit_delivery`, `audit_report_text`) and an
+  `audit --manifest FILE --delivered FOLDER` command that reconciles a delivered
+  VO folder against the #40 loc-table the way a localization vendor's
+  pre-delivery QA pass does — the reconciliation pair to the manifest driver. It
+  reports, deterministic and itemized keyed by loc-ID: **missing** lines (a row
+  whose declared audio is absent), **orphan** files (delivered audio no row
+  references), **duration** outliers (actual `wav_duration` outside a
+  configurable `--duration-tolerance` of the `len(text)/--cps` estimate — a take
+  inside tolerance is never flagged), **empty/near-silent** takes (~0 duration or
+  ~0 RMS), **naming** violations (a stem that doesn't match the loc-ID), and a
+  **language-coverage matrix** surfacing per-locale holes. It exits nonzero on
+  issues (a CI gate), prints a human worst-first table or a `--json` report (the
+  `batch_summary.json` schema style), is **read-only** over the delivered folder
+  (writes nothing), reuses `pipeline.wav_duration`, and shares the #40
+  `read_manifest` parser. Additive — no existing command changes.
 - **Subtitle / caption co-generation (SRT + WebVTT)** (closes
   [#41](https://github.com/OpenFaceFX/OpenFaceFX/issues/41)): a new
   `openfacefx.export_captions` module (`write_captions`, `write_srt`,

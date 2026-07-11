@@ -1032,6 +1032,28 @@ stdlib `csv` only; CSV/TSV today, PO/XLIFF and pivoted one-column-per-locale
 tables are future follow-ups. With `--manifest` absent the directory-walk output
 is byte-identical.
 
+### VO delivery audit (`audit`)
+
+The reconciliation pair to the manifest driver: `audit` compares a **delivered
+audio folder** against the loc-table the way a localization vendor's pre-delivery
+QA pass does — **read-only**, a deterministic QA gate:
+
+```bash
+python -m openfacefx audit --manifest loc.csv --delivered vo/ --json
+```
+
+It reports, itemized and keyed by loc-ID: **missing** lines (a row whose declared
+audio isn't in the delivery), **orphan** files (delivered audio no row
+references), **duration** outliers (actual `wav_duration` outside a configurable
+`--duration-tolerance` of the `len(text)/--cps` estimate — a take inside
+tolerance is never flagged), **empty/near-silent** takes (~0 duration or ~0 RMS),
+**naming** violations (a file stem that doesn't match the loc-ID), plus a
+**language-coverage matrix** that surfaces per-locale holes. It exits nonzero when
+issues are found (a CI gate) — human worst-first table, or `--json` for the full
+report (the `batch_summary.json` schema style). It **writes nothing** under the
+delivered folder, reuses `pipeline.wav_duration` for stats, and shares the #40
+`read_manifest` parser. `audit_delivery(manifest, delivered)` is the library entry.
+
 ## Plugging in a real aligner (stage 1)
 
 The naive aligner spaces phonemes by duration priors — fine for prototyping,
