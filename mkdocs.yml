@@ -102,6 +102,7 @@ nav:
       - SSML input: api/ssml.md
       - Emotion & expression layer: api/emotion.md
       - Visemes, coarticulation & curves: api/visemes.md
+      - JALI coarticulation rules: api/jali.md
       - Timing & anchors: api/timing.md
       - Retargeting: api/retarget.md
       - Exporters: api/exporters.md

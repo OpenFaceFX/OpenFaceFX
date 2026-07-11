@@ -224,6 +224,20 @@ dominance blend, so each frame still sums to ~1 and lip closures still seal). Of
 by default; a no-op on inputs without stress digits (`STYLE_PRESETS`,
 `style_params`, `CoartParams.stress_emphasis` for library callers).
 
+**JALI coarticulation rules** ([SIGGRAPH 2016](https://www.dgp.toronto.edu/~elf/JALISIG16.pdf))
+extend the component model with a **data-driven rule table** — opt-in behind
+`CoartParams(jali=True)`, and **byte-identical to the legacy path when off**. It
+adds JALI's hard constraints (bilabial/labiodental closure, sibilants narrow the
+jaw, non-nasals open the lips), its habits (duplicated-viseme merge across word
+boundaries — "po_p m_an"; lip-heavy visemes UW/OW/OY/w/S/Z/J/C start early and
+hold longer; a tongue articulation never pulls the lips), and an **empirical
+per-phoneme onset/decay lookup** (post-pause vs post-vowel onsets, ~150 ms
+lip-protrusion extension) in place of the per-class timing constants. The rules,
+category phoneme sets and timing constants live in `data/jali_rules.json` (plain
+data, so new measurements drop in) and each is individually toggleable via
+`jali_rules` (`JALI_RULE_IDS` lists them). Two lower-value habits and the
+NVIDIA-A2F-style tongue gain/offset mapping fields are deferred to a follow-up.
+
 FaceFX-style post-solve curve conditioning smooths and retimes the curves
 without re-solving: `--smooth SECONDS` runs a temporal Gaussian (sigma in
 seconds) over the dense curves before keyframe reduction to soften jitter — lip

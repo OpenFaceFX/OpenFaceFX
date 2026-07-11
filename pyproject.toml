@@ -42,3 +42,8 @@ facefxwrapper = "openfacefx.facefxwrapper:_console"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Ship the JALI rule table (issue #19) as package data so `--jali` works from an
+# installed wheel, not only an editable checkout.
+[tool.setuptools.package-data]
+openfacefx = ["data/*.json"]

@@ -8,6 +8,30 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **JALI coarticulation rules, empirical onset/decay timings** (closes
+  [#19](https://github.com/OpenFaceFX/OpenFaceFX/issues/19)): a new
+  `openfacefx.coart_jali` module + `data/jali_rules.json` **data-driven rule
+  table** ([JALI, SIGGRAPH 2016](https://www.dgp.toronto.edu/~elf/JALISIG16.pdf))
+  over the component coarticulation stage, entirely **opt-in** behind
+  `CoartParams(jali=True)` and **byte-identical to the legacy path when off**
+  (the whole existing suite stays green; verified against a captured baseline).
+  It adds the 4 hard constraints (bilabial/labiodental lip closure, sibilant jaw
+  narrowing, non-nasal lip opening), the high-value habits (duplicated-viseme
+  merge across word boundaries — "po_p m_an"; lip-heavy visemes UW/OW/OY/w/S/Z/J/C
+  anticipate and hold longer; tongue-only visemes never touch lip channels), and
+  an **empirical per-phoneme onset/decay lookup** (context-dependent post-pause vs
+  post-vowel onsets, ~150 ms lip-protrusion extension) replacing the per-class
+  timing constants when `jali_timing` is on. Every constraint/habit is
+  individually toggleable via `jali_rules` (`JALI_RULE_IDS`); the categories,
+  floors/caps and timings are plain JSON so new measurements drop in. The tongue
+  articulator class already existed in the mapping schema, so no schema version
+  bump was needed.
+  - **Deferred (flagged):** the short-obstruent/nasal "leave-the-jaw-untouched"
+    and word-final anticipatory-lip habits, and the NVIDIA-A2F-style tongue-channel
+    gain/offset mapping fields + ARKit tongue targets (which would bump the mapping
+    schema / change the shipped preset) — left for a follow-up.
+
 ## [0.16.0] — 2026-07-11
 
 ### Added

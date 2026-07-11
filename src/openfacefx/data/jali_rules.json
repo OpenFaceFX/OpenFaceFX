@@ -1,0 +1,31 @@
+{
+  "format": "openfacefx.jali",
+  "version": 1,
+  "_source": "JALI (Edwards et al., SIGGRAPH 2016) https://www.dgp.toronto.edu/~elf/JALISIG16.pdf — rules and measured onset/decay constants, as plain data so new measurements drop in.",
+  "categories": {
+    "bilabial": ["P", "B", "M"],
+    "labiodental": ["F", "V"],
+    "sibilant": ["S", "Z", "SH", "ZH", "CH", "JH"],
+    "nasal": ["M", "N", "NG"],
+    "tongue": ["T", "D", "L", "N", "NG", "K", "G"],
+    "lip_heavy": ["UW", "OW", "OY", "W", "S", "Z", "JH", "SH", "ZH", "CH"]
+  },
+  "constraints": {
+    "bilabial_close": {"category": "bilabial", "floor": 0.90,
+      "_note": "hard constraint 1: bilabials close the lips (reproduces the legacy lips-closure floor)"},
+    "labiodental_teeth": {"category": "labiodental", "floor": 0.80,
+      "_note": "hard constraint 2: labiodentals draw the bottom lip to the teeth"},
+    "sibilant_jaw": {"category": "sibilant", "jaw_cap": 0.35,
+      "_note": "hard constraint 3: sibilants narrow the jaw"},
+    "nonnasal_lip_open": {"lip_cap": 0.30,
+      "_note": "hard constraint 4: non-nasal open segments open the lips (cap the closed-lip targets)"}
+  },
+  "timing": {
+    "_note": "measured onset/decay extents in seconds; onset ~120ms before the apex, ~120ms decay, tighter after a vowel, lip protrusion extends ~150ms",
+    "onset": 0.12,
+    "decay": 0.12,
+    "post_pause_onset": 0.12,
+    "post_vowel_onset": 0.06,
+    "lip_protrusion_ext": 0.15
+  }
+}

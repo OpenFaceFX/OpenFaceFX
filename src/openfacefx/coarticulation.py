@@ -147,6 +147,18 @@ class CoartParams:
     # word timings instead of read from lexical-stress digits. Empty (the default)
     # is a byte-identical no-op.
     emphasis_windows: List[Tuple[float, float, float]] = field(default_factory=list)
+    # JALI coarticulation (issue #19), all opt-in behind ``jali``. Off (the
+    # default) leaves :func:`build_viseme_curves` byte-identical. When on, a
+    # data-driven rule table (:mod:`openfacefx.coart_jali` / ``data/jali_rules
+    # .json``) adds JALI's hard constraints + habits (bilabial/labiodental
+    # closure, sibilant jaw narrowing, non-nasal lip opening, duplicated-viseme
+    # merge, lip-heavy anticipation, tongue-never-touches-lips) and, with
+    # ``jali_timing``, its empirical per-phoneme onset/decay lookup in place of
+    # the per-class ``lead`` constants. ``jali_rules`` picks which rule ids are
+    # active (``None`` = all).
+    jali: bool = False
+    jali_rules: Optional[Tuple[str, ...]] = None
+    jali_timing: bool = True
 
 # Diphthong -> component vowels (split at 55% of the segment).
 _DIPHTHONGS = {
@@ -216,6 +228,10 @@ def build_viseme_curves(
     if not segments:
         return np.zeros(0), np.zeros((0, n_targets))
     segments = _preprocess(segments, params)
+    if params.jali:                          # JALI duplicated-viseme merge (#19)
+        from . import coart_jali
+        if coart_jali.rule_enabled(params, "duplicated_merge"):
+            segments = coart_jali.merge_duplicates(segments, mapping)
 
     t0 = segments[0].start - params.preroll
     if not params.allow_negative_time:
@@ -264,10 +280,16 @@ def _blend(segments: List[PhonemeSegment], times: np.ndarray,
     # (basic_lead / class_lead), so "basic"/"jaw" reproduce the classic
     # symmetric model and tighter articulators rise/decay faster.
     base_in, base_out = 0.40, 0.45
-    lead = [params.lead.get(_segment_class(s, mapping), (base_in, base_out))
-            for s in segments]
-    scale_in = np.array([base_in / max(li, 1e-3) for li, _ in lead])
-    scale_out = np.array([base_out / max(lo, 1e-3) for _, lo in lead])
+    if params.jali and params.jali_timing:   # JALI empirical onset/decay (#19)
+        from . import coart_jali
+        lead_in, lead_out = coart_jali.timing_leads(segments, params)
+        scale_in = base_in / np.maximum(lead_in, 1e-3)
+        scale_out = base_out / np.maximum(lead_out, 1e-3)
+    else:                                     # legacy per-class lead constants
+        lead = [params.lead.get(_segment_class(s, mapping), (base_in, base_out))
+                for s in segments]
+        scale_in = np.array([base_in / max(li, 1e-3) for li, _ in lead])
+        scale_out = np.array([base_out / max(lo, 1e-3) for _, lo in lead])
 
     # Per-segment target weights: shape (n_seg, n_targets). The built-in
     # table is one-hot, so the weighted path reproduces it bit-for-bit.
@@ -279,6 +301,11 @@ def _blend(segments: List[PhonemeSegment], times: np.ndarray,
     else:
         idx = [VISEME_INDEX[phoneme_to_viseme(s.phoneme)] for s in segments]
         weights[np.arange(len(segments)), idx] = 1.0
+    if params.jali:                          # tongue-only visemes never pull lips
+        from . import coart_jali
+        if coart_jali.rule_enabled(params, "tongue_no_lip"):
+            names = mapping.target_names if mapping is not None else list(VISEMES)
+            coart_jali.mask_tongue_lips(weights, segments, mapping, names)
 
     # Dominance of every segment at every sample time: shape (n, n_seg)
     dt = np.abs(times[:, None] - centres[None, :])
@@ -306,7 +333,13 @@ def _blend(segments: List[PhonemeSegment], times: np.ndarray,
     _apply_intensity(matrix, mapping, params)
     if params.smooth > 0.0:
         matrix = smooth_matrix(matrix, params.smooth, fps)
-    _enforce_closures(times, matrix, segments, mapping, weights, params)
+    if params.jali:                          # JALI hard constraints (#19) replace
+        from . import coart_jali               # the legacy lips-only closure pass
+        names = mapping.target_names if mapping is not None else list(VISEMES)
+        coart_jali.apply_constraints(times, matrix, segments, mapping, weights,
+                                     names, params)
+    else:
+        _enforce_closures(times, matrix, segments, mapping, weights, params)
     return matrix
 
 
