@@ -9,6 +9,22 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **`concat` / `sequence`: splice finished tracks along a timeline** (closes
+  [#51](https://github.com/OpenFaceFX/OpenFaceFX/issues/51)): `transforms.concat(
+  tracks, *, gaps=None, crossfade=0.0)` and a `sequence` command that assemble
+  already-solved tracks end-to-end — the sequential complement to the #48 `trim`
+  (trim cuts a clip out; concat joins clips end-to-end). It offsets every keyframe
+  **and** event/variant time of segment *k* by its cumulative start, sets
+  `duration = Σ durations + Σ gaps`, and **unions channels** across segments: a
+  channel absent from a segment reads as rest (`0`) across its span — a `0` key at
+  each of that segment's boundaries stops the previous segment's last value
+  bleeding over the seam. `--gap SECONDS` inserts silence and shifts everything
+  after it; an optional `--crossfade S` linearly blends the shared channels over
+  `±S` seconds at each abutting seam (RDP-thinning only that window). A
+  single-track `concat([a])` is **byte-identical** to `a`, and `concat` is the
+  seam inverse of `trim` (trim at the seam reproduces `a` and the time-shifted
+  `b`). By default (`crossfade=0`) the splice is a pure relabel/offset with no
+  re-thin. numpy + stdlib, deterministic across Python 3.9/3.13, additive.
 - **glTF 2.0 morph-target animation exporter (`.gltf` / `.glb`)** (closes
   [#49](https://github.com/OpenFaceFX/OpenFaceFX/issues/49)): a new
   `openfacefx.export_gltf` module (`write_gltf`, `build_gltf`) and `.gltf`/`.glb`

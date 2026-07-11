@@ -212,3 +212,160 @@ def _trim_variants(variants, t0: float, t1: float):
         replace(a, events=_trim_events(a.events, t0, t1))
         for a in g.alternatives]) for g in variants.groups]
     return replace(variants, groups=groups)
+
+
+# --------------------------------------------------------------------------- #
+# concat / sequence -- splice finished tracks end to end (the inverse of trim) #
+# --------------------------------------------------------------------------- #
+
+def concat(tracks: List[FaceTrack], *, gaps=None, crossfade: float = 0.0
+           ) -> FaceTrack:
+    """Splice ``tracks`` into one timeline, in order.
+
+    Every keyframe and event/variant time of segment *k* is offset by its
+    cumulative start (``Σ`` of the earlier durations and gaps); the result's
+    ``duration`` is ``Σ durations + Σ gaps``. Channels are **unioned** across
+    segments -- a channel absent from a segment reads as rest (``0``) across that
+    segment's span (a ``0`` key at each of its boundaries stops the previous
+    segment's last value bleeding over the seam). ``gaps`` is a per-seam second
+    list (or one float applied between all); a single-track ``concat([a])`` with
+    no gap or crossfade returns ``a`` unchanged (byte-identical).
+
+    ``crossfade`` (default ``0`` -- a hard cut) linearly blends the shared
+    channels over ``±crossfade`` seconds at each abutting seam, RDP-thinning only
+    that window; at ``0`` the splice is a pure relabel/offset with no re-thin."""
+    if not tracks:
+        raise ValueError("concat needs at least one track")
+    if not (math.isfinite(crossfade) and crossfade >= 0.0):
+        raise ValueError(f"crossfade must be a finite number >= 0, got {crossfade!r}")
+    n = len(tracks)
+    gap_list = _concat_gaps(gaps, n)
+    if n == 1 and not crossfade:
+        return tracks[0]                             # a single splice is a no-op
+
+    offsets = [0.0]
+    for k in range(1, n):
+        offsets.append(round(offsets[-1] + tracks[k - 1].duration
+                             + gap_list[k - 1], 6))
+
+    order: List[str] = []
+    seen = set()
+    for t in tracks:
+        for c in t.channels:
+            if c.name not in seen:
+                seen.add(c.name)
+                order.append(c.name)
+
+    channels: List[Channel] = []
+    for name in order:
+        keys: List[Keyframe] = []
+        for k, t in enumerate(tracks):
+            ch = next((c for c in t.channels if c.name == name), None)
+            off = offsets[k]
+            if ch is not None:
+                keys.extend(Keyframe(round(kf.time + off, 6), kf.value)
+                            for kf in ch.keys)
+            else:                                    # rest across this span, no bleed
+                keys.append(Keyframe(round(off, 6), 0.0))
+                keys.append(Keyframe(round(off + t.duration, 6), 0.0))
+        channels.append(Channel(name, _dedup_keys(keys)))
+
+    out = FaceTrack(tracks[0].fps, channels, _concat_target_set(tracks))
+    out = _carry(tracks[0], out, _concat_events(tracks, offsets),
+                 _concat_variants(tracks, offsets))
+    if crossfade > 0.0:
+        _apply_crossfades(out, tracks, offsets, gap_list, crossfade)
+    return out
+
+
+def _concat_gaps(gaps, n: int) -> List[float]:
+    if gaps is None:
+        return [0.0] * (n - 1)
+    if isinstance(gaps, (int, float)) and not isinstance(gaps, bool):
+        gaps = [float(gaps)] * (n - 1)
+    gaps = [float(g) for g in gaps]
+    if len(gaps) != n - 1:
+        raise ValueError(f"need {n - 1} gap(s) for {n} track(s), got {len(gaps)}")
+    if any(g < 0 for g in gaps):
+        raise ValueError("gaps must be >= 0")
+    return gaps
+
+
+def _dedup_keys(keys: List[Keyframe]) -> List[Keyframe]:
+    out: List[Keyframe] = []
+    for k in keys:
+        if out and out[-1].time == k.time and out[-1].value == k.value:
+            continue                                 # collapse an exact repeat
+        out.append(k)
+    return out
+
+
+def _concat_target_set(tracks: List[FaceTrack]):
+    if all(t.target_set is None for t in tracks):
+        return None
+    from .visemes import VISEMES
+    out: List[str] = []
+    for t in tracks:
+        for name in (t.target_set if t.target_set is not None else VISEMES):
+            if name not in out:
+                out.append(name)
+    return out
+
+
+def _offset_events(events, offset: float):
+    return [replace(e, t=round(e.t + offset, 4)) for e in events]
+
+
+def _concat_events(tracks: List[FaceTrack], offsets: List[float]):
+    out = []
+    for k, t in enumerate(tracks):
+        out.extend(_offset_events(getattr(t, "events", None) or [], offsets[k]))
+    return out
+
+
+def _concat_variants(tracks: List[FaceTrack], offsets: List[float]):
+    groups = []
+    line_id = None
+    for k, t in enumerate(tracks):
+        v = getattr(t, "variants", None)
+        if v is None:
+            continue
+        line_id = line_id if line_id is not None else v.line_id
+        for g in v.groups:
+            groups.append(replace(g, alternatives=[
+                replace(a, events=_offset_events(a.events, offsets[k]))
+                for a in g.alternatives]))
+    if not groups:
+        return None
+    from .events import Variants
+    return Variants(line_id, groups)
+
+
+def _apply_crossfades(out: FaceTrack, tracks, offsets, gap_list, span: float):
+    """Linearly blend the shared channels across each abutting (gap-0) seam over
+    ``±span`` seconds, RDP-thinning only the blended window."""
+    import numpy as np
+    from .curves import _rdp
+    from .edits import sample
+    chan = {c.name: c for c in out.channels}
+    for k in range(len(tracks) - 1):
+        if gap_list[k] > 0:                          # a gap already separates them
+            continue
+        seam = offsets[k] + tracks[k].duration
+        lo, hi = seam - span, seam + span
+        a = {c.name: c for c in tracks[k].channels}
+        b = {c.name: c for c in tracks[k + 1].channels}
+        for name in sorted(set(a) & set(b)):
+            c = chan[name]
+            m = max(2, int(round((hi - lo) * out.fps)) + 1)
+            grid = np.linspace(lo, hi, m)
+            left = sample(a[name], grid - offsets[k])        # held past its end
+            right = sample(b[name], grid - offsets[k + 1])   # held before its start
+            alpha = np.clip((grid - lo) / (2.0 * span), 0.0, 1.0)
+            blend = (1.0 - alpha) * left + alpha * right
+            idx = _rdp(grid, blend, 0.01)
+            inner = [Keyframe(round(float(grid[i]), 4), round(float(blend[i]), 4))
+                     for i in idx]
+            outside = [kf for kf in c.keys
+                       if kf.time < lo - _EPS or kf.time > hi + _EPS]
+            c.keys = sorted(outside + inner, key=lambda kf: kf.time)

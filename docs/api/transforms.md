@@ -56,9 +56,34 @@ in-window keys are kept (a channel left empty is dropped); events whose start is
 in-window are rebased and their duration reclamped to the window, the rest
 dropped. An empty or out-of-range window yields an empty track — never a crash.
 
+## concat / sequence
+
+`concat(tracks, *, gaps=None, crossfade=0.0)` — the sequential complement to
+`trim` — splices finished tracks end-to-end into one timeline, offsetting every
+keyframe **and** event/variant time of segment *k* by its cumulative start and
+setting `duration = Σ durations + Σ gaps`. Use it to stitch per-line VO into one
+conversation track, build a barks reel, or insert beats between lines:
+
+```bash
+python -m openfacefx sequence line1.json line2.json line3.json -o scene.json
+python -m openfacefx sequence a.json b.json --gap 0.5 -o with_beat.json     # silence between
+python -m openfacefx sequence a.json b.json --crossfade 0.15 -o blended.json  # soft seam
+```
+
+Channels are **unioned** across segments: a channel absent from a segment reads as
+rest (`0`) across its span — a `0` key at each of that segment's boundaries stops
+the previous segment's last value bleeding over the seam. `--gap SECONDS` inserts
+silence and shifts everything after it. A single-track `concat([a])` (no gap, no
+crossfade) returns `a` **byte-identical**, and `concat` is the seam inverse of
+`trim`: `trim` at the seam reproduces `a` and the time-shifted `b`.
+
+By default (`crossfade=0`) the splice is a **pure relabel/offset with no re-thin**
+(a hard cut, exact). `--crossfade S` linearly blends the shared channels over
+`±S` seconds at each abutting seam, RDP-thinning only that window.
+
 Every transform is deterministic (stdlib arithmetic, no clock, no RNG — identical
 on Python 3.9/3.13), additive, and leaves existing command output unchanged.
-Library callers get `retime`, `retime_to_duration`, `mirror`, `trim`,
+Library callers get `retime`, `retime_to_duration`, `mirror`, `trim`, `concat`,
 `MIRROR_PAIRS`, and `MIRROR_NEGATE`.
 
 ::: openfacefx.transforms

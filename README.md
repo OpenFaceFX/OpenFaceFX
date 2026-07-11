@@ -623,9 +623,25 @@ python -m openfacefx transform track.json --trim 0.5 2.0 -o slice.json    # keep
 - **trim** keeps `[t0, t1]`, rebases to `0`, and drops/reclamps events to the
   window; an empty window yields an empty track, not a crash.
 
-Library callers get `retime`, `retime_to_duration`, `mirror`, `trim` and the
-`MIRROR_PAIRS`/`MIRROR_NEGATE` tables; numpy + stdlib, deterministic, additive. See
-[docs/api/transforms.md](docs/api/transforms.md).
+And the sequential complement, **`sequence`** (issue
+[#51](https://github.com/OpenFaceFX/OpenFaceFX/issues/51)) — splice finished tracks
+end-to-end into one timeline (stitch per-line VO into a conversation, build a barks
+reel, insert beats):
+
+```bash
+python -m openfacefx sequence line1.json line2.json --gap 0.5 -o scene.json
+```
+
+`concat(tracks, gaps=…, crossfade=…)` offsets every keyframe + event time by the
+cumulative start (`duration = Σ durations + Σ gaps`), unions channels (an absent
+channel rests at `0` across its span — no cross-seam bleed), and is the seam
+inverse of `trim`. A single-track `concat([a])` is byte-identical to `a`; the
+default hard cut is a pure relabel/offset (no re-thin), with an optional
+`--crossfade S` linear seam blend.
+
+Library callers get `retime`, `retime_to_duration`, `mirror`, `trim`, `concat` and
+the `MIRROR_PAIRS`/`MIRROR_NEGATE` tables; numpy + stdlib, deterministic, additive.
+See [docs/api/transforms.md](docs/api/transforms.md).
 
 ## Export LOD variants for distance thinning
 
@@ -1027,7 +1043,7 @@ src/openfacefx/
   importers_csv.py  read ARKit/Live Link Face blendshape-weight CSV into a track (#45) ← from-csv command
   inspect.py        read-only track stats + a CI format/contract linter (#47) ← inspect, validate commands
   trackdiff.py      read-only A/B drift report, tolerance-gated exit (#50) ← diff command
-  transforms.py     retime/stretch, mirror L/R, trim/slice a track (#48) ← transform command
+  transforms.py     retime/mirror/trim (#48) + concat/sequence splice (#51) ← transform, sequence
   lod.py            offline LOD variant export (RDP-eps + fps-resample tiers) (#36) ← lod command
   budget.py         energy-ranked channel-budget reduction / morph cap (#37) ← --max-channels
   layers.py         layered speech/emotion/gesture export + blend/priority (#39) ← export-layers

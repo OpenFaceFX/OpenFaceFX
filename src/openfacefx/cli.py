@@ -1098,6 +1098,20 @@ def main(argv=None) -> int:
                          "energy-ranking sidecar (issue #37)")
     _add_output_options(tf)
 
+    sq = sub.add_parser("sequence",
+                        help="splice several track.json files end-to-end into one "
+                             "timeline, with optional gaps/crossfade (issue #51)")
+    sq.add_argument("infiles", nargs="+",
+                    help="the .track.json files to concatenate, in order")
+    sq.add_argument("--gap", type=float, default=0.0,
+                    help="silence in seconds inserted between each segment "
+                         "(default 0 = abutting)")
+    sq.add_argument("--crossfade", type=float, default=0.0,
+                    help="linear crossfade in seconds at each abutting seam "
+                         "(default 0 = hard cut)")
+    sq.add_argument("-o", "--out", required=True)
+    _add_output_options(sq)
+
     lo = sub.add_parser("lod",
                         help="offline LOD export: K thinned/resampled variants "
                              "of one track, finest first (issue #36)")
@@ -1411,6 +1425,18 @@ def main(argv=None) -> int:
         _write(track, args.out, args)
         if ranking is not None:
             _write_budget_sidecar(args.out, ranking, args.max_channels, args)
+        return 0
+
+    if args.cmd == "sequence":
+        from .io_export import read_json
+        from .transforms import concat
+        try:
+            tracks = [read_json(f) for f in args.infiles]
+            gaps = [args.gap] * (len(tracks) - 1) if args.gap else None
+            out = concat(tracks, gaps=gaps, crossfade=args.crossfade)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"sequence: {ex}")
+        _write(out, args.out, args)
         return 0
 
     if args.cmd == "lod":

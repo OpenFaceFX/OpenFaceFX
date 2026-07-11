@@ -34,7 +34,7 @@ from .importers import (import_cues, detect_format, build_cue_track,
 from .importers_csv import read_csv
 from .inspect import (inspect_track, validate_asset, validate_file,
                      detect_kind)
-from .transforms import (retime, retime_to_duration, mirror, trim,
+from .transforms import (retime, retime_to_duration, mirror, trim, concat,
                         MIRROR_PAIRS, MIRROR_NEGATE)
 from .lod import (generate_lods, make_lod, lod_metadata, switching_table,
                  LOD_DEFAULT_RDP, LOD_DEFAULT_FPS)
@@ -98,7 +98,7 @@ __all__ = [
     "import_cues", "detect_format", "build_cue_track",
     "RHUBARB_TO_VISEME", "PRESTON_BLAIR_TO_VISEME", "read_csv",
     "inspect_track", "validate_asset", "validate_file", "detect_kind",
-    "retime", "retime_to_duration", "mirror", "trim",
+    "retime", "retime_to_duration", "mirror", "trim", "concat",
     "MIRROR_PAIRS", "MIRROR_NEGATE",
     "generate_lods", "make_lod", "lod_metadata", "switching_table",
     "LOD_DEFAULT_RDP", "LOD_DEFAULT_FPS",
