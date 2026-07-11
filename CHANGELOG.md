@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-07-11
+
 ### Added
 - **Streaming / real-time generator** (closes
   [#43](https://github.com/OpenFaceFX/OpenFaceFX/issues/43)): a new
