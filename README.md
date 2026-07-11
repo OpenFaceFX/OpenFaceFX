@@ -1083,6 +1083,34 @@ not for shipping. For production accuracy, produce a list of
 Better G2P: drop in the full CMU Pronouncing Dictionary with
 `G2P().load_cmudict("cmudict.dict")` (the built-in dictionary is a tiny seed).
 
+### Other languages (dictionaries, pronouncers, IPA/SAMPA)
+
+The grapheme-to-phoneme stage is a **protocol** (`Pronouncer`: a tokenizer + a
+word→phoneme map) with the English `G2P` as one implementation, and its default
+path is **byte-identical** — the i18n hooks are all opt-in:
+
+```python
+g = G2P()
+g.load_dictionary("ja.dict")          # a .dict declaring locale + ipa/sampa/arpabet
+g.pronouncer = lambda w, prev, nxt: ... # callable(word, prev, next) -> phones | None
+g.tokenizer  = lambda text: text.split()  # keep non-Latin script (default drops it)
+```
+
+- **Dictionaries** declare a `locale` and phoneme `alphabet`; `read_dictionary`
+  maps IPA/SAMPA/ARPAbet entries into the internal inventory via the alias tables
+  (`IPA_ALIASES` / `SAMPA_ALIASES` cover all 39 phonemes and round-trip exactly —
+  also handy for display).
+- A **pronouncer hook** is consulted **between** dictionary lookup and the rule
+  fallback (FaceFX's lookup→pronouncer→rules), receiving previous/next word
+  context — the way Czech/Polish are done in code.
+- A **pluggable tokenizer** per language keeps non-Latin tokens the default
+  `[A-Za-z']+` split would drop.
+
+A phoneme with no internal equivalent passes through and falls to `sil` at the
+viseme stage (map it to give it a mouth shape). See the
+[Multi-language pronunciation](https://openfacefx.github.io/OpenFaceFX/api/i18n/)
+reference.
+
 ## Streaming / real-time generation
 
 For a live pipeline — a TTS engine emitting phonemes as it speaks —

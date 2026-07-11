@@ -5,6 +5,10 @@ animation curves  ->  export for your rig.
 """
 
 from .g2p import G2P
+from .pronounce import (Pronouncer, Dictionary, read_dictionary, PronouncerHook,
+                       Tokenizer)
+from .phonemes import (IPA_ALIASES, SAMPA_ALIASES, ALPHABETS, to_ipa, from_ipa,
+                      to_sampa, from_sampa, from_alphabet)
 from .alignment import PhonemeSegment, NaiveAligner, load_mfa_textgrid
 from .coarticulation import (build_viseme_curves, CoartParams, STYLE_PRESETS,
                              style_params)
@@ -85,6 +89,9 @@ __version__ = "0.16.0"
 
 __all__ = [
     "G2P", "PhonemeSegment", "NaiveAligner", "load_mfa_textgrid",
+    "Pronouncer", "Dictionary", "read_dictionary", "PronouncerHook", "Tokenizer",
+    "IPA_ALIASES", "SAMPA_ALIASES", "ALPHABETS", "to_ipa", "from_ipa",
+    "to_sampa", "from_sampa", "from_alphabet",
     "build_viseme_curves", "CoartParams", "STYLE_PRESETS", "style_params",
     "JALI_RULE_IDS", "load_jali_rules",
     "FaceTrack", "Channel", "Keyframe",

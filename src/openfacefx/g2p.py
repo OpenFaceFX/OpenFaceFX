@@ -53,8 +53,15 @@ _RULES = [
 
 
 class G2P:
-    def __init__(self) -> None:
+    def __init__(self, pronouncer=None, tokenizer=None) -> None:
         self._dict: Dict[str, List[str]] = dict(_BUILTIN)
+        # i18n hooks (issue #8), both opt-in — with both ``None`` (the default)
+        # the English tokenizer + lookup-then-rules path is byte-identical.
+        # ``pronouncer(word, prev, next) -> phonemes | None`` is consulted
+        # between dictionary lookup and the rule fallback; ``tokenizer(text) ->
+        # words`` replaces the default ``[A-Za-z']+`` split.
+        self.pronouncer = pronouncer
+        self.tokenizer = tokenizer
 
     def load_cmudict(self, path: str) -> int:
         """Load a CMUdict-format file. Returns the number of entries added.
@@ -81,11 +88,49 @@ class G2P:
             return list(self._dict[key])
         return self._fallback(key)
 
+    def tokenize(self, text: str) -> List[str]:
+        """Split ``text`` into word tokens. The English default is
+        ``[A-Za-z']+`` (which drops non-Latin script); set ``tokenizer`` to a
+        per-language callable so other scripts survive (issue #8)."""
+        if self.tokenizer is not None:
+            return list(self.tokenizer(text))
+        return re.findall(r"[A-Za-z']+", text)
+
     def phrase(self, text: str) -> List[str]:
+        words = self.tokenize(text)
         out: List[str] = []
-        for w in re.findall(r"[A-Za-z']+", text):
-            out.extend(self.word(w))
+        for i, w in enumerate(words):
+            if self.pronouncer is None:          # unchanged English resolution
+                out.extend(self.word(w))
+            else:                                # lookup -> pronouncer -> rules
+                prev = words[i - 1] if i > 0 else None
+                nxt = words[i + 1] if i + 1 < len(words) else None
+                out.extend(self._resolve(w, prev, nxt))
         return out
+
+    def _resolve(self, w: str, prev, nxt) -> List[str]:
+        """Context-aware resolution when a pronouncer is set: dictionary lookup,
+        then the ``pronouncer(word, prev, next)`` hook, then the rule fallback."""
+        key = re.sub(r"[^a-z']", "", w.lower())
+        if key and key in self._dict:
+            return list(self._dict[key])
+        res = self.pronouncer(w, prev, nxt)
+        if res is not None:
+            return list(res)
+        return self.word(w)
+
+    def load_dictionary(self, path: str) -> int:
+        """Load a locale dictionary (issue #8): a file declaring its ``locale``
+        and phoneme ``alphabet`` (arpabet / ipa / sampa), each entry mapped into
+        the internal inventory via the alias tables. Returns the number of
+        entries added (the first spelling of a word wins, as with ``load_cmudict``)."""
+        from .pronounce import read_dictionary
+        added = 0
+        for word, phones in read_dictionary(path).entries.items():
+            if word not in self._dict:
+                self._dict[word] = phones
+                added += 1
+        return added
 
     def oov_words(self, text: str) -> List[str]:
         """Words in ``text`` that would fall through to the rule fallback —

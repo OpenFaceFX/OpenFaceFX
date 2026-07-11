@@ -9,6 +9,23 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Multi-language pronunciation framework** (closes
+  [#8](https://github.com/OpenFaceFX/OpenFaceFX/issues/8)): the grapheme-to-phoneme
+  stage is now a **protocol** (`openfacefx.pronounce.Pronouncer` — a tokenizer +
+  word/phoneme map), with the existing `G2P` as the English implementation, plus
+  the additive i18n machinery around it — all **opt-in, so the default English
+  path is byte-identical** (verified against a captured baseline + the full
+  suite). Adds: **IPA + X-SAMPA aliases** for all 39 phonemes in `phonemes.py`
+  (`IPA_ALIASES`/`SAMPA_ALIASES` + `to_ipa`/`from_ipa`/`to_sampa`/`from_sampa`/
+  `from_alphabet`), bijective so `internal → alias → internal` round-trips; a
+  **dictionary loader** (`read_dictionary`, `G2P.load_dictionary`) for `.dict`
+  files declaring a `locale` and phoneme `alphabet` (arpabet/ipa/sampa), mapped
+  into the internal inventory; a **pronouncer hook** `callable(word, prev, next)
+  -> phonemes | None` consulted between dictionary lookup and the rule fallback
+  (FaceFX's lookup→pronouncer→rules order) with correct prev/next context; and a
+  **pluggable tokenizer** so non-Latin scripts survive the default `[A-Za-z']+`
+  split. A phoneme with no internal equivalent passes through and falls to `sil`
+  at the viseme stage (documented), never a crash.
 - **JALI coarticulation rules, empirical onset/decay timings** (closes
   [#19](https://github.com/OpenFaceFX/OpenFaceFX/issues/19)): a new
   `openfacefx.coart_jali` module + `data/jali_rules.json` **data-driven rule

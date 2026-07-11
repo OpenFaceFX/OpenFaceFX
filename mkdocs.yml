@@ -98,6 +98,7 @@ nav:
       - Overview: api/index.md
       - Pipeline & generation: api/pipeline.md
       - Streaming / real-time: api/streaming.md
+      - Multi-language pronunciation: api/i18n.md
       - Transcript text tags: api/texttags.md
       - SSML input: api/ssml.md
       - Emotion & expression layer: api/emotion.md
