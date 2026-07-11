@@ -8,6 +8,27 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **First-class adapters for the open-source aligners: Whisper, WhisperX, Gentle**
+  (closes [#54](https://github.com/OpenFaceFX/OpenFaceFX/issues/54)): a new
+  `openfacefx.aligners` module — siblings of `from_azure_word_boundaries`, stdlib
+  `json` only — closing the asymmetry that shipped adapters for every commercial
+  TTS source but punted the free tools to the user in three places (now replaced
+  with the built-ins). `from_whisper_json` parses OpenAI Whisper `verbose_json`
+  (`segments[].words[]` or a flat `words[]`), `from_whisperx` parses WhisperX
+  `segments[].words[]`, and `from_gentle` parses Gentle `words[]` — all returning
+  the normalized `Anchor` list. **`from_gentle_phones`** turns Gentle's per-word
+  `phones[]` (relative durations, ARPAbet with `_B`/`_I`/`_E`/`_S` suffixes) into
+  absolute `PhonemeSegment`s that sum to the word span, a phone-accurate path
+  that skips the naive spacer and feeds `generate_from_alignment` directly. The
+  adapters tolerate the key variance across implementations (`word`/`text`,
+  `probability`/`score`) and **drop unaligned words deterministically** (a missing
+  timestamp, or Gentle `case != "success"`), never crashing; an out-of-inventory
+  symbol falls to `sil`. Wired into the CLI as `--anchors-format whisper |
+  whisperx | gentle | gentle-phones` — the word paths self-transcribe (the aligner
+  supplies the words, so no `--text`). Additive: with no `--anchors-format`, output
+  is unchanged. Deterministic, numpy + stdlib.
+
 ## [0.17.0] — 2026-07-11
 
 ### Added

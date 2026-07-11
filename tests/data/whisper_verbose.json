@@ -1,0 +1,21 @@
+{
+  "task": "transcribe",
+  "language": "en",
+  "text": " Hello brave new world.",
+  "segments": [
+    {
+      "id": 0,
+      "seek": 0,
+      "start": 0.0,
+      "end": 1.6,
+      "text": " Hello brave new world.",
+      "words": [
+        {"word": " Hello", "start": 0.0, "end": 0.42, "probability": 0.984},
+        {"word": " brave", "start": 0.42, "end": 0.86, "probability": 0.971},
+        {"word": " new", "start": 0.86, "end": 1.12, "probability": 0.965},
+        {"word": " world", "start": 1.12, "end": 1.55, "probability": 0.958},
+        {"word": ".", "start": 1.55, "end": 1.6, "probability": 0.5}
+      ]
+    }
+  ]
+}

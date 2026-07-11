@@ -1,0 +1,26 @@
+{
+  "transcript": "hello world",
+  "words": [
+    {
+      "alignedWord": "hello", "word": "hello", "case": "success",
+      "start": 0.20, "end": 0.70,
+      "phones": [
+        {"phone": "hh_B", "duration": 0.10},
+        {"phone": "ah0_I", "duration": 0.15},
+        {"phone": "l_I", "duration": 0.10},
+        {"phone": "ow1_E", "duration": 0.15}
+      ]
+    },
+    {"word": "um", "case": "not-found-in-audio"},
+    {
+      "alignedWord": "world", "word": "world", "case": "success",
+      "start": 0.90, "end": 1.40,
+      "phones": [
+        {"phone": "w_B", "duration": 0.10},
+        {"phone": "er1_I", "duration": 0.20},
+        {"phone": "l_I", "duration": 0.10},
+        {"phone": "d_E", "duration": 0.10}
+      ]
+    }
+  ]
+}

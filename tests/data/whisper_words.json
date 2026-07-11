@@ -1,0 +1,9 @@
+{
+  "text": "the quick unaligned fox",
+  "words": [
+    {"text": "the", "start": 0.10, "end": 0.30, "score": 0.92},
+    {"text": "quick", "start": 0.30, "end": 0.70, "score": 0.88},
+    {"text": "unaligned", "score": 0.41},
+    {"text": "fox", "start": 0.95, "end": 1.30, "score": 0.90}
+  ]
+}

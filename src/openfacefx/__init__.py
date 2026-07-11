@@ -84,6 +84,8 @@ from .anchors import (
     parse_word_anchors, from_azure_word_boundaries, from_elevenlabs_alignment,
     from_kokoro_tokens, google_ssml_with_marks, from_google_timepoints,
 )
+from .aligners import (from_whisper_json, from_whisperx, from_gentle,
+                      from_gentle_phones)
 
 __version__ = "0.17.0"
 
@@ -150,4 +152,5 @@ __all__ = [
     "parse_word_anchors", "from_azure_word_boundaries",
     "from_elevenlabs_alignment", "from_kokoro_tokens", "google_ssml_with_marks",
     "from_google_timepoints",
+    "from_whisper_json", "from_whisperx", "from_gentle", "from_gentle_phones",
 ]

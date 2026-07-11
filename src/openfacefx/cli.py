@@ -43,18 +43,27 @@ from .anchors import (
     from_azure_word_boundaries, from_elevenlabs_alignment, from_kokoro_tokens,
     from_google_timepoints,
 )
+from .aligners import (from_whisper_json, from_whisperx, from_gentle,
+                      from_gentle_phones)
 from . import facefxwrapper
 
-# Anchor timing formats: name -> parser(text) -> List[Anchor]. `google` is
-# handled separately (its markN timepoints need the transcript to resolve).
+# Anchor timing formats: name -> parser(text) -> List[Anchor]. `google` and
+# `gentle-phones` are handled separately (google's markN timepoints need the
+# transcript; gentle-phones produces PhonemeSegments, not anchors).
 _ANCHOR_PARSERS = {
     "srt": parse_srt,
     "words": parse_word_anchors,
     "azure": from_azure_word_boundaries,
     "elevenlabs": from_elevenlabs_alignment,
     "kokoro": from_kokoro_tokens,
+    "whisper": from_whisper_json,
+    "whisperx": from_whisperx,
+    "gentle": from_gentle,
 }
-_ANCHOR_FORMATS = list(_ANCHOR_PARSERS) + ["google"]
+# Formats whose anchors carry the words, so --text is optional (like srt) — the
+# open-source aligners transcribe the audio, so no separate transcript is needed.
+_SELF_TRANSCRIBING = ("srt", "whisper", "whisperx", "gentle")
+_ANCHOR_FORMATS = list(_ANCHOR_PARSERS) + ["google", "gentle-phones"]
 
 # TTS timing formats: name -> (parser, is_viseme_unit). Phoneme-unit formats
 # feed the existing mapping/coarticulation; viseme-unit formats use the vendor
@@ -770,14 +779,16 @@ def _anchored_segments(args, dur, g2p):
     with open(args.anchors, encoding="utf-8") as fh:
         text = fh.read()
     fmt = args.anchors_format
-    if fmt == "srt":
-        anchors = parse_srt(text)
+    if fmt == "gentle-phones":                 # phone timings -> segments directly
+        return from_gentle_phones(text)        # (the accurate phone path, no naive spacer)
+    if fmt in _SELF_TRANSCRIBING:              # srt + the aligners carry the words
+        anchors = _ANCHOR_PARSERS[fmt](text)
         transcript = args.text if args.text else anchors_transcript(anchors)
     else:
         if not args.text:
             raise SystemExit(
                 f"--text is required with --anchors-format {fmt} "
-                "(only 'srt' supplies the transcript from its cue text)")
+                "(srt/whisper/whisperx/gentle supply the transcript themselves)")
         transcript = args.text
         anchors = (from_google_timepoints(text, transcript) if fmt == "google"
                    else _ANCHOR_PARSERS[fmt](text))

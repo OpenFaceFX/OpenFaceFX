@@ -11,8 +11,10 @@ recogniser, OpenFaceFX defines a small ``PhonemeSegment`` contract and provides:
   * ``load_mfa_textgrid`` -- parse the output of the Montreal Forced Aligner
     (the recommended production aligner). MFA gives real acoustic alignment.
 
-You can add adapters for Gentle, wav2vec2, or Whisper the same way: produce a
-list of ``PhonemeSegment`` and the rest of the pipeline is unchanged.
+Built-in adapters for the open-source aligners live in
+:mod:`openfacefx.aligners` (Whisper / WhisperX word timings, Gentle word **and**
+phone timings, issue #54); any other source just needs to produce a list of
+``PhonemeSegment`` and the rest of the pipeline is unchanged.
 """
 
 from __future__ import annotations

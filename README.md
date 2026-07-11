@@ -1076,9 +1076,15 @@ not for shipping. For production accuracy, produce a list of
 `generate_from_alignment`:
 
 - **Montreal Forced Aligner** — best accuracy; parser included (`load_mfa_textgrid`).
-- **Gentle** — Kaldi-based, JSON output; write a ~15-line adapter.
-- **wav2vec2 / Whisper** — phoneme or word timings from a neural model; word-level
-  needs no transcript.
+- **Whisper / WhisperX** — word timings from the most common audio→timing tool;
+  **built-in adapters** (`from_whisper_json` / `from_whisperx`, or `naive
+  --anchors words.json --anchors-format whisper|whisperx`). Word-level needs no
+  transcript — the aligner supplies the words.
+- **Gentle** — Kaldi-based forced aligner with free **phoneme**-level timings;
+  **built-in adapters** (`from_gentle` for word anchors, `from_gentle_phones` for
+  the accurate phone path, or `--anchors-format gentle|gentle-phones`).
+- **wav2vec2 / any other source** — produce a list of `PhonemeSegment` and pass it
+  to `generate_from_alignment`.
 
 Better G2P: drop in the full CMU Pronouncing Dictionary with
 `G2P().load_cmudict("cmudict.dict")` (the built-in dictionary is a tiny seed).

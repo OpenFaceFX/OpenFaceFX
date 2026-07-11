@@ -1,0 +1,15 @@
+{
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 1.35,
+      "text": "hello brave world",
+      "words": [
+        {"word": "hello", "start": 0.008, "end": 0.41, "score": 0.874},
+        {"word": "brave", "start": 0.45, "end": 0.88, "score": 0.902},
+        {"word": "2024", "score": 0.5},
+        {"word": "world", "start": 0.95, "end": 1.33, "score": 0.861}
+      ]
+    }
+  ]
+}

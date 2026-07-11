@@ -3,7 +3,8 @@
 Two entry points:
 
   * ``generate_from_alignment`` -- you already have time-stamped phonemes (from
-    MFA, Gentle, wav2vec2, Whisper...). This is the accurate path.
+    MFA, or Gentle/Whisper/WhisperX via the built-in :mod:`openfacefx.aligners`
+    adapters, issue #54). This is the accurate path.
 
   * ``generate_naive`` -- you only have text and an audio duration. Uses G2P +
     NaiveAligner. Fast, dependency-free, approximate lip-sync for prototyping.
