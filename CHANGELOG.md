@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-07-11
+
 ### Added
 - **WebVTT input (`parse_vtt`)** (closes
   [#55](https://github.com/OpenFaceFX/OpenFaceFX/issues/55)): the read-side inverse
