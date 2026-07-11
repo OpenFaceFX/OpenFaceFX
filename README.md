@@ -15,11 +15,11 @@
 [![Release](https://img.shields.io/github/v/release/OpenFaceFX/OpenFaceFX?color=f4b942)](https://github.com/OpenFaceFX/OpenFaceFX/releases)
 [![Buy Me a Coffee](https://img.shields.io/badge/support-buy%20me%20a%20coffee-ffdd00.svg?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/openfacefx)
 
-<img src="docs/talking-head.svg" width="460" alt="OpenFaceFX animating a face's mouth from the phrase 'open source lip sync from audio + text' — every frame is the dominant viseme of the curves the pipeline generated"/>
+<img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/talking-head.svg" width="460" alt="OpenFaceFX animating a face's mouth from the phrase 'open source lip sync from audio + text' — every frame is the dominant viseme of the curves the pipeline generated"/>
 
 *Each mouth frame above is the dominant viseme of a real `track.json` the pipeline generated from that sentence — no ML, just deterministic phoneme→viseme→curve math.*
 
-**[▶ Live demo](https://openfacefx.github.io/OpenFaceFX/demo/)** — no install, regenerated from the current pipeline on every push. **[Read the docs →](https://openfacefx.github.io/OpenFaceFX/docs/)**
+**[▶ Live demo](https://openfacefx.github.io/OpenFaceFX/demo/)** · **[🔊 Hear it](https://openfacefx.github.io/OpenFaceFX/face.html)** (real speech, mouth synced to audio) · **[Read the docs →](https://openfacefx.github.io/OpenFaceFX/docs/)**
 
 <a href="https://openfacefx.github.io/OpenFaceFX/demo/"><img src="https://openfacefx.github.io/OpenFaceFX/quickstart.gif" width="850" alt="Quickstart: one naive command turns 'hello world' plus a WAV into a viseme track JSON"/></a>
 

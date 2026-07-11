@@ -8,6 +8,19 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.18.1] — 2026-07-11
+
+### Added
+- Animated **talking-head** demo (the README hero) — a self-contained SMIL
+  flip-book generated from a real track by `tools/build_talking_head.py`, and a
+  **"Hear it"** audio demo (`examples/talking-face-demo.html`, also on the site
+  at `/face.html`) that plays real speech with the mouth synced to the audio.
+
+### Changed
+- Docs/metadata release (no library code change): README leads with `pip
+  install openfacefx` (now on PyPI), links the Buy Me a Coffee funding page, and
+  the project uses the `openfacefx.com` custom domain. Refreshes the PyPI page.
+
 ## [0.18.0] — 2026-07-11
 
 ### Added

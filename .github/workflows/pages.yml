@@ -41,6 +41,7 @@ jobs:
           python tools/build_preview.py demo_track.json site/demo/index.html \
             --segments demo_segments.json --autoplay
           cp docs/logo.svg site/logo.svg
+          cp examples/talking-face-demo.html site/face.html
           cat > site/index.html <<'EOF'
           <!doctype html>
           <html lang="en"><head><meta charset="utf-8">
@@ -63,6 +64,7 @@ jobs:
             <p>Open-source lip-sync: voice recording + transcript &rarr; viseme
                animation curves for any engine. MIT, numpy-only.</p>
             <a class="btn" href="demo/">&#9654; Live demo</a>
+            <a class="btn" href="face.html">&#128266; Hear it</a>
             <a class="btn alt" href="docs/">Docs</a>
             <a class="btn alt" href="https://github.com/OpenFaceFX/OpenFaceFX">GitHub</a>
             <p style="font-size:13px">The demo is regenerated from the current
