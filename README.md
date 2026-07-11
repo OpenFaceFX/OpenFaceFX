@@ -30,12 +30,15 @@
 ## Install
 
 ```bash
-git clone https://github.com/OpenFaceFX/OpenFaceFX && cd OpenFaceFX
-pip install -e .              # numpy is the only runtime dependency
+pip install openfacefx        # numpy is the only runtime dependency
 ```
 
-(`pip install openfacefx` from PyPI is coming — the release automation is in
-place pending the registry setup, [#24](https://github.com/OpenFaceFX/OpenFaceFX/issues/24).)
+Or from source, to contribute:
+
+```bash
+git clone https://github.com/OpenFaceFX/OpenFaceFX && cd OpenFaceFX
+pip install -e .
+```
 
 ## Quick start
 
