@@ -57,6 +57,10 @@ from .export_cues import (
     dominant_cues, write_rhubarb_tsv, write_rhubarb_xml, write_rhubarb_json,
     write_moho_dat, write_pgo,
 )
+from .export_captions import (
+    write_captions, write_srt, write_vtt, srt_text, vtt_text, build_cues,
+    word_timings, format_timestamp, CaptionCue,
+)
 from .mapping import Mapping, Target
 from .ipa import IPA_MAPPING, is_ipa_vowel, ipa_unknown_symbols
 from .retarget import (retarget, apply_adjust, rename_only, PRESETS,
@@ -119,6 +123,8 @@ __all__ = [
     "write_lip", "lip_bytes", "skyrim_mapping", "SKYRIM_SLOT_MAP",
     "dominant_cues", "write_rhubarb_tsv", "write_rhubarb_xml",
     "write_rhubarb_json", "write_moho_dat", "write_pgo",
+    "write_captions", "write_srt", "write_vtt", "srt_text", "vtt_text",
+    "build_cues", "word_timings", "format_timestamp", "CaptionCue",
     "Mapping", "Target",
     "IPA_MAPPING", "is_ipa_vowel", "ipa_unknown_symbols",
     "retarget", "apply_adjust", "rename_only", "PRESETS", "PRESET_FALLBACKS",

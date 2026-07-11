@@ -840,6 +840,42 @@ def _emit_segments(segs, args) -> None:
          "(preview with build_preview.py --segments)")
 
 
+def _add_caption_options(p) -> None:
+    """Shared SRT/WebVTT caption tuning (issue #41), used by the ``captions``
+    command and ``naive --emit-captions``."""
+    from .export_captions import (DEFAULT_CPS, DEFAULT_GAP, DEFAULT_MAX_LINE,
+                                  DEFAULT_MAX_LINES)
+    p.add_argument("--cps", type=float, default=DEFAULT_CPS, metavar="CHARS",
+                   help="reading speed: a cue is held at least len(text)/CPS "
+                        f"seconds where the timeline allows (default {DEFAULT_CPS})")
+    p.add_argument("--max-line", type=int, default=DEFAULT_MAX_LINE,
+                   metavar="CHARS", help="max characters per caption line "
+                        f"(default {DEFAULT_MAX_LINE})")
+    p.add_argument("--max-lines", type=int, default=DEFAULT_MAX_LINES,
+                   metavar="N", help=f"max lines per cue (default {DEFAULT_MAX_LINES})")
+    p.add_argument("--gap", type=float, default=DEFAULT_GAP, dest="caption_gap",
+                   metavar="SECONDS", help="a silence at least this long between "
+                        f"words breaks the cue (default {DEFAULT_GAP})")
+    p.add_argument("--karaoke", action="store_true",
+                   help="WebVTT only: emit per-word <c> spans with inline cue "
+                        "timestamps for word-level highlighting")
+
+
+def _emit_captions(args, dur, g2p, text) -> None:
+    """Write SRT/WebVTT captions from the SAME naive word alignment the curves
+    use, when --emit-captions PATH was given (naive) — the co-generated caption
+    side output (issue #41). ``.vtt`` -> WebVTT, any other extension -> SubRip."""
+    path = getattr(args, "emit_captions", None)
+    if not path or not text:
+        return
+    from .export_captions import write_captions
+    cues = write_captions(text, dur, path, g2p=g2p,
+                          karaoke=getattr(args, "karaoke", False),
+                          cps=args.cps, max_line=args.max_line,
+                          max_lines=args.max_lines, gap=args.caption_gap)
+    _say(args, f"wrote {path}: {len(cues)} caption cue(s)")
+
+
 def _write_lip(segs, dur, args) -> None:
     """Dispatch ``-o out.lip`` (naive/mfa). EXPERIMENTAL, unverified in-game."""
     try:
@@ -939,6 +975,12 @@ def main(argv=None) -> int:
     n.add_argument("--emit-segments", metavar="PATH",
                    help="also write phoneme segments as JSON for the HTML "
                         "previewer's --segments lane (see tools/build_preview.py)")
+    n.add_argument("--emit-captions", metavar="PATH",
+                   help="also write SRT/WebVTT captions (issue #41) from the same "
+                        "word alignment the curves use — .vtt for WebVTT, any "
+                        "other extension for SubRip; tune with --cps/--max-line/"
+                        "--max-lines/--gap/--karaoke")
+    _add_caption_options(n)
     _add_output_options(n)
     _add_coart_options(n)
     _add_smoothing_options(n)
@@ -1029,6 +1071,21 @@ def main(argv=None) -> int:
     fc.add_argument("-o", "--out", required=True)
     _add_output_options(fc)
     _add_qa_options(fc)
+
+    cap = sub.add_parser("captions",
+                         help="write SRT/WebVTT subtitles from a transcript + "
+                              "duration, timed by the SAME alignment the lip "
+                              "curves use — captions and lip-sync from one source "
+                              "(issue #41)")
+    cap.add_argument("--text", required=True, help="the transcript to caption")
+    capg = cap.add_mutually_exclusive_group(required=True)
+    capg.add_argument("--wav", help="WAV file to read the duration from")
+    capg.add_argument("--duration", type=float, help="duration in seconds")
+    cap.add_argument("--cmudict", help="optional CMUdict file for better G2P")
+    cap.add_argument("-o", "--out", required=True,
+                     help="output path: .vtt -> WebVTT, any other extension -> "
+                          "SubRip .srt")
+    _add_caption_options(cap)
 
     cs = sub.add_parser("from-csv",
                         help="import a blendshape-weight CSV into a track: the "
@@ -1213,6 +1270,10 @@ def main(argv=None) -> int:
                    help="mapping JSON applied to every file")
     b.add_argument("--cmudict", dest="batch_cmudict",
                    help="CMUdict file for better G2P on naive-path files")
+    b.add_argument("--captions", choices=["srt", "vtt"],
+                   help="also write an SRT/WebVTT caption sidecar next to each "
+                        "naive-mode track, from the same word alignment (issue "
+                        "#41). Opt-in: without it the output tree is unchanged")
     b.add_argument("--fps", type=float, default=60.0)
     b.add_argument("--machine-readable", action="store_true",
                    help="stream an NDJSON event log to stderr (one JSON object "
@@ -1320,7 +1381,8 @@ def main(argv=None) -> int:
                          quiet=args.quiet, ledger=args.ledger,
                          cue_warnings=args.cue_warnings,
                          min_cue=lo, max_cue=hi,
-                         manifest_file=args.manifest)
+                         manifest_file=args.manifest,
+                         captions=args.captions)
 
     if args.cmd == "emotion":
         from .io_export import read_json
@@ -1350,6 +1412,19 @@ def main(argv=None) -> int:
             _warn(args, w)
         _write(track, args.out, args)
         _emit_summary(args, track)
+        return 0
+
+    if args.cmd == "captions":
+        from .export_captions import write_captions
+        dur = args.duration if args.duration else wav_duration(args.wav)
+        text, _ = normalize_transcript(args.text)   # same fold the naive path uses
+        g2p = G2P()
+        if args.cmudict:
+            g2p.load_cmudict(args.cmudict)
+        cues = write_captions(text, dur, args.out, g2p=g2p, karaoke=args.karaoke,
+                              cps=args.cps, max_line=args.max_line,
+                              max_lines=args.max_lines, gap=args.caption_gap)
+        _say(args, f"wrote {args.out}: {len(cues)} caption cue(s)")
         return 0
 
     if args.cmd == "from-csv":
@@ -1570,6 +1645,7 @@ def main(argv=None) -> int:
                                                clean=ssml_clean, tags=ssml_tags)
             oov = g2p.oov_words(clean) if (clean and _want_summary(args)) else []
             _emit_segments(segs, args)
+            _emit_captions(args, dur, g2p, clean)
             track = _apply_edits_layer(track, args)
             _event_layer(track, args, segments=segs)
             _write(track, args.out, args)
@@ -1579,6 +1655,7 @@ def main(argv=None) -> int:
         segs = _naive_input_segments(args, dur, g2p)
         oov = g2p.oov_words(args.text) if (args.text and _want_summary(args)) else []
         _emit_segments(segs, args)
+        _emit_captions(args, dur, g2p, args.text)
         if args.out.endswith(".lip"):
             _write_lip(segs, dur, args)
             _emit_summary(args, None, segments=segs, oov_words=oov,

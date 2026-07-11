@@ -575,6 +575,32 @@ values clamped `[0,1]`, timecode/frame → seconds, and each column RDP-thinned 
 is many-to-one) — it brings the raw channels in to condition and re-export.
 `read_csv(path)` is the library entry; numpy + stdlib, deterministic.
 
+## Subtitles & captions (SRT / WebVTT)
+
+Captions and lip motion should come from **one source of truth** so they stay in
+sync. OpenFaceFX already *ingests* word timings (`parse_srt`, Azure / ElevenLabs
+word boundaries); the `captions` command is the matching *output* — SRT and
+WebVTT timed by the **same** word alignment the lip curves use (it pulls word
+spans from `naive_word_segments`, whose phoneme segments are byte-identical to
+the `naive_segments` the visemes are reduced from):
+
+```bash
+python -m openfacefx captions --text "Well met, traveler." --wav vo.wav -o vo.srt
+python -m openfacefx captions --text "Well met." --duration 2 -o vo.vtt --karaoke
+```
+
+Cues are packed under a max-line-length × max-lines **wrap budget** (`--max-line`
+/ `--max-lines`, no cue exceeds it), split at sentence ends and pauses (`--gap`),
+and each is held long enough to read at a configurable **reading speed**
+(`--cps`, characters/sec) — monotonic and non-overlapping, `HH:MM:SS,mmm` (SRT) /
+`HH:MM:SS.mmm` (WebVTT). `--karaoke` adds WebVTT `<c>` word spans with inline cue
+timestamps for word-level highlighting. Co-generate a track and its captions in
+one run with `naive … --emit-captions vo.srt`, or write a caption sidecar next to
+every naive-mode track in a batch with `batch … --captions srt`. `srt_text` is
+the exact inverse of `parse_srt` — a round-trip recovers the cue spans.
+`write_captions(text, duration, path)` is the library entry; pure stdlib,
+deterministic.
+
 ## Re-export or retarget an existing track (`convert`)
 
 Every exporter used to be reachable only as the `-o` sink of a generate command.

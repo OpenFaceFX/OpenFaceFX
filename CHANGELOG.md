@@ -9,6 +9,23 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Subtitle / caption co-generation (SRT + WebVTT)** (closes
+  [#41](https://github.com/OpenFaceFX/OpenFaceFX/issues/41)): a new
+  `openfacefx.export_captions` module (`write_captions`, `write_srt`,
+  `write_vtt`, `build_cues`, `word_timings`, …) and a `captions` command that
+  write SubRip (`HH:MM:SS,mmm`) and WebVTT (`HH:MM:SS.mmm`) subtitles from the
+  **same alignment the lip curves use** — word spans come from
+  `texttags.naive_word_segments`, whose phoneme segments are byte-identical to
+  the `pipeline.naive_segments` the visemes are reduced from, so captions and
+  lip motion share one source of truth. Cues are packed under a max-line-length ×
+  max-lines **wrap budget** (never exceeded), split at sentence ends and pauses,
+  held long enough to read at a configurable **reading speed** (characters per
+  second), and kept monotonic + non-overlapping; `--karaoke` adds WebVTT `<c>`
+  word spans with inline cue timestamps that fall inside their cue span.
+  Co-generate a track and its captions in one run with `naive --emit-captions`,
+  or write a caption sidecar next to every naive-mode track with `batch
+  --captions srt|vtt`. `srt_text` is the exact inverse of `anchors.parse_srt`
+  (a round-trip recovers the cue spans). Pure stdlib, deterministic.
 - **Loc-table / dialogue-database batch driver (`batch --manifest`)** (closes
   [#40](https://github.com/OpenFaceFX/OpenFaceFX/issues/40)): a new
   `openfacefx.batch_manifest` module (`read_manifest`, `manifest_jobs`) and a

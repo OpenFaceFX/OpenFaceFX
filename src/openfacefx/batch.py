@@ -108,7 +108,7 @@ def _process_one(args) -> dict:
     Manifest jobs (issue #40) additionally carry an ``id`` and per-row
     ``mapping``/``style``/``text``/``language``/``character``; directory jobs
     carry none of those keys, so their rows and tracks stay byte-identical."""
-    job, mapping_path, cmudict_path, fps, cue = args
+    job, mapping_path, cmudict_path, fps, cue, captions = args
     # out is reported relative to the output tree: relpath against the CWD
     # breaks on Windows when they sit on different drives
     row = dict(file=job["rel"], status="ok", out=job["out_rel"],
@@ -120,6 +120,7 @@ def _process_one(args) -> dict:
         row["id"] = job["id"]
         row["language"] = job.get("language")
         row["character"] = job.get("character")
+    caption_text = None                  # spoken text for the --captions sidecar
     try:
         # per-row mapping/style (manifest) fall back to the batch-global mapping
         # and no style (None) -> directory mode is unchanged.
@@ -136,12 +137,14 @@ def _process_one(args) -> dict:
                                             params=params)
         elif job.get("text") is not None:            # manifest inline transcript
             row["mode"] = "naive"
+            caption_text = job["text"]
             segs, track = _naive_track(job["text"], job, cmudict_path, fps,
                                        mapping, params, row)
         elif job.get("txt"):                          # directory same-stem .txt
             row["mode"] = "naive"
             with open(job["txt"], encoding="utf-8") as fh:
                 text = fh.read()
+            caption_text = text
             segs, track = _naive_track(text, job, cmudict_path, fps, mapping,
                                        params, row)
         else:
@@ -158,6 +161,10 @@ def _process_one(args) -> dict:
                    keyframes=sum(len(c["keys"]) for c in d["channels"]))
         if cue is not None:
             row["cue_warnings"] = len(cue_flags(segs, cue[0], cue[1]))
+        if captions and caption_text:      # opt-in SRT/WebVTT sidecar (issue #41)
+            from .export_captions import write_captions
+            cap = os.path.splitext(job["out"])[0] + "." + captions
+            write_captions(caption_text, wav_duration(job["wav"]), cap)
     except Exception as e:  # keep the batch going; report at the end
         row.update(status="failed", error=f"{type(e).__name__}: {e}")
     return row
@@ -215,7 +222,8 @@ def run_batch(in_dir: str, out_dir: str, recurse: bool = False,
               ledger: Optional[str] = None, cue_warnings: bool = False,
               min_cue: Optional[float] = None,
               max_cue: Optional[float] = None,
-              manifest_file: Optional[str] = None) -> int:
+              manifest_file: Optional[str] = None,
+              captions: Optional[str] = None) -> int:
     """Returns a process exit code (0 = all ok, 1 = at least one failure).
 
     Every parameter after ``ext`` is additive and opt-in (issue #35); with the
@@ -229,7 +237,9 @@ def run_batch(in_dir: str, out_dir: str, recurse: bool = False,
     ``manifest_file`` (issue #40) selects the loc-table driver: instead of
     walking ``in_dir``, read a CSV/TSV manifest and emit one track per row
     through the same pipeline + writers + summary/NDJSON/ledger. With it absent
-    the directory-walk path is byte-identical."""
+    the directory-walk path is byte-identical. ``captions`` (``"srt"`` / ``"vtt"``,
+    issue #41) writes a caption sidecar next to each naive-mode track from the
+    same word alignment; ``None`` (the default) writes none."""
     lo = MIN_CUE if min_cue is None else min_cue
     hi = MAX_CUE if max_cue is None else max_cue
     cue = (lo, hi) if cue_warnings else None
@@ -260,7 +270,9 @@ def run_batch(in_dir: str, out_dir: str, recurse: bool = False,
                 "cue_warnings": cue_warnings, "min_cue": lo, "max_cue": hi}
         if manifest_file is not None:            # only in manifest mode -> the
             snap["manifest"] = manifest_file     # directory-mode snapshot is
-        return snap                              # byte-identical
+        if captions is not None:                 # byte-identical without either
+            snap["captions"] = captions
+        return snap
 
     def input_fingerprints(work: List[dict]) -> List[dict]:
         fps_out = []
@@ -333,7 +345,7 @@ def run_batch(in_dir: str, out_dir: str, recurse: bool = False,
     emit({"event": "start", "total": len(work), "todo": len(todo),
           "skipped": skipped, "jobs": jobs, "ext": ext, "recurse": recurse})
 
-    args = [(job, mapping, cmudict, fps, cue) for job in todo]
+    args = [(job, mapping, cmudict, fps, cue, captions) for job in todo]
     if jobs > 1 and len(todo) > 1:
         with Pool(processes=jobs) as pool:
             rows = pool.map(_process_one, args)
