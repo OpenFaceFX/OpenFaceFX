@@ -33,7 +33,10 @@ cue spans within millisecond rounding).
 from __future__ import annotations
 
 import os
+import re
 from typing import List, NamedTuple, Optional, Sequence, Tuple
+
+from .anchors import Anchor
 
 #: Reading speed (characters per second). ~15-17 cps is the common subtitle
 #: readability ceiling (BBC / Netflix guidance); a cue is held at least
@@ -229,3 +232,84 @@ def write_captions(text: str, duration: float, path: str, *, g2p=None,
     else:
         write_srt(cues, path)
     return cues
+
+
+# --------------------------------------------------------------------------- #
+# read side: WebVTT -> anchors (issue #55) — the inverse of vtt_text/write_vtt  #
+# --------------------------------------------------------------------------- #
+
+#: A WebVTT timestamp, ``HH:MM:SS.mmm`` or the hour-less ``MM:SS.mmm``.
+_VTT_TIME = re.compile(r"(?:(\d+):)?(\d{1,2}):(\d{2})\.(\d{1,3})")
+#: One karaoke word unit: an optional inline ``<HH:MM:SS.mmm>`` start before a
+#: ``<c>token</c>`` span — exactly what :func:`_karaoke_payload` emits.
+_VTT_WORD = re.compile(
+    r"(?:<(\d+:\d{2}:\d{2}\.\d{1,3}|\d{1,2}:\d{2}\.\d{1,3})>)?<c>([^<]*)</c>")
+_VTT_TAG = re.compile(r"<[^>]*>")           # any inline tag: <c> <v> <b> <i> <TS>
+
+
+def _vtt_seconds(m) -> float:
+    h, mm, ss, ms = m.groups()
+    ms = (ms + "000")[:3]
+    return int(h or 0) * 3600 + int(mm) * 60 + int(ss) + int(ms) / 1000.0
+
+
+def _ts_seconds(stamp: str) -> float:
+    m = _VTT_TIME.match(stamp)
+    if not m:
+        raise ValueError(f"vtt: bad inline timestamp {stamp!r}")
+    return _vtt_seconds(m)
+
+
+def _karaoke_anchors(payload: str, cue_start: float, cue_end: float) -> List[Anchor]:
+    """Word-level anchors from a karaoke cue payload (``<c>`` spans with inline
+    ``<timestamp>`` word starts). Each word runs from its own start to the next
+    word's start (the cue end for the last), so every word lies inside the cue
+    span. The first word has no inline start and pins to the cue start."""
+    units = _VTT_WORD.findall(payload)
+    starts: List[float] = []
+    for j, (ts, _tok) in enumerate(units):
+        starts.append(_ts_seconds(ts) if ts else (cue_start if j == 0 else starts[-1]))
+    out: List[Anchor] = []
+    for j, (_ts, token) in enumerate(units):
+        end = starts[j + 1] if j + 1 < len(starts) else cue_end
+        out.append(Anchor(token.strip(), starts[j], end))
+    return out
+
+
+def parse_vtt(text: str) -> List[Anchor]:
+    """Parse WebVTT subtitles into timing anchors — the read-side inverse of
+    :func:`vtt_text` / :func:`write_vtt`.
+
+    Blank-line-separated cue blocks with ``HH:MM:SS.mmm --> HH:MM:SS.mmm`` (the
+    hour-less ``MM:SS.mmm`` is accepted too); an optional cue identifier line and
+    trailing cue settings (``position:``/``align:``/``line:``…) are ignored, as
+    are the ``WEBVTT`` header and any ``NOTE`` / ``STYLE`` / ``REGION`` blocks. A
+    cue carrying inline ``<timestamp><c>word</c>`` karaoke spans (what the #41
+    writer emits) yields one anchor **per word**, each inside the cue span;
+    otherwise a single cue-level anchor with the inline tags stripped. Malformed
+    input raises ``ValueError``."""
+    body = text.lstrip("﻿").strip()
+    if not re.match(r"WEBVTT(\s|$)", body):
+        raise ValueError("vtt: missing WEBVTT header")
+    out: List[Anchor] = []
+    for block in re.split(r"\r?\n[ \t]*\r?\n", body):
+        lines = block.splitlines()
+        head = lines[0].strip() if lines else ""
+        if head.startswith(("WEBVTT", "NOTE", "STYLE", "REGION")):
+            continue
+        ti = next((k for k, ln in enumerate(lines) if "-->" in ln), None)
+        if ti is None:
+            continue                        # a non-cue block (metadata / stray id)
+        stamps = list(_VTT_TIME.finditer(lines[ti]))
+        if len(stamps) < 2:
+            raise ValueError(f"vtt: malformed timing line {lines[ti]!r}")
+        start, end = _vtt_seconds(stamps[0]), _vtt_seconds(stamps[1])
+        payload = " ".join(lines[ti + 1:])
+        if re.search(r"<\d{1,2}:\d{2}(?::\d{2})?\.\d{1,3}>", payload):
+            out.extend(_karaoke_anchors(payload, start, end))
+        else:
+            cue = re.sub(r"\s+", " ", _VTT_TAG.sub("", payload)).strip()
+            out.append(Anchor(cue, start, end))
+    if not out:
+        raise ValueError("vtt: no cues found")
+    return out

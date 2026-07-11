@@ -615,6 +615,12 @@ the exact inverse of `parse_srt` — a round-trip recovers the cue spans.
 `write_captions(text, duration, path)` is the library entry; pure stdlib,
 deterministic.
 
+Captions also read **back in**: `parse_vtt` turns WebVTT (plain **or** the
+karaoke `<c>` spans above) into timing anchors — `parse_vtt(vtt_text(cues))`
+round-trips within millisecond rounding, karaoke recovering word-level anchors —
+so an existing subtitle file drives lip-sync via `naive --anchors captions.vtt
+--anchors-format vtt` (self-transcribing like `srt`, no `--text` needed).
+
 ## Re-export or retarget an existing track (`convert`)
 
 Every exporter used to be reachable only as the `-o` sink of a generate command.

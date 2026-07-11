@@ -9,6 +9,21 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **WebVTT input (`parse_vtt`)** (closes
+  [#55](https://github.com/OpenFaceFX/OpenFaceFX/issues/55)): the read-side inverse
+  of the #41 caption exporter — `openfacefx.parse_vtt(text) -> List[Anchor]` and a
+  `--anchors-format vtt` that drives generation from an existing subtitle file
+  (self-transcribing like `srt`, no `--text`). It handles the `WEBVTT` header,
+  blank-line cue blocks, optional cue identifiers, ignored `NOTE`/`STYLE`/`REGION`
+  blocks, `HH:MM:SS.mmm` and hour-less `MM:SS.mmm` timing with cue settings
+  stripped, and the **karaoke** case the #41 writer emits (inline
+  `<timestamp><c>word</c>` spans) — recovering one anchor **per word**, each
+  inside its cue span, otherwise a single cue-level anchor with inline tags
+  stripped. Co-located in `export_captions` with `vtt_text`/`_karaoke_payload` so
+  read and write can't drift: `parse_vtt(vtt_text(cues))` round-trips the timings
+  within millisecond rounding in **both** plain and karaoke modes. Malformed input
+  raises a clear `ValueError`; additive (no `--anchors-format vtt` → output
+  unchanged); stdlib `re` only, deterministic.
 - **First-class adapters for the open-source aligners: Whisper, WhisperX, Gentle**
   (closes [#54](https://github.com/OpenFaceFX/OpenFaceFX/issues/54)): a new
   `openfacefx.aligners` module — siblings of `from_azure_word_boundaries`, stdlib

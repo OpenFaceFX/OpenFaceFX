@@ -43,4 +43,18 @@ The pipeline is three deterministic steps:
 `parse_srt(srt_text(cues))` recovers the same cue spans (within millisecond
 rounding). Output is LF-terminated UTF-8, pure stdlib.
 
+## Reading WebVTT back (`parse_vtt`)
+
+[`parse_vtt`][openfacefx.export_captions.parse_vtt] is the read-side inverse of
+`vtt_text`/`write_vtt` (issue #55) — co-located here so the read and write of the
+karaoke format can't drift. It parses WebVTT into timing
+[`Anchor`s](timing.md): blank-line cue blocks with `HH:MM:SS.mmm` (or the
+hour-less `MM:SS.mmm`) timing, ignoring the `WEBVTT` header, `NOTE`/`STYLE`/
+`REGION` blocks, cue identifiers and cue settings; a **karaoke** cue (the inline
+`<timestamp><c>word</c>` spans this module emits) yields one anchor **per word**,
+each inside the cue span, otherwise a single cue-level anchor with inline tags
+stripped. `parse_vtt(vtt_text(cues))` round-trips the timings within millisecond
+rounding — in both plain and karaoke modes. It is wired into the CLI as
+`--anchors-format vtt` (self-transcribing like `srt`).
+
 ::: openfacefx.export_captions

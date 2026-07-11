@@ -45,6 +45,7 @@ from .anchors import (
 )
 from .aligners import (from_whisper_json, from_whisperx, from_gentle,
                       from_gentle_phones)
+from .export_captions import parse_vtt
 from . import facefxwrapper
 
 # Anchor timing formats: name -> parser(text) -> List[Anchor]. `google` and
@@ -52,6 +53,7 @@ from . import facefxwrapper
 # transcript; gentle-phones produces PhonemeSegments, not anchors).
 _ANCHOR_PARSERS = {
     "srt": parse_srt,
+    "vtt": parse_vtt,
     "words": parse_word_anchors,
     "azure": from_azure_word_boundaries,
     "elevenlabs": from_elevenlabs_alignment,
@@ -60,9 +62,9 @@ _ANCHOR_PARSERS = {
     "whisperx": from_whisperx,
     "gentle": from_gentle,
 }
-# Formats whose anchors carry the words, so --text is optional (like srt) — the
-# open-source aligners transcribe the audio, so no separate transcript is needed.
-_SELF_TRANSCRIBING = ("srt", "whisper", "whisperx", "gentle")
+# Formats whose anchors carry the words, so --text is optional (like srt) — SRT/
+# WebVTT cues and the open-source aligners all supply their own transcript.
+_SELF_TRANSCRIBING = ("srt", "vtt", "whisper", "whisperx", "gentle")
 _ANCHOR_FORMATS = list(_ANCHOR_PARSERS) + ["google", "gentle-phones"]
 
 # TTS timing formats: name -> (parser, is_viseme_unit). Phoneme-unit formats
