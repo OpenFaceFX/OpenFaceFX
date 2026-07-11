@@ -52,3 +52,33 @@ type, `viseme_set` mismatch). Library callers get `inspect_track(track)`,
 (never writes), stdlib only, deterministic across Python 3.9/3.13.
 
 ::: openfacefx.inspect
+
+## `diff`
+
+OpenFaceFX ships a hard determinism guarantee; `diff` is the golden-file / snapshot
+gate that leverages it (issue #50) — *"did this solver-param / coarticulation /
+retarget change actually move the curves, and by how much?"* It is distinct from
+its neighbours: `validate` checks a **single** file against the contract, and
+`diff-edits` **writes a sidecar for re-application**; `diff` always takes **two**
+tracks and **never writes**. A raw `cmp` is too brittle (4-dp time quantisation,
+RDP key placement), so it compares *semantically*.
+
+```bash
+python -m openfacefx diff golden.track.json candidate.track.json            # exact-match gate
+python -m openfacefx diff golden.track.json candidate.track.json --tolerance 0.002
+python -m openfacefx diff a.track.json b.track.json --json > drift.json
+```
+
+The report gives the duration delta, an `fps` mismatch, per-channel added/removed,
+and for shared channels the **max-abs / RMS / mean-abs** value delta on a shared
+dense grid (the same `np.interp` resampling `edits.sample` uses) plus
+time-coverage and first/last-key drift, and event add/remove/changed. It **exits
+`0` when every delta ≤ `--tolerance`** (default `0.0` → exact match) and nonzero
+otherwise, emitting a deterministic, sorted problem list (`{channel, metric,
+value}`) so CI diffs stay stable; `--json` prints the full schema-stable report,
+human mode a worst-first table. The magnitudes are symmetric — `diff(a, b)` and
+`diff(b, a)` agree up to sign, and added/removed swap. Library callers get
+`diff_tracks(a, b, *, tolerance)`; pure numpy + stdlib, no solver, no RNG, no
+writes.
+
+::: openfacefx.trackdiff

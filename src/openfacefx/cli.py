@@ -1117,6 +1117,19 @@ def main(argv=None) -> int:
                     help="output .track.json: the flat channels (unchanged) plus a "
                          "top-level 'layers' block")
 
+    df = sub.add_parser("diff",
+                        help="read-only A/B drift report between two track.json "
+                             "files; exits nonzero on drift over --tolerance "
+                             "(a golden-file CI gate, issue #50)")
+    df.add_argument("a", help="the first (baseline / golden) .track.json")
+    df.add_argument("b", help="the second .track.json to compare against it")
+    df.add_argument("--tolerance", type=float, default=0.0,
+                    help="max allowed per-delta drift before the exit is nonzero "
+                         "(default 0.0 => exact match required)")
+    df.add_argument("--json", action="store_true",
+                    help="emit the full deterministic JSON report instead of the "
+                         "worst-first human table")
+
     e = sub.add_parser("energy",
                        help="audio loudness -> mouth-open curves (no "
                             "transcript; amplitude fallback, not viseme sync)")
@@ -1450,6 +1463,18 @@ def main(argv=None) -> int:
         _say(args, f"wrote {args.out}: flat track + {len(layers)} layer(s) "
              f"({', '.join(l.name for l in layers)})")
         return 0
+
+    if args.cmd == "diff":
+        from .io_export import read_json
+        from .trackdiff import diff_tracks, render_diff
+        try:
+            a = read_json(args.a)
+            b = read_json(args.b)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"diff: {ex}")
+        report = diff_tracks(a, b, tolerance=args.tolerance)
+        print(json.dumps(report) if args.json else render_diff(report))
+        return 0 if report["ok"] else 1
 
     mapping = Mapping.from_json(args.mapping) if args.mapping else None
     params = (_coart_params(args)

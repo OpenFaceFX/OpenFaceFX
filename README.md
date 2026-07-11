@@ -698,6 +698,28 @@ runtime mix stays the engine's job. Library callers get `build_layers`,
 `to_dict(track, layers=…)`/`from_dict` round-trip the block. numpy + stdlib,
 deterministic, additive. See [docs/api/layers.md](docs/api/layers.md).
 
+## Golden-file drift check (`diff`)
+
+OpenFaceFX guarantees deterministic bytes — `diff` (issue
+[#50](https://github.com/OpenFaceFX/OpenFaceFX/issues/50)) is the golden-file /
+snapshot gate that leverages it: *did a solver-param / coarticulation / retarget
+change actually move the curves, and by how much?*
+
+```bash
+python -m openfacefx diff golden.track.json candidate.track.json                 # exit 0 iff exact
+python -m openfacefx diff golden.track.json candidate.track.json --tolerance 0.002 --json
+```
+
+A read-only structured drift report — duration/fps delta, per-channel
+added/removed, and for shared channels **max-abs / RMS / mean-abs** value delta on
+a shared dense grid, plus coverage/key drift and event changes. It **exits nonzero
+when any delta exceeds `--tolerance`** (default `0.0` → exact match) with a
+deterministic, sorted `{channel, metric, value}` problem list, so CI diffs stay
+stable. Unlike `validate` (single-file contract) and `diff-edits` (writes a
+sidecar), `diff` takes two tracks and never writes. Library callers get
+`diff_tracks(a, b, tolerance=…)`; pure numpy + stdlib. See
+[docs/api/inspect.md](docs/api/inspect.md).
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -978,6 +1000,7 @@ src/openfacefx/
   importers.py      read Rhubarb/Moho/Papagayo cue files back into a track (#44) ← from-cues command
   importers_csv.py  read ARKit/Live Link Face blendshape-weight CSV into a track (#45) ← from-csv command
   inspect.py        read-only track stats + a CI format/contract linter (#47) ← inspect, validate commands
+  trackdiff.py      read-only A/B drift report, tolerance-gated exit (#50) ← diff command
   transforms.py     retime/stretch, mirror L/R, trim/slice a track (#48) ← transform command
   lod.py            offline LOD variant export (RDP-eps + fps-resample tiers) (#36) ← lod command
   budget.py         energy-ranked channel-budget reduction / morph cap (#37) ← --max-channels

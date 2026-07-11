@@ -8,6 +8,25 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **`diff` command: A/B track drift report with a tolerance-gated exit code**
+  (closes [#50](https://github.com/OpenFaceFX/OpenFaceFX/issues/50)): a new
+  `openfacefx.trackdiff` module (`diff_tracks`, `render_diff`) and a read-only
+  `diff A.track.json B.track.json [--tolerance T] [--json]` command — the
+  golden-file / snapshot gate that finally leverages the determinism guarantee.
+  It compares *semantically* (a raw `cmp` is too brittle given 4-dp time
+  quantisation and RDP key placement): duration delta, `fps` mismatch, per-channel
+  added/removed, and for shared channels the **max-abs / RMS / mean-abs** value
+  delta on a shared dense grid (the same `np.interp` resampling `edits.sample`
+  uses) plus time-coverage and first/last-key drift, and event add/remove/changed.
+  It **exits `0` when every delta ≤ `--tolerance`** (default `0.0` → exact match)
+  and nonzero otherwise, emitting a deterministic, sorted `{channel, metric,
+  value}` problem list so CI diffs stay stable; `--json` prints the full
+  schema-stable report, human mode a worst-first table. The delta magnitudes are
+  symmetric. Distinct from `validate` (single-file contract) and `diff-edits`
+  (writes a sidecar): `diff` takes two tracks and **never writes**. Pure numpy +
+  stdlib, deterministic across Python 3.9/3.13, additive.
+
 ## [0.14.0] — 2026-07-11
 
 ### Added

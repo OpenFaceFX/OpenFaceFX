@@ -42,6 +42,7 @@ from .budget import (channel_energy, rank_channels, keep_channels,
                     keep_top_weight, budget_channels, budget_metadata)
 from .layers import (Layer, build_layers, flatten_layers, layers_to_dict,
                     layers_from_dict)
+from .trackdiff import diff_tracks, render_diff
 from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_unreal_notifies import write_unreal_notifies, notifies_to_dict
 from .export_live2d import write_live2d_motion, lipsync_param_ids
@@ -104,6 +105,7 @@ __all__ = [
     "budget_channels", "budget_metadata",
     "Layer", "build_layers", "flatten_layers", "layers_to_dict",
     "layers_from_dict",
+    "diff_tracks", "render_diff",
     "write_unity_anim", "NAMING_PRESETS",
     "write_unreal_notifies", "notifies_to_dict",
     "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",
