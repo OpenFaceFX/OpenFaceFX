@@ -1069,6 +1069,37 @@ not for shipping. For production accuracy, produce a list of
 Better G2P: drop in the full CMU Pronouncing Dictionary with
 `G2P().load_cmudict("cmudict.dict")` (the built-in dictionary is a tiny seed).
 
+## Streaming / real-time generation
+
+For a live pipeline — a TTS engine emitting phonemes as it speaks —
+`StreamingGenerator` carries coarticulation state across pushed chunks in
+**constant memory** and emits keyframes incrementally:
+
+```python
+from openfacefx import StreamingGenerator, frames_to_track
+
+gen = StreamingGenerator(fps=60.0, look_ahead=0.5)   # look_ahead = latency dial
+frames = []
+for chunk in phoneme_chunks:      # each a list of PhonemeSegment
+    frames += gen.push(chunk)
+frames += gen.flush()
+track = frames_to_track(frames, 60.0)
+```
+
+It reuses the **exact** offline component math over a bounded segment window.
+**Honestly**: because the coarticulation dominance is exponential/infinite-support
+(`exp(-theta·|t−c|)`, normalized over every segment), streaming reproduces
+`generate_from_alignment` **within tolerance, not bit-exactly** — pruning old
+segments and a finite look-ahead both omit exponentially small tails. `look_ahead`
+is the **single latency ↔ fidelity dial** with an `O(exp(-theta·W))` error bound
+(W≈1.5 s → ~1e-2, W≈3 s → ~1e-4, W≈4.5 s → ~1e-6); `0` is zero-latency causal-only
+(no anticipation). One case is **exact**: when the window covers the whole clip
+(`look_ahead`/`back_span` ≥ clip length) the per-frame blend is bit-identical to
+offline. Chunk boundaries never matter (1 chunk == K chunks, bit-exact), the
+buffer is `O(window)`, and a later chunk can never alter an already-emitted frame
+(causal; the optional `causal_smooth` is a past-only filter, distinct from the
+offline symmetric smoother). In-process only — network transport is out of scope.
+
 ## FaceFX ecosystem compatibility
 
 We surveyed every public FaceFX wrapper on GitHub. The short version: **all of

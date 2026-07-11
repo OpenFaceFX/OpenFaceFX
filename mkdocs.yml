@@ -97,6 +97,7 @@ nav:
   - API Reference:
       - Overview: api/index.md
       - Pipeline & generation: api/pipeline.md
+      - Streaming / real-time: api/streaming.md
       - Transcript text tags: api/texttags.md
       - SSML input: api/ssml.md
       - Emotion & expression layer: api/emotion.md

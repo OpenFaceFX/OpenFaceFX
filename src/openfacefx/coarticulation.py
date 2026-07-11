@@ -224,6 +224,20 @@ def build_viseme_curves(
     n = max(int(round((t1 - t0) * fps)) + 1, 1)
     times = t0 + np.arange(n) / fps
 
+    matrix = _blend(segments, times, mapping, params, fps)
+    return times, matrix
+
+
+def _blend(segments: List[PhonemeSegment], times: np.ndarray,
+           mapping: Optional[Mapping], params: CoartParams, fps: float):
+    """The dominance blend + conditioning for ALREADY-preprocessed segments over
+    an explicit ``times`` grid — the reusable core of :func:`build_viseme_curves`
+    (which is ``_preprocess`` + grid + this). The streaming generator (issue #43,
+    :mod:`openfacefx.streaming`) calls it on a bounded segment *window* and its own
+    frame grid, so streaming and the offline solve share this exact math. Returns
+    the ``(len(times), n_targets)`` matrix."""
+    n_targets = len(mapping.targets) if mapping is not None else len(VISEMES)
+    n = len(times)
     centres = np.array([(s.start + s.end) / 2 for s in segments])
     alphas = np.array([_alpha(s) for s in segments])
     thetas = np.array([_theta(s) for s in segments])
@@ -293,7 +307,7 @@ def build_viseme_curves(
     if params.smooth > 0.0:
         matrix = smooth_matrix(matrix, params.smooth, fps)
     _enforce_closures(times, matrix, segments, mapping, weights, params)
-    return times, matrix
+    return matrix
 
 
 def _apply_intensity(matrix, mapping, params) -> None:

@@ -12,6 +12,7 @@ from .curves import FaceTrack, Channel, Keyframe, reduce_to_track
 from .postprocess import smooth_matrix, time_shift
 from .pipeline import (generate_from_alignment, generate_naive,
                        naive_segments, wav_duration, derive_events)
+from .streaming import StreamingGenerator, frames_to_track
 from .energy import energy_envelope, generate_from_energy
 from .prosody import (ProsodyParams, ProsodyTrack, pitch_track,
                       prosody_features, prosody_events, detect_events)
@@ -88,6 +89,7 @@ __all__ = [
     "reduce_to_track", "smooth_matrix", "time_shift",
     "generate_from_alignment", "generate_naive",
     "naive_segments", "wav_duration", "derive_events",
+    "StreamingGenerator", "frames_to_track",
     "energy_envelope", "generate_from_energy",
     "ProsodyParams", "ProsodyTrack", "pitch_track", "prosody_features",
     "prosody_events", "detect_events",

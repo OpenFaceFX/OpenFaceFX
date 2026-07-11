@@ -9,6 +9,30 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Streaming / real-time generator** (closes
+  [#43](https://github.com/OpenFaceFX/OpenFaceFX/issues/43)): a new
+  `openfacefx.streaming` module (`StreamingGenerator`, `frames_to_track`) that
+  carries coarticulation state across pushed phoneme chunks in **constant
+  memory** and emits keyframes incrementally — `push(chunk)` returns the frames
+  just finalized, `flush()` emits the tail. It reuses the **exact** offline
+  component math (a `coarticulation._blend` extracted from `build_viseme_curves`,
+  which stays byte-identical) over a bounded segment window.
+  - **Honestly: it reproduces `generate_from_alignment` _within tolerance_, not
+    bit-exactly.** The dominance is a Laplacian bump `exp(-theta·|t−c|)` —
+    exponential, infinite support, normalized over every segment — so bounded
+    memory and a finite look-ahead both omit exponentially small tails; no finite
+    window is literally bit-identical to the offline solve. It converges fast:
+    `look_ahead` is the single latency↔fidelity dial with an `O(exp(-theta·W))`
+    error bound (W≈1.5 s → ~1e-2, W≈3 s → ~1e-4, W≈4.5 s → ~1e-6), and `0` is
+    zero-latency causal-only (no anticipation). One case is **exact**: when the
+    window covers the whole clip (`look_ahead`/`back_span` ≥ clip length) the
+    per-frame blend is bit-identical to offline.
+  - Chunk boundaries never matter (the same clip in 1 or K chunks yields
+    bit-identical frames); the ring buffer is `O(window)`, not `O(stream)`; and
+    the generator is causal — a later chunk cannot alter an already-emitted frame
+    (the optional `causal_smooth` is a past-only one-pole filter, distinct from
+    the offline symmetric `postprocess.smooth_matrix`). In-process only; network
+    transport is out of scope. Deterministic, numpy + stdlib.
 - **VO delivery QA auditor (`audit`)** (closes
   [#42](https://github.com/OpenFaceFX/OpenFaceFX/issues/42)): a new
   `openfacefx.vo_audit` module (`audit_delivery`, `audit_report_text`) and an
