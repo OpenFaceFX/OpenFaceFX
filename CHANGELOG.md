@@ -8,6 +8,13 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.18.2] — 2026-07-11
+
+### Fixed
+- PyPI project page: the logo and viseme-gallery images used repo-relative
+  paths, which render on GitHub but break on PyPI. All `docs/` `<img>` sources
+  are now absolute `raw.githubusercontent.com` URLs, so they render on both.
+
 ## [0.18.1] — 2026-07-11
 
 ### Added

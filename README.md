@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/logo.svg" width="140" alt="OpenFaceFX logo"/>
+<img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/logo.svg" width="140" alt="OpenFaceFX logo"/>
 
 # OpenFaceFX
 
@@ -100,21 +100,21 @@ animates, rendered at full weight (regenerate with `python tools/render_viseme_g
 
 | Viseme | Shape | Phonemes | Mouth |
 |:------:|:-----:|:----------|:------|
-| **sil** | <img src="docs/visemes/sil.svg" width="72" alt="sil mouth shape"> | — | neutral / mouth at rest |
-| **PP** | <img src="docs/visemes/PP.svg" width="72" alt="PP mouth shape"> | `B`, `M`, `P` | lips pressed shut |
-| **FF** | <img src="docs/visemes/FF.svg" width="72" alt="FF mouth shape"> | `F`, `V` | lower lip to upper teeth |
-| **TH** | <img src="docs/visemes/TH.svg" width="72" alt="TH mouth shape"> | `DH`, `TH` | tongue between the teeth |
-| **DD** | <img src="docs/visemes/DD.svg" width="72" alt="DD mouth shape"> | `D`, `L`, `T` | tongue to the alveolar ridge |
-| **kk** | <img src="docs/visemes/kk.svg" width="72" alt="kk mouth shape"> | `G`, `HH`, `K` | back of tongue raised |
-| **CH** | <img src="docs/visemes/CH.svg" width="72" alt="CH mouth shape"> | `CH`, `JH`, `SH`, `ZH` | rounded, protruded |
-| **SS** | <img src="docs/visemes/SS.svg" width="72" alt="SS mouth shape"> | `S`, `Z` | narrow, teeth close |
-| **nn** | <img src="docs/visemes/nn.svg" width="72" alt="nn mouth shape"> | `N`, `NG` | nasal, tongue up |
-| **RR** | <img src="docs/visemes/RR.svg" width="72" alt="RR mouth shape"> | `ER`, `R` | retroflex / lightly rounded |
-| **aa** | <img src="docs/visemes/aa.svg" width="72" alt="aa mouth shape"> | `AA`, `AE`, `AH`, `AY` | open jaw |
-| **E** | <img src="docs/visemes/E.svg" width="72" alt="E mouth shape"> | `EH`, `EY`, `IH` | mid-front spread |
-| **I** | <img src="docs/visemes/I.svg" width="72" alt="I mouth shape"> | `IY`, `Y` | wide spread |
-| **O** | <img src="docs/visemes/O.svg" width="72" alt="O mouth shape"> | `AO`, `AW`, `OW`, `OY` | rounded and open |
-| **U** | <img src="docs/visemes/U.svg" width="72" alt="U mouth shape"> | `UH`, `UW`, `W` | tight lip rounding |
+| **sil** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/sil.svg" width="72" alt="sil mouth shape"> | — | neutral / mouth at rest |
+| **PP** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/PP.svg" width="72" alt="PP mouth shape"> | `B`, `M`, `P` | lips pressed shut |
+| **FF** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/FF.svg" width="72" alt="FF mouth shape"> | `F`, `V` | lower lip to upper teeth |
+| **TH** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/TH.svg" width="72" alt="TH mouth shape"> | `DH`, `TH` | tongue between the teeth |
+| **DD** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/DD.svg" width="72" alt="DD mouth shape"> | `D`, `L`, `T` | tongue to the alveolar ridge |
+| **kk** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/kk.svg" width="72" alt="kk mouth shape"> | `G`, `HH`, `K` | back of tongue raised |
+| **CH** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/CH.svg" width="72" alt="CH mouth shape"> | `CH`, `JH`, `SH`, `ZH` | rounded, protruded |
+| **SS** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/SS.svg" width="72" alt="SS mouth shape"> | `S`, `Z` | narrow, teeth close |
+| **nn** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/nn.svg" width="72" alt="nn mouth shape"> | `N`, `NG` | nasal, tongue up |
+| **RR** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/RR.svg" width="72" alt="RR mouth shape"> | `ER`, `R` | retroflex / lightly rounded |
+| **aa** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/aa.svg" width="72" alt="aa mouth shape"> | `AA`, `AE`, `AH`, `AY` | open jaw |
+| **E** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/E.svg" width="72" alt="E mouth shape"> | `EH`, `EY`, `IH` | mid-front spread |
+| **I** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/I.svg" width="72" alt="I mouth shape"> | `IY`, `Y` | wide spread |
+| **O** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/O.svg" width="72" alt="O mouth shape"> | `AO`, `AW`, `OW`, `OY` | rounded and open |
+| **U** | <img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/visemes/U.svg" width="72" alt="U mouth shape"> | `UH`, `UW`, `W` | tight lip rounding |
 
 To retarget to a different rig (Apple ARKit's 52 blendshapes, a Preston-Blair
 12-shape set, …), edit `PHONEME_TO_VISEME` and `VISEMES` in `visemes.py` —
@@ -127,7 +127,7 @@ FaceFX-style tools are really four subsystems chained together. Only the first
 already exist. So OpenFaceFX **wraps** the aligner instead of reinventing it,
 and fully owns the other three stages:
 
-<img src="docs/pipeline.svg" width="100%" alt="Pipeline: audio + text → alignment → visemes → coarticulation → keyframes → JSON/CSV"/>
+<img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/pipeline.svg" width="100%" alt="Pipeline: audio + text → alignment → visemes → coarticulation → keyframes → JSON/CSV"/>
 
 1. **Alignment** — time-stamped phonemes from Montreal Forced Aligner (parser
    included), or a dependency-free naive aligner for instant prototyping.
@@ -874,7 +874,7 @@ objects (optional `confidence` in `[0, 1]`), optionally wrapped as
 to before when neither flag is given, and the page stays a single file with no
 network requests.
 
-<img src="docs/preview.png" width="850" alt="OpenFaceFX previewer: schematic mouth animating next to the viseme channel curves of a generated track"/>
+<img src="https://raw.githubusercontent.com/OpenFaceFX/OpenFaceFX/main/docs/preview.png" width="850" alt="OpenFaceFX previewer: schematic mouth animating next to the viseme channel curves of a generated track"/>
 
 *The built-in previewer playing a track generated from `examples/voice.wav` —
 schematic articulator on the left, the exported viseme curves with a scrubbing
