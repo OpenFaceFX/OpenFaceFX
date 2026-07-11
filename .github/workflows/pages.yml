@@ -91,6 +91,10 @@ jobs:
           vhs docs/quickstart.tape
       - name: Publish the GIF into the site
         run: cp docs/quickstart.gif site/quickstart.gif
+      - name: Write the custom-domain CNAME (openfacefx.com, issue-tracked in memory)
+        # Persists the GitHub Pages custom domain across workflow deploys so the
+        # site keeps serving on https://openfacefx.com and github.io redirects to it.
+        run: echo openfacefx.com > site/CNAME
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

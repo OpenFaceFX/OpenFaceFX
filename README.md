@@ -13,6 +13,7 @@
 [![Runtime deps](https://img.shields.io/badge/runtime%20deps-numpy%20only-6e7681.svg)](pyproject.toml)
 [![Status](https://img.shields.io/badge/status-alpha-e06c5b.svg)](#scope--honesty)
 [![Release](https://img.shields.io/github/v/release/OpenFaceFX/OpenFaceFX?color=f4b942)](https://github.com/OpenFaceFX/OpenFaceFX/releases)
+[![Buy Me a Coffee](https://img.shields.io/badge/support-buy%20me%20a%20coffee-ffdd00.svg?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/openfacefx)
 
 **[▶ Live demo](https://openfacefx.github.io/OpenFaceFX/demo/)** — no install, regenerated from the current pipeline on every push. **[Read the docs →](https://openfacefx.github.io/OpenFaceFX/docs/)**
 
@@ -1248,6 +1249,14 @@ docs/               logo, images, viseme gallery, quickstart tape, compatibility
 
 CI runs the test suite plus CLI and preview-builder smoke tests on every push,
 across Linux / Windows / macOS on Python 3.9, 3.12 and 3.13.
+
+## Support
+
+OpenFaceFX is free and MIT-licensed. If it saves you time, you can support
+development on **[Buy Me a Coffee](https://buymeacoffee.com/openfacefx)** — it
+funds new features, testing, and keeping the project free for everyone. Starring
+the repo, filing issues, and (once you've tried it in an engine) reporting how
+the `.lip` / FaceFXWrapper path works in-game help just as much.
 
 ## License
 
