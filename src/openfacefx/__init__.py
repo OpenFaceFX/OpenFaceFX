@@ -47,6 +47,7 @@ from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_unreal_notifies import write_unreal_notifies, notifies_to_dict
 from .export_live2d import write_live2d_motion, lipsync_param_ids
 from .export_godot import write_godot_anim
+from .export_gltf import write_gltf, build_gltf
 from .export_lip import (write_lip, lip_bytes, skyrim_mapping,
                         SKYRIM_SLOT_MAP)
 from .export_cues import (
@@ -109,6 +110,7 @@ __all__ = [
     "write_unity_anim", "NAMING_PRESETS",
     "write_unreal_notifies", "notifies_to_dict",
     "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",
+    "write_gltf", "build_gltf",
     "write_lip", "lip_bytes", "skyrim_mapping", "SKYRIM_SLOT_MAP",
     "dominant_cues", "write_rhubarb_tsv", "write_rhubarb_xml",
     "write_rhubarb_json", "write_moho_dat", "write_pgo",

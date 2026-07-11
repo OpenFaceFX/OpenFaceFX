@@ -720,6 +720,31 @@ sidecar), `diff` takes two tracks and never writes. Library callers get
 `diff_tracks(a, b, tolerance=…)`; pure numpy + stdlib. See
 [docs/api/inspect.md](docs/api/inspect.md).
 
+## Export vendor-neutral glTF 2.0
+
+Every other 3D exporter here is engine-specific; **glTF 2.0** (issue
+[#49](https://github.com/OpenFaceFX/OpenFaceFX/issues/49)) is the ISO/IEC 12113
+interchange standard imported by Blender, Three.js, Babylon, Godot, Unity, Unreal
+— and the base of **VRM**. Its animation natively drives **morph-target weights**,
+exactly OpenFaceFX's `[0,1]` viseme/blendshape model, so one portable file plays
+anywhere:
+
+```bash
+python -m openfacefx naive --text "..." --wav v.wav -o face.gltf   # JSON + base64 buffer
+python -m openfacefx convert track.json -o face.glb               # binary container
+python -m openfacefx convert track.json --gltf-head-node -o face.glb   # + head rotation
+```
+
+A stub mesh declares N morph targets named after the weight channels
+(`mesh.extras.targetNames`), a node references them, and one LINEAR animation
+drives the `weights` path; accessors are packed as little-endian FLOAT via numpy,
+`.glb` as a `struct` header + JSON + BIN chunk. Only `[0,1]` weight channels become
+morphs — signed head/eye pose channels are excluded by default (opt-in
+`--gltf-head-node` adds a separate `rotation` sampler). The Khronos glTF Validator
+is the external gate; the in-repo proof is a full accessor **round-trip**
+(reconstructs every channel within `1e-6`). Deterministic, numpy + stdlib. See
+[docs/api/gltf.md](docs/api/gltf.md).
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -986,6 +1011,7 @@ src/openfacefx/
   export_unity.py   Unity .anim AnimationClip writer
   export_live2d.py  Live2D Cubism motion3.json parameter-curve writer
   export_godot.py   Godot 4 .tres AnimationPlayer resource writer
+  export_gltf.py    glTF 2.0 morph-target animation (.gltf/.glb), vendor-neutral (#49) ← -o .gltf/.glb
   export_cues.py    Rhubarb TSV/XML/JSON, Moho/OpenToonz .dat, Papagayo .pgo cues
   retarget.py       viseme→rig remapping + presets          ← retarget rigs here
   bethesda.py       .fuz container / .lip header tools

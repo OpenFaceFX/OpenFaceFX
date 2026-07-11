@@ -255,6 +255,12 @@ def _write(track, out: str, args=None) -> None:
     if out.endswith(".tres"):
         _write_godot(track, out, args)
         return
+    if out.endswith((".gltf", ".glb")):
+        from .export_gltf import write_gltf
+        write_gltf(track, out, head_node=getattr(args, "gltf_head_node", False))
+        _say(args, f"wrote {out}: glTF 2.0 morph-target animation, "
+             f"{len(track.channels)} channels, {track.duration:.2f}s")
+        return
     cue_fmt = _cue_format(out, getattr(args, "cue_format", None))
     if cue_fmt:
         if getattr(args, "retarget", None):
@@ -336,6 +342,11 @@ def _add_output_options(p) -> None:
     p.add_argument("--godot-names",
                    help="JSON viseme->shape map for .tres output, overriding "
                         "--godot-naming with an explicit blendshape naming")
+    p.add_argument("--gltf-head-node", action="store_true",
+                   help="for .gltf/.glb output, also encode the signed head pose "
+                        "channels (headPitch/Yaw/Roll) as a separate node "
+                        "'rotation' (Euler->quaternion) animation, kept distinct "
+                        "from the [0,1] morph-weight targets")
     p.add_argument("--cue-format",
                    choices=["tsv", "xml", "json-cues", "dat", "pgo"],
                    help="write a stepped cue list instead of curves: Rhubarb "

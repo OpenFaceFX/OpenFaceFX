@@ -9,6 +9,31 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **glTF 2.0 morph-target animation exporter (`.gltf` / `.glb`)** (closes
+  [#49](https://github.com/OpenFaceFX/OpenFaceFX/issues/49)): a new
+  `openfacefx.export_gltf` module (`write_gltf`, `build_gltf`) and `.gltf`/`.glb`
+  output on all four generate commands and `convert` — the first **vendor-neutral**
+  3D asset (every other 3D exporter is engine-specific). glTF 2.0 is the ISO/IEC
+  12113 interchange standard imported by Blender / Three.js / Babylon / Godot /
+  Unity / Unreal and the base of VRM, and its animation natively drives
+  **morph-target weights**, exactly OpenFaceFX's `[0,1]` channel model.
+  - A stub `mesh` declares N morph targets named after the track's weight channels
+    via `mesh.extras.targetNames`, a `node` references them, and one LINEAR
+    `animation` drives the `weights` path; accessors are packed with numpy as
+    little-endian FLOAT (componentType 5126) — a strictly-increasing per-frame
+    `input` grid (with `min`/`max`) and a frame-major `output`, densified from the
+    sparse channels with `np.interp`. `.gltf` embeds the buffer as a base64
+    `data:` URI; `.glb` is the binary container (12-byte header + space-padded
+    JSON chunk + zero-padded BIN chunk) via stdlib `struct`.
+  - Only `[0,1]` weight channels become morphs; the signed head/eye **pose**
+    channels are excluded by default, with an opt-in `--gltf-head-node` encoding
+    `headPitch/Yaw/Roll` as a separate node `rotation` (Euler→quaternion) sampler.
+  - The Khronos glTF Validator is the documented external gate (it can't run in
+    this environment); the **in-repo proof is a full accessor round-trip** (pure
+    `json`/`base64`/`struct`) reconstructing every weight channel within `1e-6`
+    with all accessor `min`/`max`/`count`/`byteLength`, chunk alignment and
+    `componentType` asserted, for both `.gltf` and `.glb`. Deterministic bytes on
+    Python 3.9/3.13, numpy + stdlib only, additive.
 - **`diff` command: A/B track drift report with a tolerance-gated exit code**
   (closes [#50](https://github.com/OpenFaceFX/OpenFaceFX/issues/50)): a new
   `openfacefx.trackdiff` module (`diff_tracks`, `render_diff`) and a read-only

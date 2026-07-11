@@ -103,6 +103,7 @@ nav:
       - Timing & anchors: api/timing.md
       - Retargeting: api/retarget.md
       - Exporters: api/exporters.md
+      - glTF 2.0 export: api/gltf.md
       - Importing cue files: api/importers.md
       - Inspect & validate: api/inspect.md
       - Transforms (retime/mirror/trim): api/transforms.md
