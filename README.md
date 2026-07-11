@@ -206,6 +206,9 @@ python -m openfacefx batch --dir voice/ --out tracks/ --recurse --modified-only 
 For dialogue-scale runs, `--machine-readable` streams a live NDJSON progress log,
 `--ledger` keeps an append-only run trail, and `--cue-warnings` ranks cue
 outliers — see [Batch runs](#batch-runs-live-progress-a-run-ledger-and-cue-qa).
+Or drive the batch from a **localization string table** with
+`--manifest loc.csv` (one row per line, keyed by loc-ID) instead of a file tree —
+see [Loc-table manifests](#loc-table-manifests---manifest).
 
 Weighted many-to-many phoneme mapping and coarticulation timing are
 data/parameters, not code — see `examples/mappings/` and `CoartParams`.
@@ -970,6 +973,38 @@ integer count of cues shorter than `--min-cue` (default 0.03 s) or longer than
 tiebreaker so cue-heavy files surface alongside failures, low confidence and OOV.
 It is opt-in because adding the count would otherwise change `batch_summary.json`;
 without the flag the summary is byte-identical.
+
+### Loc-table manifests (`--manifest`)
+
+Real game VO is driven by a **localization string table**, not a directory of
+same-stem files: Unity / Godot / Unreal export String Table Collections keyed by
+a loc-ID, and FaceFX keys VO to an *entrytag*. `--manifest FILE` reads a CSV/TSV
+table and emits one track per row through the **same** pipeline, summary table,
+NDJSON stream and ledger — it just swaps the directory walk for a table read
+(the two modes are mutually exclusive):
+
+```bash
+python -m openfacefx batch --manifest loc.csv --out tracks/ --ledger runs.ndjson
+```
+
+```csv
+id,audio,text,language,character,mapping,style,out
+greeting_01,vo/en/guard_hello.wav,"Well met, traveler.",en,Guard,,,
+quest_intro,vo/en/mage_intro.wav,"The Zorblat awakens…",en,Mage,rigs/mage.json,whisper,quests/intro.json
+```
+
+Columns are matched **by header, forgivingly** (case / spacing / punctuation are
+ignored): `id`/`key`/`entrytag`, `audio`/`wav`/`voice`, `text`/`transcript`/`line`,
+`language`/`locale`, `character`/`speaker`, `mapping`/`rig`, `style`, and an
+optional explicit `out` (else `<id>.<ext>` under the tree). Paths resolve relative
+to the manifest. The `mapping` and `style` columns thread into that row's solve (a
+per-line rig or coarticulation preset); `language`/`character` ride along on the
+summary row. A **missing-audio, unreadable or malformed row is an isolated
+per-row failure** — the batch continues and it shows up as a failure in the
+summary, NDJSON and ledger, exactly like a bad file in directory mode. Parsing is
+stdlib `csv` only; CSV/TSV today, PO/XLIFF and pivoted one-column-per-locale
+tables are future follow-ups. With `--manifest` absent the directory-walk output
+is byte-identical.
 
 ## Plugging in a real aligner (stage 1)
 

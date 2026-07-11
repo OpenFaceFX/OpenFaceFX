@@ -8,6 +8,25 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Loc-table / dialogue-database batch driver (`batch --manifest`)** (closes
+  [#40](https://github.com/OpenFaceFX/OpenFaceFX/issues/40)): a new
+  `openfacefx.batch_manifest` module (`read_manifest`, `manifest_jobs`) and a
+  `--manifest FILE` flag that drives `batch` from a **localization string table**
+  — a CSV/TSV keyed by loc-ID, one row per line (`audio`, `text`, `language`,
+  `character`, optional `mapping`/`style`/`out`) — the way real game VO is
+  authored (Unity/Godot/Unreal String Table Collections, FaceFX entrytags),
+  instead of a directory of same-stem files. Each row emits one track through the
+  **same** pipeline, output writers, summary table, `--machine-readable` NDJSON
+  stream and `--ledger`; the `mapping`/`style` columns thread into that row's
+  solve and `language`/`character` ride along on the summary row. Columns are
+  header-matched forgivingly (case/spacing/punctuation ignored). A missing-audio,
+  unreadable or malformed row is an **isolated per-row failure** (the batch
+  continues, surfaced in summary + NDJSON + ledger), matching directory-mode
+  behaviour. Parsing is stdlib `csv` only (PO/XLIFF and pivoted one-column-per-
+  locale tables are noted future follow-ups). The directory-walk mode is
+  untouched — with `--manifest` absent its output is **byte-identical**.
+
 ## [0.15.0] — 2026-07-11
 
 ### Added

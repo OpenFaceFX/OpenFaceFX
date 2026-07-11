@@ -34,6 +34,7 @@ import sys
 from multiprocessing import Pool
 from typing import List, Optional
 
+from .coarticulation import style_params
 from .g2p import G2P
 from .alignment import load_mfa_textgrid
 from .io_export import to_dict, write_csv, write_json
@@ -79,12 +80,34 @@ def find_jobs(in_dir: str, out_dir: str, recurse: bool, ext: str) -> List[dict]:
     return jobs
 
 
+def _naive_track(text, job, cmudict_path, fps, mapping, params, row):
+    """The naive-path track for a transcript, from either a same-stem ``.txt``
+    file (directory mode) or an inline manifest ``text`` (issue #40). The
+    phoneme segments are returned alongside so the caller can run ``cue_flags``;
+    byte-identical to the old inline ``generate_naive(...)`` call."""
+    text = text.strip()
+    if not text:
+        raise ValueError("transcript file is empty")
+    g2p = G2P()
+    if cmudict_path:
+        g2p.load_cmudict(cmudict_path)
+    row["oov"] = g2p.oov_words(text)
+    dur = wav_duration(job["wav"])
+    segs = naive_segments(text, dur, g2p=g2p)
+    return segs, generate_from_alignment(segs, fps=fps, mapping=mapping,
+                                         params=params)
+
+
 def _process_one(args) -> dict:
     """Worker (top-level for Windows spawn): returns a summary row.
 
     ``cue`` is ``None`` (the byte-identical default: no ``cue_warnings`` key on
     the row) or a ``(min_dur, max_dur)`` pair, in which case the row gains an
-    integer ``cue_warnings`` count of phoneme cues outside those bounds."""
+    integer ``cue_warnings`` count of phoneme cues outside those bounds.
+
+    Manifest jobs (issue #40) additionally carry an ``id`` and per-row
+    ``mapping``/``style``/``text``/``language``/``character``; directory jobs
+    carry none of those keys, so their rows and tracks stay byte-identical."""
     job, mapping_path, cmudict_path, fps, cue = args
     # out is reported relative to the output tree: relpath against the CWD
     # breaks on Windows when they sit on different drives
@@ -93,30 +116,34 @@ def _process_one(args) -> dict:
                oov=[], min_confidence=None, mode=None)
     if cue is not None:
         row["cue_warnings"] = 0
+    if "id" in job:                      # manifest-only loc-table metadata
+        row["id"] = job["id"]
+        row["language"] = job.get("language")
+        row["character"] = job.get("character")
     try:
-        mapping = Mapping.from_json(mapping_path) if mapping_path else None
-        if job["textgrid"]:
+        # per-row mapping/style (manifest) fall back to the batch-global mapping
+        # and no style (None) -> directory mode is unchanged.
+        mapping_path_eff = job.get("mapping") or mapping_path
+        mapping = Mapping.from_json(mapping_path_eff) if mapping_path_eff else None
+        params = style_params(job["style"]) if job.get("style") else None
+        if job.get("textgrid"):
             row["mode"] = "mfa"
             segs = load_mfa_textgrid(job["textgrid"])
             confs = [s.confidence for s in segs if s.confidence is not None]
             if confs:
                 row["min_confidence"] = min(confs)
-            track = generate_from_alignment(segs, fps=fps, mapping=mapping)
-        elif job["txt"]:
+            track = generate_from_alignment(segs, fps=fps, mapping=mapping,
+                                            params=params)
+        elif job.get("text") is not None:            # manifest inline transcript
+            row["mode"] = "naive"
+            segs, track = _naive_track(job["text"], job, cmudict_path, fps,
+                                       mapping, params, row)
+        elif job.get("txt"):                          # directory same-stem .txt
             row["mode"] = "naive"
             with open(job["txt"], encoding="utf-8") as fh:
-                text = fh.read().strip()
-            if not text:
-                raise ValueError("transcript file is empty")
-            g2p = G2P()
-            if cmudict_path:
-                g2p.load_cmudict(cmudict_path)
-            row["oov"] = g2p.oov_words(text)
-            dur = wav_duration(job["wav"])
-            # inline of generate_naive so the phoneme segments are in hand for
-            # cue_flags; byte-identical to the old generate_naive(...) call.
-            segs = naive_segments(text, dur, g2p=g2p)
-            track = generate_from_alignment(segs, fps=fps, mapping=mapping)
+                text = fh.read()
+            segs, track = _naive_track(text, job, cmudict_path, fps, mapping,
+                                       params, row)
         else:
             raise FileNotFoundError(
                 "no transcript: expected same-stem .TextGrid or .txt")
@@ -187,7 +214,8 @@ def run_batch(in_dir: str, out_dir: str, recurse: bool = False,
               machine_readable: bool = False, quiet: bool = False,
               ledger: Optional[str] = None, cue_warnings: bool = False,
               min_cue: Optional[float] = None,
-              max_cue: Optional[float] = None) -> int:
+              max_cue: Optional[float] = None,
+              manifest_file: Optional[str] = None) -> int:
     """Returns a process exit code (0 = all ok, 1 = at least one failure).
 
     Every parameter after ``ext`` is additive and opt-in (issue #35); with the
@@ -196,7 +224,12 @@ def run_batch(in_dir: str, out_dir: str, recurse: bool = False,
     suppresses the human table (the summary JSON and any NDJSON/ledger are still
     written), ``ledger`` appends one NDJSON run record to a file, and
     ``cue_warnings`` folds ``qa.cue_flags()`` counts into each row and the
-    worst-first sort (``min_cue``/``max_cue`` default to qa's thresholds)."""
+    worst-first sort (``min_cue``/``max_cue`` default to qa's thresholds).
+
+    ``manifest_file`` (issue #40) selects the loc-table driver: instead of
+    walking ``in_dir``, read a CSV/TSV manifest and emit one track per row
+    through the same pipeline + writers + summary/NDJSON/ledger. With it absent
+    the directory-walk path is byte-identical."""
     lo = MIN_CUE if min_cue is None else min_cue
     hi = MAX_CUE if max_cue is None else max_cue
     cue = (lo, hi) if cue_warnings else None
@@ -221,23 +254,36 @@ def run_batch(in_dir: str, out_dir: str, recurse: bool = False,
                   "error": row["error"]})
 
     def args_snapshot() -> dict:
-        return {"dir": in_dir, "out": out_dir, "recurse": recurse,
+        snap = {"dir": in_dir, "out": out_dir, "recurse": recurse,
                 "modified_only": modified_only, "jobs": jobs, "ext": ext,
                 "mapping": mapping, "cmudict": cmudict, "fps": fps,
                 "cue_warnings": cue_warnings, "min_cue": lo, "max_cue": hi}
+        if manifest_file is not None:            # only in manifest mode -> the
+            snap["manifest"] = manifest_file     # directory-mode snapshot is
+        return snap                              # byte-identical
 
     def input_fingerprints(work: List[dict]) -> List[dict]:
         fps_out = []
         for job in work:
             st = _stamp(job["wav"]) or [None, None]
             kind = ("mfa" if job["textgrid"] else
-                    "naive" if job["txt"] else "none")
+                    "naive" if (job["txt"] or job.get("text")) else "none")
             fps_out.append({"file": job["rel"], "mtime": st[0], "size": st[1],
                             "transcript": kind})
         fps_out.sort(key=lambda r: r["file"])
         return fps_out
 
-    work = find_jobs(in_dir, out_dir, recurse, ext)
+    if manifest_file is not None:
+        from .batch_manifest import manifest_jobs, read_manifest
+        base = os.path.dirname(os.path.abspath(manifest_file))
+        try:
+            work = manifest_jobs(read_manifest(manifest_file), out_dir, ext, base)
+        except (OSError, ValueError) as exc:
+            if not quiet:
+                print(f"cannot read manifest {manifest_file}: {exc}")
+            return 1
+    else:
+        work = find_jobs(in_dir, out_dir, recurse, ext)
     if not work:
         emit({"event": "start", "total": 0, "todo": 0, "skipped": 0,
               "jobs": jobs, "ext": ext, "recurse": recurse})
@@ -249,7 +295,8 @@ def run_batch(in_dir: str, out_dir: str, recurse: bool = False,
                 outcome={"processed": 0, "failed": 0, "skipped": 0, "exit": 1},
                 ext=ext))
         if not quiet:
-            print(f"no .wav files found under {in_dir}")
+            print(f"no rows found in manifest {manifest_file}" if manifest_file
+                  else f"no .wav files found under {in_dir}")
         return 1
 
     manifest_path = os.path.join(out_dir, MANIFEST_NAME)
@@ -259,12 +306,21 @@ def run_batch(in_dir: str, out_dir: str, recurse: bool = False,
             manifest = json.load(fh)
 
     def fingerprint(job):
-        return {
+        fp = {
             "wav": _stamp(job["wav"]),
             "transcript": _stamp(job["textgrid"] or job["txt"] or ""),
             "mapping": _stamp(mapping) if mapping else None,
             "out": job["out"],
         }
+        # manifest jobs carry the transcript inline and may name a per-row
+        # mapping; fold both into the modified-only key. Directory jobs have
+        # neither, so their manifest fingerprint stays byte-identical.
+        if job.get("text") is not None:
+            fp["text"] = hashlib.sha256(
+                job["text"].encode("utf-8")).hexdigest()[:16]
+        if job.get("mapping"):
+            fp["mapping"] = _stamp(job["mapping"])
+        return fp
 
     todo, skipped = [], 0
     for job in work:

@@ -1196,8 +1196,13 @@ def main(argv=None) -> int:
                     help="target game (Skyrim only; #12)")
 
     b = sub.add_parser("batch", help="process a directory tree of voice lines")
-    b.add_argument("--dir", required=True, help="input tree of .wav files "
-                   "with same-stem .TextGrid or .txt transcripts")
+    b.add_argument("--dir", help="input tree of .wav files with same-stem "
+                   ".TextGrid or .txt transcripts (directory-walk mode; mutually "
+                   "exclusive with --manifest)")
+    b.add_argument("--manifest", help="a CSV/TSV loc-table driving one track per "
+                   "row (issue #40): header-mapped id/audio/text/language/"
+                   "character/mapping/style/out columns. Selects manifest mode; "
+                   "the directory-walk mode is untouched")
     b.add_argument("--out", required=True, help="mirrored output tree")
     b.add_argument("--recurse", action="store_true")
     b.add_argument("--modified-only", action="store_true",
@@ -1303,6 +1308,8 @@ def main(argv=None) -> int:
 
     if args.cmd == "batch":
         from .batch import run_batch
+        if bool(args.dir) == bool(args.manifest):
+            raise SystemExit("batch needs exactly one of --dir or --manifest")
         lo, hi = _cue_thresholds(args) if args.cue_warnings else (None, None)
         return run_batch(args.dir, args.out, recurse=args.recurse,
                          modified_only=args.modified_only, jobs=args.jobs,
@@ -1312,7 +1319,8 @@ def main(argv=None) -> int:
                          machine_readable=args.machine_readable,
                          quiet=args.quiet, ledger=args.ledger,
                          cue_warnings=args.cue_warnings,
-                         min_cue=lo, max_cue=hi)
+                         min_cue=lo, max_cue=hi,
+                         manifest_file=args.manifest)
 
     if args.cmd == "emotion":
         from .io_export import read_json
