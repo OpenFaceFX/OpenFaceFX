@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-07-11
+
 ### Added
 - **Multi-language pronunciation framework** (closes
   [#8](https://github.com/OpenFaceFX/OpenFaceFX/issues/8)): the grapheme-to-phoneme
