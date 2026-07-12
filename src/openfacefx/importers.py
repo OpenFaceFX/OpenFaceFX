@@ -141,11 +141,16 @@ def _switch_intervals(rows: List[Tuple[float, str]]) -> Tuple[List[Interval], fl
 
 def parse_rhubarb_tsv(text: str) -> Tuple[List[Interval], float]:
     rows: List[Tuple[float, str]] = []
-    for ln in _nonblank(text):
+    for i, ln in enumerate(_nonblank(text), 1):
         parts = ln.split("\t")
         if len(parts) != 2:
-            raise ValueError(f"rhubarb tsv: expected 'start<TAB>shape', got {ln!r}")
-        rows.append((float(parts[0]), parts[1].strip()))
+            raise ValueError(f"rhubarb tsv line {i}: expected 'start<TAB>shape', got {ln!r}")
+        try:
+            start = float(parts[0])
+        except ValueError:
+            raise ValueError(
+                f"rhubarb tsv line {i}: non-numeric start time {parts[0]!r}") from None
+        rows.append((start, parts[1].strip()))
     return _switch_intervals(rows)
 
 
@@ -156,9 +161,16 @@ def parse_rhubarb_xml(text: str) -> Tuple[List[Interval], float]:
         raise ValueError(f"rhubarb xml: not well-formed ({e})") from None
     cues = root.find("mouthCues")
     intervals: List[Interval] = []
-    for mc in (list(cues) if cues is not None else []):
-        intervals.append((float(mc.get("start")), float(mc.get("end")),
-                          (mc.text or "").strip()))
+    for i, mc in enumerate(list(cues) if cues is not None else []):
+        start, end = mc.get("start"), mc.get("end")
+        if start is None or end is None:
+            raise ValueError(
+                f"rhubarb xml: <mouthCue> {i} missing 'start'/'end' attribute")
+        try:
+            intervals.append((float(start), float(end), (mc.text or "").strip()))
+        except ValueError:
+            raise ValueError(f"rhubarb xml: <mouthCue> {i} non-numeric start/end "
+                             f"({start!r}, {end!r})") from None
     dur_el = root.find("metadata/duration")
     dur = (float(dur_el.text) if dur_el is not None and dur_el.text
            else (intervals[-1][1] if intervals else 0.0))
@@ -173,8 +185,22 @@ def parse_rhubarb_json(text: str) -> Tuple[List[Interval], float]:
     if not isinstance(d, dict) or "mouthCues" not in d:
         raise ValueError("rhubarb json: no 'mouthCues' array "
                          "(is this an openfacefx.track, not a cue file?)")
-    intervals = [(float(c["start"]), float(c["end"]), str(c["value"]))
-                 for c in d["mouthCues"]]
+    cues = d["mouthCues"]
+    if not isinstance(cues, list):
+        raise ValueError(
+            f"rhubarb json: 'mouthCues' must be a list, got {type(cues).__name__}")
+    intervals: List[Interval] = []
+    for i, c in enumerate(cues):
+        if not isinstance(c, dict):
+            raise ValueError(
+                f"rhubarb json: cue {i} must be an object, got {type(c).__name__}")
+        if "start" not in c or "end" not in c or "value" not in c:
+            raise ValueError(
+                f"rhubarb json: cue {i} missing required 'start'/'end'/'value'")
+        try:
+            intervals.append((float(c["start"]), float(c["end"]), str(c["value"])))
+        except (TypeError, ValueError):
+            raise ValueError(f"rhubarb json: cue {i} has non-numeric start/end") from None
     meta = d.get("metadata") or {}
     dur = float(meta.get("duration", intervals[-1][1] if intervals else 0.0))
     return intervals, dur

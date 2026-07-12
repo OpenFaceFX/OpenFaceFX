@@ -235,6 +235,11 @@ def event_from_dict(d: Dict) -> Event:
     """Inverse of :func:`event_to_dict`. Unknown keys are ignored (the additive
     forward-compat rule); missing optional keys fall back to :class:`Event`
     defaults."""
+    if not isinstance(d, dict):
+        raise ValueError(f"event: expected an object, got {type(d).__name__}")
+    for req in ("t", "type", "name"):
+        if req not in d:
+            raise ValueError(f"event: missing required {req!r} (got keys {sorted(d)})")
     return Event(
         t=float(d["t"]),
         type=str(d["type"]),
@@ -270,23 +275,22 @@ def variants_to_dict(v: Variants) -> Dict:
 
 def variants_from_dict(d: Dict) -> Variants:
     """Inverse of :func:`variants_to_dict`."""
-    return Variants(
-        line_id=d.get("line_id"),
-        groups=[
-            VariantGroup(
-                group=str(g["group"]),
-                seed_salt=str(g.get("seed_salt", "")),
-                alternatives=[
-                    Alternative(
-                        weight=float(a.get("weight", 1.0)),
-                        events=[event_from_dict(e) for e in a.get("events", [])],
-                    )
-                    for a in g.get("alternatives", [])
-                ],
-            )
-            for g in d.get("groups", [])
-        ],
-    )
+    groups = []
+    for i, g in enumerate(d.get("groups", [])):
+        if not isinstance(g, dict) or "group" not in g:
+            raise ValueError(f"variant group {i}: missing required 'group'")
+        groups.append(VariantGroup(
+            group=str(g["group"]),
+            seed_salt=str(g.get("seed_salt", "")),
+            alternatives=[
+                Alternative(
+                    weight=float(a.get("weight", 1.0)),
+                    events=[event_from_dict(e) for e in a.get("events", [])],
+                )
+                for a in g.get("alternatives", [])
+            ],
+        ))
+    return Variants(line_id=d.get("line_id"), groups=groups)
 
 
 def read_events(track_dict: Dict) -> Tuple[List[Event], Optional[Variants]]:

@@ -108,3 +108,23 @@ def test_write_vmd_file(tmp_path):
     p = tmp_path / "m.vmd"
     write_vmd(_fixture_track(), str(p))
     assert p.read_bytes() == vmd_bytes(_fixture_track())
+
+
+# --------------------------------------------------------------------------- #
+# BH1: negative keyframe times (anticipatory/preroll) must not crash the writer #
+# --------------------------------------------------------------------------- #
+
+def test_vmd_negative_keyframe_time_clamps_to_frame_zero():
+    # a negative-time key would make struct.pack("<I", ...) throw; it clamps to
+    # frame 0 (mirroring export_gltf), so a legit lead/preroll track writes fine.
+    track = FaceTrack(fps=30, channels=[
+        Channel("aa", [Keyframe(-0.2, 0.0), Keyframe(0.5, 1.0)])])
+    _, _, _, frames, _ = _parse_vmd(vmd_bytes(track))
+    assert frames and min(f for _, f, _ in frames) == 0     # no negative frame#
+
+
+@pytest.mark.parametrize("fps", [0.0, -30.0, float("inf"), float("nan")])
+def test_vmd_bad_fps_raises(fps):
+    track = FaceTrack(fps=30, channels=[Channel("aa", [Keyframe(0.0, 1.0)])])
+    with pytest.raises(ValueError, match="fps must be a finite value > 0"):
+        vmd_bytes(track, fps=fps)

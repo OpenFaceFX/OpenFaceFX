@@ -391,3 +391,37 @@ def test_cli_naive_srt_text_mismatch_is_reported(tmp_path):
         cli_main(["naive", "--anchors", str(src), "--anchors-format", "srt",
                   "--text", "completely different narration", "--duration", "3.0",
                   "-o", str(tmp_path / "o.json")])
+
+
+# --------------------------------------------------------------------------- #
+# B2: validation-path coverage for the anchor/word-timing parsers               #
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("call, match", [
+    (lambda: parse_word_anchors("[123]"), "word-anchors: item 0 is not an object"),
+    (lambda: parse_word_anchors("[{}]"), "word-anchors: item 0 needs a string 'text'"),
+    (lambda: from_azure_word_boundaries("[123]"), "azure-words: event 0 is not an object"),
+    (lambda: from_elevenlabs_alignment("[]"), "elevenlabs: expected a JSON object"),
+    (lambda: from_elevenlabs_alignment("{}"), "no 'alignment' or 'normalized_alignment'"),
+    (lambda: from_kokoro_tokens("[123]"), "kokoro: token 0 is not an object"),
+    (lambda: from_google_timepoints("[123]", "hi"), "google: timepoint 0 is not an object"),
+])
+def test_anchor_parser_malformed_raises(call, match):
+    with pytest.raises(ValueError, match=match):
+        call()
+
+
+def test_non_lexical_anchor_becomes_a_silence_segment():
+    # an anchor whose text matches no transcript word (e.g. a musical note) pins a
+    # silence span, not a crash (the anchors.py non-lexical branch).
+    segs = anchored_segments("hello world", 2.0, anchors=[
+        Anchor("♪", 0.0, 0.5), Anchor("hello", 0.5, 1.0),
+        Anchor("world", 1.0, 2.0)])
+    assert any(s.phoneme == SILENCE and s.start <= 0.01 and s.end >= 0.49
+               for s in segs)
+
+
+def test_bh2_anchor_non_finite_time_rejected():
+    # BH2: _num rejects NaN/Infinity (json.loads parses both) before the solver
+    with pytest.raises(ValueError, match="must be finite"):
+        parse_word_anchors('[{"text": "a", "start": Infinity, "end": 0.1}]')

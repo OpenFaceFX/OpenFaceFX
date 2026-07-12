@@ -462,6 +462,26 @@ def test_cli_from_timing_pho_explicit_mapping_overrides_ipa(tmp_path):
     assert max(k[1] for k in pp["keys"]) >= 0.5
 
 
+# --------------------------------------------------------------------------- #
+# BH2/BH3: non-finite times and negative durations must raise, not reach solver #
+# --------------------------------------------------------------------------- #
+
+def test_bh2_non_finite_time_rejected():
+    # json.loads parses NaN/Infinity; a non-finite time would crash int(round(t*fps))
+    with pytest.raises(ValueError, match="must be finite"):
+        T.parse_cartesia(json.dumps({"phoneme_timestamps": {
+            "phonemes": ["a"], "start": [float("nan")], "end": [0.1]}}))
+    with pytest.raises(ValueError, match="must be finite"):
+        T.parse_azure_visemes('[{"audio_offset": Infinity, "viseme_id": 1}]')
+
+
+def test_bh3_voicevox_negative_mora_duration_rejected():
+    with pytest.raises(ValueError, match="negative duration"):
+        T.parse_voicevox(json.dumps({"accent_phrases": [
+            {"moras": [{"vowel": "a", "vowel_length": -0.1}]}],
+            "prePhonemeLength": 0, "postPhonemeLength": 0, "speedScale": 1}))
+
+
 def test_cli_from_timing_piper_sample_rate(tmp_path):
     out = _run(tmp_path, "a.json", PIPER, "piper", ("--sample-rate", "22050"))
     d = _assert_track_invariants(out)

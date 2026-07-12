@@ -154,3 +154,38 @@ def test_adapters_are_additive_no_anchors_unchanged(tmp_path):
     assert cli_main(["naive", "--text", "hello world", "--duration", "1.5",
                      "-o", b]) == 0
     assert open(a, "rb").read() == open(b, "rb").read()
+
+
+# --------------------------------------------------------------------------- #
+# B1 (issue #54): validation-path coverage for the Whisper/Gentle adapters      #
+# --------------------------------------------------------------------------- #
+
+def test_whisper_json_accepts_bare_word_array():
+    # REGRESSION: a bare top-level array (some wrappers emit this) stays valid.
+    anchors = from_whisper_json('[{"word": "a", "start": 0.0, "end": 0.1}]')
+    assert [a.text for a in anchors] == ["a"]
+
+
+@pytest.mark.parametrize("fn, text, match", [
+    (from_whisper_json, '{"words": [123]}', "whisper: word 0 is not an object"),
+    (from_whisper_json, '{"words": [{"start": 0}]}', "word 0 needs a 'word'/'text' string"),
+    (from_whisper_json, '{"foo": 1}', "expected 'segments"),
+    (from_whisper_json, '{"words": [{"word": ".", "start": 0.0}]}', "no aligned words"),
+    (from_whisperx, '{}', "whisperx: expected a 'segments' array"),
+    (from_gentle, '{"words": [123]}', "gentle: word 0 is not an object"),
+    (from_gentle, '{"words": [{"case": "not-found-in-audio"}]}', "no successfully-aligned"),
+    (from_gentle_phones, '{"words": [{"case": "success", "start": 0.0, "phones": [1]}]}',
+     "phone 0 is not an object"),
+    (from_gentle_phones, '{"words": [{"case": "not-found-in-audio"}]}', "no aligned phones"),
+])
+def test_aligner_malformed_input_raises_valueerror(fn, text, match):
+    with pytest.raises(ValueError, match=match):
+        fn(text)
+
+
+def test_gentle_drops_unaligned_success_word_keeps_the_rest():
+    # a success word with no 'start' is DROPPED (not crashed); the aligned one stays
+    anchors = from_gentle('{"words": ['
+                          '{"case": "success", "word": "hi"},'
+                          '{"case": "success", "word": "world", "start": 0.5, "end": 1.0}]}')
+    assert [a.text for a in anchors] == ["world"]

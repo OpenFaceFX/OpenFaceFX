@@ -85,7 +85,11 @@ def _morph_frames(track: FaceTrack, fps: float, morph_map: Dict[str, str]
     frames: Dict[Tuple[str, int], float] = {}
     for ch in baked.channels:
         for k in ch.keys:
-            frames[(ch.name, int(round(k.time * fps)))] = float(k.value)
+            # VMD frame numbers are uint32: clamp a negative (anticipatory /
+            # preroll) keyframe time to frame 0, exactly as export_gltf does, so a
+            # legit negative-time track doesn't crash struct.pack("<I", ...).
+            fno = max(int(round(k.time * fps)), 0)
+            frames[(ch.name, fno)] = float(k.value)
     return [(name, fno, w) for (name, fno), w in
             sorted(frames.items(), key=lambda kv: (kv[0][0], kv[0][1]))]
 
@@ -103,6 +107,9 @@ def vmd_bytes(track: FaceTrack, *, model_name: str = _DEFAULT_MODEL_NAME,
     interpreter, so the bytes are identical on py3.9 and py3.13.
     """
     fps = _DEFAULT_FPS if fps is None else fps
+    if not (isinstance(fps, (int, float)) and not isinstance(fps, bool)
+            and 0.0 < fps < float("inf")):
+        raise ValueError(f"vmd: fps must be a finite value > 0, got {fps!r}")
     morph_map = DEFAULT_MORPH_MAP if morph_map is None else morph_map
     triples = _morph_frames(track, fps, morph_map)
 

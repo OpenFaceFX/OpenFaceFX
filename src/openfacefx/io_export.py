@@ -71,18 +71,40 @@ def from_dict(d: Dict) -> FaceTrack:
     equal to the built-in Oculus set restores the ``target_set=None`` sentinel, so
     ``to_dict(from_dict(d)) == d`` byte-for-byte. Unknown top-level keys (e.g.
     ``source_id``) are ignored, per the additive forward-compat rule."""
+    if not isinstance(d, dict):
+        raise ValueError(f"track: expected a JSON object, got {type(d).__name__}")
     if d.get("format") != "openfacefx.track" or d.get("version") != 1:
         raise ValueError(
             f"expected format 'openfacefx.track' version 1, got "
             f"{d.get('format')!r} version {d.get('version')!r}")
-    channels = [
-        Channel(str(c["name"]),
-                [Keyframe(float(t), float(v)) for t, v in c["keys"]])
-        for c in d.get("channels", [])
-    ]
+    if "fps" not in d:
+        raise ValueError("track: missing required 'fps'")
+    try:
+        fps = float(d["fps"])
+    except (TypeError, ValueError):
+        raise ValueError(f"track: 'fps' must be a number, got {d['fps']!r}") from None
+    raw = d.get("channels", [])
+    if not isinstance(raw, list):
+        raise ValueError(f"track: 'channels' must be a list, got {type(raw).__name__}")
+    channels = []
+    for i, c in enumerate(raw):
+        if not isinstance(c, dict):
+            raise ValueError(f"track: channel {i} must be an object, got {type(c).__name__}")
+        if "name" not in c or "keys" not in c:
+            raise ValueError(f"track: channel {i} missing required 'name'/'keys'")
+        keys = []
+        for j, k in enumerate(c["keys"]):
+            try:
+                t, v = k
+                keys.append(Keyframe(float(t), float(v)))
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"track: channel {i} ({c['name']!r}) key {j} must be a "
+                    f"[time, value] number pair, got {k!r}") from None
+        channels.append(Channel(str(c["name"]), keys))
     vs = d.get("viseme_set")
     target_set = None if (vs is None or list(vs) == VISEMES) else list(vs)
-    track = FaceTrack(fps=float(d["fps"]), channels=channels, target_set=target_set)
+    track = FaceTrack(fps=fps, channels=channels, target_set=target_set)
     from .events import read_events
     track.events, track.variants = read_events(d)
     if "layers" in d:                       # issue #39: optional layered block

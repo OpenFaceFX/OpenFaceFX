@@ -254,3 +254,21 @@ def test_nonnasal_lip_open_caps_closed_lip_bleed():
     # the lip-open constraint reduces the peak closed-lip weight over the clip
     assert opened[:, pp].max() <= only_close[:, pp].max()
     assert opened[:, pp].max() <= 0.90                    # not a full closure
+
+
+# --------------------------------------------------------------------------- #
+# Part C: tongue-no-lip on the BUILT-IN map (mapping=None) — the default --jali #
+# rig branch, previously only exercised through a custom Mapping.               #
+# --------------------------------------------------------------------------- #
+
+def test_tongue_no_lip_on_builtin_map_keeps_lips_quiet():
+    segs = _segs("little dot land", 1.5)          # l/t/d/n tongue phonemes + vowels
+    pp, ff = VISEME_INDEX["PP"], VISEME_INDEX["FF"]
+    m = build_viseme_curves(segs, 60.0, mapping=None,
+                            params=CoartParams(jali=True,
+                                               jali_rules=("tongue_no_lip",)))[1]
+    # exercises the mapping=None branch of mask_tongue_lips; the tongue visemes
+    # never drive the lips-class channels (PP/FF stay at rest)
+    assert m[:, pp].max() < 1e-9 and m[:, ff].max() < 1e-9
+    dd, nn = VISEME_INDEX["DD"], VISEME_INDEX["nn"]
+    assert m[:, dd].max() > 0.1 or m[:, nn].max() > 0.1   # tongue visemes do fire

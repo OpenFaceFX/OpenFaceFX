@@ -29,6 +29,19 @@ def wav_duration(path: str) -> float:
         return w.getnframes() / float(w.getframerate())
 
 
+def _require_positive(value, name: str) -> None:
+    """Validate a positive, finite fps/duration at a pipeline boundary. ``fps=0``
+    would divide-by-zero in the frame grid (empty/NaN track written silently);
+    a non-positive duration yields a degenerate track — both raise a clear
+    ValueError here instead (mirrors ``anchors.anchored_segments``)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a number, got {value!r}") from None
+    if not (0.0 < v < float("inf")):
+        raise ValueError(f"{name} must be a finite value > 0, got {value!r}")
+
+
 def generate_from_alignment(
     segments: List[PhonemeSegment],
     fps: float = 60.0,
@@ -43,6 +56,7 @@ def generate_from_alignment(
     channels after viseme reduction. Off (``None``) leaves output byte-identical.
     ``wav`` supplies the audio those energy-driven brows/nods read; without it
     they degrade gracefully (stress still comes from the segments)."""
+    _require_positive(fps, "fps")
     times, matrix = build_viseme_curves(segments, fps=fps, mapping=mapping,
                                         params=params)
     targets = mapping.targets if mapping is not None else None
@@ -130,6 +144,7 @@ def naive_segments(
     This is the phoneme-timing layer the curve solver consumes; exporters that
     need phonemes rather than visemes (e.g. Bethesda .LIP) start here.
     """
+    _require_positive(duration, "duration")
     g2p = g2p or G2P()
     # Pad with silence at both ends so the mouth starts and ends relaxed.
     phones = [SILENCE] + g2p.phrase(text) + [SILENCE]
@@ -158,6 +173,8 @@ def generate_naive(
     chunk/silence the timeline. Both default off, so the plain naive path is
     byte-identical; a ``parse_tags`` run on a transcript that carries no tags is
     byte-identical too."""
+    _require_positive(fps, "fps")
+    _require_positive(duration, "duration")
     if preprocess is not None:
         text = preprocess(text)
     if parse_tags:

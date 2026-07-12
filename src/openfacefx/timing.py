@@ -17,18 +17,11 @@ dump into a list of them. From there:
 Only start times are guaranteed; ``resolve_ends`` fills any missing end from the
 next event's start (Azure/Polly), with a configurable final-event duration.
 
-Time units per vendor, all converted to float seconds:
-  * MBROLA .pho   -- per-phoneme duration in **milliseconds**, cumulative.
-  * Piper         -- per-phoneme audio **sample counts** / voice sample_rate.
-  * Cartesia      -- explicit start/end **seconds**.
-  * Azure viseme  -- audio offset in **100-ns ticks** (ticks / 10000 = ms).
-  * Polly marks   -- ``time`` in integer **milliseconds**.
-  * VOICEVOX      -- per-mora consonant/vowel durations in **seconds** ÷ ``speedScale``.
-
-Parsers are pure stdlib text/JSON (numpy is not imported here) and reject
-malformed input with a clear ValueError. Field names for the SDK-event sources
-(Azure viseme JSON; the espeak C API phoneme path) are set by the ~10-line
-capture scripts in docs/timing.md; the parsers also accept the obvious aliases.
+Time units, all -> float seconds: MBROLA .pho ms (cumulative); Piper sample-counts
+/ sample_rate; Cartesia start/end seconds; Azure 100-ns ticks (/1e4 = ms); Polly
+ms; VOICEVOX per-mora seconds ÷ speedScale. Parsers are pure stdlib text/JSON (no
+numpy), reject malformed input with a clear ValueError, and accept the obvious
+field-name aliases (capture scripts: docs/timing.md).
 """
 
 from __future__ import annotations
@@ -49,6 +42,12 @@ class TimingEvent:
     symbol: str                     # phoneme label or vendor viseme symbol
     start: float                    # seconds
     end: Optional[float] = None     # seconds; None until resolve_ends fills it
+
+    def __post_init__(self):
+        # reject NaN/Infinity (json.loads parses both) — a non-finite time crashes the solver
+        for lbl, x in (("start", self.start), ("end", self.end)):
+            if x is not None and not (float("-inf") < x < float("inf")):
+                raise ValueError(f"TimingEvent {lbl} must be finite, got {x!r}")
 
 
 def resolve_ends(events: List[TimingEvent],
@@ -322,6 +321,8 @@ def parse_voicevox(json_text: str) -> List[TimingEvent]:
             step = float(dur) / speed
         except (TypeError, ValueError):
             raise ValueError(f"voicevox: non-numeric duration {dur!r} for {symbol!r}") from None
+        if step < 0.0:                                # negative mora/pause length
+            raise ValueError(f"voicevox: negative duration {dur!r} for {symbol!r}")
         events.append(TimingEvent("viseme", symbol, clock[0], clock[0] + step))
         clock[0] += step
 

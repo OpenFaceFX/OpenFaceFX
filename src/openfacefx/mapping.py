@@ -109,6 +109,9 @@ class Mapping:
                 key = strip_stress(ph).upper() if ph != SILENCE else SILENCE
                 if key != SILENCE and key not in ARPABET:
                     raise ValueError(f"unknown phoneme {ph!r} in mapping")
+            if not isinstance(row, dict):
+                raise ValueError(
+                    f"phoneme {ph!r}: must map target->weight, got {row!r}")
             for tname, w in row.items():
                 if tname not in self.index:
                     raise ValueError(
@@ -161,7 +164,7 @@ class Mapping:
                               float(t.get("min", 0.0)), float(t.get("max", 1.0)),
                               float(t.get("gain", 1.0)), float(t.get("offset", 0.0)))
                        for t in d["targets"]]
-        except (KeyError, TypeError) as e:
+        except (KeyError, TypeError, ValueError) as e:
             raise ValueError(f"{path}: malformed targets entry ({e})") from None
         phonemes = d.get("phonemes")
         if not isinstance(phonemes, dict) or not phonemes:

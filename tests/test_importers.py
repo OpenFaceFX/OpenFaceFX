@@ -312,3 +312,26 @@ def test_cli_from_cues_unknown_shape_exits(tmp_path):
         fh.write("0.00\tQ\n0.50\tA\n1.00\tX\n")
     with pytest.raises(SystemExit):
         cli_main(["from-cues", bad, "-o", str(tmp_path / "x.json")])
+
+
+# --------------------------------------------------------------------------- #
+# B4: validation-path coverage for the moho/papagayo parsers + the dispatcher   #
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("call, match", [
+    (lambda: parse_moho_dat("nope\n1 A\n", 30.0), "first line must be 'MohoSwitch1'"),
+    (lambda: parse_moho_dat("MohoSwitch1\ngarbage here\n", 30.0),
+     r"expected '<frame> <shape>'"),
+    (lambda: parse_pgo("not a pgo file\n"), r"first line must be 'lipsync version"),
+    (lambda: parse_rhubarb_tsv("1.0\tA\n0.5\tB\n"), "cue times must be non-decreasing"),
+])
+def test_b4_importer_malformed_raises(call, match):
+    with pytest.raises(ValueError, match=match):
+        call()
+
+
+def test_b4_import_cues_unknown_format_raises(tmp_path):
+    p = tmp_path / "x.txt"
+    p.write_text("whatever\n")
+    with pytest.raises(ValueError, match="unknown cue format 'bogus'"):
+        import_cues(str(p), fmt="bogus")

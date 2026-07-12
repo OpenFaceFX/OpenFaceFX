@@ -380,7 +380,7 @@ def _add_output_options(p) -> None:
                    help="model name embedded in .vmd output (ShiftJIS, <=20 "
                         "bytes; MMD shows it but a morph-only motion ignores it; "
                         "default: OpenFaceFX)")
-    p.add_argument("--vmd-fps", type=float, default=30.0,
+    p.add_argument("--vmd-fps", type=_positive_float, default=30.0,
                    help="frame rate for .vmd frame numbers (MMD-native default "
                         "30; frame# = round(time*fps), independent of the solver "
                         "sampling fps)")
@@ -984,6 +984,19 @@ def _emotion_clamps(args):
     return out
 
 
+def _positive_float(s: str) -> float:
+    """argparse ``type`` for a scalar --fps/--duration on the generate commands: a
+    finite value > 0 (``fps=0`` divides-by-zero into an empty/NaN track; a
+    non-positive duration is degenerate). A clear ``error:`` at the CLI boundary."""
+    try:
+        v = float(s)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(f"expected a number, got {s!r}")
+    if not (0.0 < v < float("inf")):
+        raise argparse.ArgumentTypeError(f"must be a finite value > 0, got {s!r}")
+    return v
+
+
 def main(argv=None) -> int:
     # FaceFXWrapper.exe drop-in shim (issue #33): intercept BEFORE argparse so the
     # raw positional args pass through verbatim. A real consumer command carries
@@ -1002,14 +1015,14 @@ def main(argv=None) -> int:
                    "--anchors-format srt supplies it from the cue text)")
     g = n.add_mutually_exclusive_group(required=True)
     g.add_argument("--wav", help="WAV file to read duration from")
-    g.add_argument("--duration", type=float, help="duration in seconds")
+    g.add_argument("--duration", type=_positive_float, help="duration in seconds")
     n.add_argument("--cmudict", help="optional CMUdict file for better G2P")
     n.add_argument("--anchors", help="word/segment timing file that pins the "
                    "aligner at known boundaries (SRT cues or TTS word timings)")
     n.add_argument("--anchors-format", choices=_ANCHOR_FORMATS,
                    help="format of --anchors: srt|words|azure|elevenlabs|kokoro|"
                         "google (only valid together with --anchors)")
-    n.add_argument("--fps", type=float, default=60.0)
+    n.add_argument("--fps", type=_positive_float, default=60.0)
     n.add_argument("-o", "--out", required=True)
     n.add_argument("--emit-segments", metavar="PATH",
                    help="also write phoneme segments as JSON for the HTML "
@@ -1056,7 +1069,7 @@ def main(argv=None) -> int:
                    "read: energy-scaled --gestures and --prosody events (the "
                    "TextGrid alone has no audio). Without it those layers degrade "
                    "to timing-only / are unavailable")
-    m.add_argument("--fps", type=float, default=60.0)
+    m.add_argument("--fps", type=_positive_float, default=60.0)
     m.add_argument("-o", "--out", required=True)
     m.add_argument("--emit-segments", metavar="PATH",
                    help="also write phoneme segments as JSON for the HTML "
@@ -1083,7 +1096,7 @@ def main(argv=None) -> int:
     t.add_argument("--final-duration", type=float, default=0.08,
                    help="seconds held by the last start-only event "
                         "(azure/polly); default 0.08")
-    t.add_argument("--fps", type=float, default=60.0)
+    t.add_argument("--fps", type=_positive_float, default=60.0)
     t.add_argument("-o", "--out", required=True)
     _add_output_options(t)
     _add_coart_options(t)
@@ -1099,7 +1112,7 @@ def main(argv=None) -> int:
     fc.add_argument("--format", choices=["tsv", "xml", "json-cues", "dat", "pgo"],
                     help="override the format (else auto-detected by extension + "
                          "first line); json-cues reads a Rhubarb JSON, not a track")
-    fc.add_argument("--fps", type=float,
+    fc.add_argument("--fps", type=_positive_float,
                     help="frame rate for the rate-less Moho .dat (default 24); "
                          "Papagayo .pgo carries its own and Rhubarb is seconds-"
                          "based (reconstructed at 100 fps), so this is ignored there")
@@ -1290,7 +1303,7 @@ def main(argv=None) -> int:
     e.add_argument("--intensity", type=float, default=1.0,
                    help="gain on the mouth opening (1.0 = as-is; >1 opens "
                         "wider on quiet speech, <1 is subtler)")
-    e.add_argument("--fps", type=float, default=60.0)
+    e.add_argument("--fps", type=_positive_float, default=60.0)
     e.add_argument("-o", "--out", required=True)
     _add_output_options(e)
     _add_smoothing_options(e)

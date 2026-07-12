@@ -476,7 +476,10 @@ def _first(d, keys):
 def _num(x, what):
     if isinstance(x, bool) or not isinstance(x, (int, float)):
         raise ValueError(f"{what} must be a number, got {x!r}")
-    return float(x)
+    v = float(x)
+    if v != v or v in (float("inf"), float("-inf")):   # NaN / Infinity (json.loads
+        raise ValueError(f"{what} must be finite, got {x!r}")  # parses both by default)
+    return v
 
 
 def _xml_escape(s: str) -> str:
