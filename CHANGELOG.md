@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-12
+
 ### Added
 - **MikuMikuDance `.vmd` exporter** ([#57](https://github.com/OpenFaceFX/OpenFaceFX/issues/57)):
   `write_vmd(track, path, ...)` + `vmd_bytes(track) -> bytes` in a new

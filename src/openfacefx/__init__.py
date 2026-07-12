@@ -88,7 +88,7 @@ from .anchors import (
 from .aligners import (from_whisper_json, from_whisperx, from_gentle,
                       from_gentle_phones)
 
-__version__ = "0.18.2"
+__version__ = "0.19.0"
 
 __all__ = [
     "G2P", "PhonemeSegment", "NaiveAligner", "load_mfa_textgrid",
