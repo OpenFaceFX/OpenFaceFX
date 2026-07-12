@@ -58,6 +58,7 @@ from .export_unreal_notifies import write_unreal_notifies, notifies_to_dict
 from .export_live2d import write_live2d_motion, lipsync_param_ids
 from .export_godot import write_godot_anim
 from .export_gltf import write_gltf, build_gltf
+from .export_vmd import write_vmd, vmd_bytes, DEFAULT_MORPH_MAP
 from .export_lip import (write_lip, lip_bytes, skyrim_mapping,
                         SKYRIM_SLOT_MAP)
 from .export_cues import (
@@ -75,9 +76,9 @@ from .retarget import (retarget, apply_adjust, rename_only, PRESETS,
 from .visemes import VISEMES, phoneme_to_viseme
 from .timing import (
     TimingEvent, resolve_ends, to_segments, parse_pho, parse_piper_alignments,
-    parse_cartesia, parse_azure_visemes, parse_polly_marks,
+    parse_cartesia, parse_azure_visemes, parse_polly_marks, parse_voicevox,
     viseme_events_to_segments, build_vendor_mapping,
-    AZURE_VISEME_TO_TARGET, POLLY_VISEME_TO_TARGET,
+    AZURE_VISEME_TO_TARGET, POLLY_VISEME_TO_TARGET, VOICEVOX_TO_TARGET,
 )
 from .anchors import (
     Anchor, anchored_segments, anchors_transcript, parse_srt,
@@ -135,6 +136,7 @@ __all__ = [
     "write_unreal_notifies", "notifies_to_dict",
     "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",
     "write_gltf", "build_gltf",
+    "write_vmd", "vmd_bytes", "DEFAULT_MORPH_MAP",
     "write_lip", "lip_bytes", "skyrim_mapping", "SKYRIM_SLOT_MAP",
     "dominant_cues", "write_rhubarb_tsv", "write_rhubarb_xml",
     "write_rhubarb_json", "write_moho_dat", "write_pgo",
@@ -146,8 +148,9 @@ __all__ = [
     "VISEMES", "phoneme_to_viseme",
     "TimingEvent", "resolve_ends", "to_segments", "parse_pho",
     "parse_piper_alignments", "parse_cartesia", "parse_azure_visemes",
-    "parse_polly_marks", "viseme_events_to_segments", "build_vendor_mapping",
-    "AZURE_VISEME_TO_TARGET", "POLLY_VISEME_TO_TARGET",
+    "parse_polly_marks", "parse_voicevox", "viseme_events_to_segments",
+    "build_vendor_mapping", "AZURE_VISEME_TO_TARGET", "POLLY_VISEME_TO_TARGET",
+    "VOICEVOX_TO_TARGET",
     "Anchor", "anchored_segments", "anchors_transcript", "parse_srt",
     "parse_word_anchors", "from_azure_word_boundaries",
     "from_elevenlabs_alignment", "from_kokoro_tokens", "google_ssml_with_marks",

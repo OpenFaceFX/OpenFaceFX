@@ -11,10 +11,12 @@ dump into a list of them. From there:
     pipeline expects ARPABET, while Piper/Cartesia emit IPA and MBROLA emits its
     voice's SAMPA -- feed those a matching ``--mapping`` (which may itself set
     ``allow_custom_symbols``) for meaningful visemes.
-  * viseme-unit events (Azure, Polly) skip phoneme->target mapping: the vendor's
-    small fixed symbol set is remapped straight onto the Oculus-15 targets via
-    ``AZURE_VISEME_TO_TARGET`` / ``POLLY_VISEME_TO_TARGET`` and fed to
-    coarticulation through a ``Mapping(allow_custom_symbols=True)``.
+  * viseme-unit events (Azure, Polly, VOICEVOX) skip phoneme->target mapping: the
+    vendor's small fixed symbol set is remapped straight onto the Oculus-15 targets
+    via ``AZURE_VISEME_TO_TARGET`` / ``POLLY_VISEME_TO_TARGET`` /
+    ``VOICEVOX_TO_TARGET`` and fed to coarticulation through a
+    ``Mapping(allow_custom_symbols=True)``. VOICEVOX's symbols are OpenJTalk
+    phonemes rather than a viseme id, but they route the same direct-to-target way.
 
 Only start times are guaranteed. ``resolve_ends`` fills any missing end from the
 next event's start (the start-time-only sources, Azure and Polly), with a
@@ -26,6 +28,8 @@ Time units per vendor, all converted to float seconds:
   * Cartesia      -- explicit start/end **seconds**.
   * Azure viseme  -- audio offset in **100-ns ticks** (ticks / 10000 = ms).
   * Polly marks   -- ``time`` in integer **milliseconds**.
+  * VOICEVOX      -- per-mora consonant/vowel durations in **seconds**, cumulative
+                     from ``prePhonemeLength``, every span divided by ``speedScale``.
 
 Parsers are pure stdlib text/JSON (numpy is not imported here) and reject
 malformed input with a clear ValueError. Field names for the SDK-event sources
@@ -281,6 +285,72 @@ def parse_polly_marks(text: str) -> List[TimingEvent]:
     return events
 
 
+def parse_voicevox(json_text: str) -> List[TimingEvent]:
+    """VOICEVOX ``/audio_query`` JSON -> viseme-unit events (OpenJTalk phoneme
+    symbols, remapped by :data:`VOICEVOX_TO_TARGET`). Covers the API-compatible
+    forks too — COEIROINK, SHAREVOX, LMROID, AivisSpeech emit the same schema.
+
+    Timeline (all durations are **seconds**, each divided by ``speedScale``):
+    the first phoneme starts at ``prePhonemeLength``; each mora advances by its
+    ``consonant_length`` (when a ``consonant`` is present) then ``vowel_length``;
+    an accent phrase's ``pause_mora`` inserts a silence gap; a trailing
+    ``postPhonemeLength`` silence closes it. Unvoiced vowels (uppercase ``A/I/U/
+    E/O``) still allocate their time. Ends are set here, so ``resolve_ends`` is a
+    no-op. Symbols missing from the map route to silence at mapping time.
+
+    Pause durations come from ``pause_mora.vowel_length``; the newer top-level
+    ``pauseLength`` / ``pauseLengthScale`` override fields are not yet honored
+    (issue #59), so pauses whose length was overridden in the VOICEVOX UI may be
+    slightly off. All other timing is exact."""
+    try:
+        d = json.loads(json_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"voicevox: not valid JSON ({e})") from None
+    if not isinstance(d, dict) or not isinstance(d.get("accent_phrases"), list):
+        raise ValueError(
+            "voicevox: expected an AudioQuery object with an 'accent_phrases' array")
+    try:
+        raw_speed = d.get("speedScale", 1.0)             # explicit null -> 1.0,
+        speed = 1.0 if raw_speed is None else float(raw_speed)  # but keep a real 0.0
+        pre = float(d.get("prePhonemeLength") or 0.0)
+        post = float(d.get("postPhonemeLength") or 0.0)
+    except (TypeError, ValueError):
+        raise ValueError("voicevox: non-numeric speedScale/pre/postPhonemeLength") from None
+    if speed <= 0.0:
+        raise ValueError(f"voicevox: speedScale must be > 0, got {speed!r}")
+
+    events: List[TimingEvent] = []
+    clock = [0.0]
+
+    def emit(symbol: str, dur) -> None:
+        try:
+            step = float(dur) / speed
+        except (TypeError, ValueError):
+            raise ValueError(f"voicevox: non-numeric duration {dur!r} for {symbol!r}") from None
+        events.append(TimingEvent("viseme", symbol, clock[0], clock[0] + step))
+        clock[0] += step
+
+    if pre > 0.0:
+        emit("pau", pre)
+    for ap in d["accent_phrases"]:
+        if not isinstance(ap, dict):
+            raise ValueError("voicevox: each accent_phrase must be an object")
+        for mora in ap.get("moras", []):
+            if mora.get("consonant") and mora.get("consonant_length") is not None:
+                emit(str(mora["consonant"]), mora["consonant_length"])
+            if mora.get("vowel") is None or mora.get("vowel_length") is None:
+                raise ValueError(f"voicevox: mora needs 'vowel' and 'vowel_length': {mora!r}")
+            emit(str(mora["vowel"]), mora["vowel_length"])
+        pause = ap.get("pause_mora")
+        if isinstance(pause, dict) and pause.get("vowel_length") is not None:
+            emit(str(pause.get("vowel") or "pau"), pause["vowel_length"])
+    if post > 0.0:
+        emit("pau", post)
+    if not events:
+        raise ValueError("voicevox: no moras found in accent_phrases")
+    return events
+
+
 def _event_list(d, keys, who):
     if isinstance(d, list):
         return d
@@ -363,6 +433,25 @@ POLLY_VISEME_TO_TARGET: Dict[str, str] = {
     "o": "O",    # o-u diphthong
     "O": "O",    # open-o, open-o-i
     "l": "DD",   # l
+}
+
+
+# VOICEVOX / OpenJTalk phoneme -> Oculus-15 target (the same direct-remap idea as
+# the Azure/Polly tables). Vowels follow VOICEVOX's own OVR-LipSync vowels
+# (uppercase = unvoiced, same shape); N -> nn; cl/pau -> sil; consonants collapse
+# to the nearest native viseme, palatalized -y variants following their base.
+# Symbols absent here route to silence with a QA warning, never a crash.
+VOICEVOX_TO_TARGET: Dict[str, str] = {
+    "pau": "sil", "cl": "sil", "sil": "sil",
+    "a": "aa", "A": "aa", "i": "I", "I": "I", "u": "U", "U": "U",
+    "e": "E", "E": "E", "o": "O", "O": "O", "N": "nn",
+    "p": "PP", "py": "PP", "b": "PP", "by": "PP", "m": "PP", "my": "PP",
+    "f": "FF", "v": "FF",
+    "t": "DD", "d": "DD", "dy": "DD", "n": "nn", "ny": "nn",
+    "s": "SS", "z": "SS", "ts": "SS",
+    "sh": "CH", "j": "CH", "ch": "CH",
+    "k": "kk", "ky": "kk", "g": "kk", "gy": "kk", "h": "kk", "hy": "kk",
+    "r": "RR", "ry": "RR", "w": "RR", "y": "I",
 }
 
 

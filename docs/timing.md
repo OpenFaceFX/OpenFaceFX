@@ -11,7 +11,7 @@ entry points:
 | Unit | Formats | Path |
 |---|---|---|
 | `phoneme` | `pho`, `piper`, `cartesia` | replaces aligner output → weighted mapping + coarticulation, unchanged |
-| `viseme` | `azure`, `polly` | skips phoneme→target mapping → vendor remap preset → coarticulation |
+| `viseme` | `azure`, `polly`, `voicevox` | skips phoneme→target mapping → vendor remap preset → coarticulation |
 
 ```bash
 openfacefx from-timing --file voice.pho    --format pho      -o track.json
@@ -19,6 +19,7 @@ openfacefx from-timing --file align.json   --format piper --sample-rate 22050 -o
 openfacefx from-timing --file marks.json   --format cartesia -o track.json
 openfacefx from-timing --file visemes.json --format azure    -o track.json
 openfacefx from-timing --file voice.marks  --format polly     -o track.json --retarget arkit
+openfacefx from-timing --file query.json   --format voicevox  -o track.json   # JP TTS
 ```
 
 Only start times are guaranteed. Start-only sources (Azure, Polly) get each
@@ -34,15 +35,17 @@ event's end from the next event's start; the final event is held for
 | `cartesia` | phoneme | explicit start/end **seconds** | `phoneme_timestamps:{phonemes[],start[],end[]}` |
 | `azure` | viseme | audio offset in **100-ns ticks** (÷10000 = ms) | array of `{audio_offset, viseme_id}` |
 | `polly` | viseme | `time` in integer **ms** | NDJSON marks; `type=="viseme"`, `value`, `time` |
+| `voicevox` | viseme | per-mora consonant/vowel **seconds**, cumulative from `prePhonemeLength`, ÷ `speedScale` | `/audio_query`: `accent_phrases[].moras[].{consonant,consonant_length,vowel,vowel_length}`, `pause_mora`, `pre`/`postPhonemeLength`, `speedScale` |
 
 `pho`, `piper` and `cartesia` symbols are the source's own alphabet (IPA for
 Piper/Cartesia, a SAMPA variant for MBROLA `.pho`) — **not** ARPABET. So for
 those three formats `from-timing` **auto-selects a built-in IPA preset** when no
 `--mapping` is given (an explicit `--mapping` still wins); see below. The viseme
-formats need no mapping either: `AZURE_VISEME_TO_TARGET` (22 IDs) and
-`POLLY_VISEME_TO_TARGET` remap straight onto the Oculus-15 targets. Symbols
-outside the active table produce a QA warning and relax to silence — never a
-crash.
+formats need no mapping either: `AZURE_VISEME_TO_TARGET` (22 IDs),
+`POLLY_VISEME_TO_TARGET` and `VOICEVOX_TO_TARGET` (OpenJTalk phonemes) remap
+straight onto the Oculus-15 targets. Symbols outside the active table produce a QA
+warning and relax to silence — never a crash. `voicevox` also covers the
+API-compatible forks COEIROINK / SHAREVOX / LMROID / AivisSpeech (same schema).
 
 ## The built-in IPA preset (pho/piper/cartesia)
 

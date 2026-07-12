@@ -204,6 +204,92 @@ def test_parse_polly_rejects_malformed():
 
 
 # --------------------------------------------------------------------------- #
+# parse_voicevox (VOICEVOX /audio_query, + the API-compatible forks)            #
+# --------------------------------------------------------------------------- #
+
+def _voicevox_query(pre=0.1, post=0.1, speed=1.0, pause=None):
+    # こんにちは = ko / N / ni / chi / wa, with round lengths for exact math.
+    moras = [
+        {"text": "コ", "consonant": "k", "consonant_length": 0.05, "vowel": "o", "vowel_length": 0.10},
+        {"text": "ン", "consonant": None, "consonant_length": None, "vowel": "N", "vowel_length": 0.08},
+        {"text": "ニ", "consonant": "n", "consonant_length": 0.03, "vowel": "i", "vowel_length": 0.07},
+        {"text": "チ", "consonant": "ch", "consonant_length": 0.04, "vowel": "i", "vowel_length": 0.06},
+        {"text": "ワ", "consonant": "w", "consonant_length": 0.03, "vowel": "a", "vowel_length": 0.12},
+    ]
+    return json.dumps({
+        "accent_phrases": [{"moras": moras, "accent": 5, "pause_mora": pause,
+                            "is_interrogative": False}],
+        "prePhonemeLength": pre, "postPhonemeLength": post, "speedScale": speed,
+    })
+
+
+def test_parse_voicevox_timeline_cumulative_starts():
+    ev = T.parse_voicevox(_voicevox_query())
+    assert [e.symbol for e in ev] == ["pau", "k", "o", "N", "n", "i", "ch",
+                                      "i", "w", "a", "pau"]
+    # hand-computed cumulative starts: pre 0.1, then consonant+vowel per mora,
+    # then post 0.1. Each event's end is the next event's start (contiguous).
+    starts = [0.0, 0.1, 0.15, 0.25, 0.33, 0.36, 0.43, 0.47, 0.53, 0.56, 0.68]
+    assert [e.start for e in ev] == pytest.approx(starts)
+    assert ev[0].end == pytest.approx(0.1) and ev[-1].end == pytest.approx(0.78)
+
+
+def test_parse_voicevox_speedscale_divides_all_durations():
+    ev = T.parse_voicevox(_voicevox_query(speed=2.0))
+    assert [e.start for e in ev] == pytest.approx(
+        [0.0, 0.05, 0.075, 0.125, 0.165, 0.18, 0.215, 0.235, 0.265, 0.28, 0.34])
+
+
+def test_parse_voicevox_pause_mora_inserts_a_gap():
+    ev = T.parse_voicevox(_voicevox_query(
+        pause={"text": "、", "vowel": "pau", "vowel_length": 0.2}))
+    # the pause_mora sits after the phrase's last vowel (0.68) and before post
+    syms = [e.symbol for e in ev]
+    assert syms.count("pau") == 3                      # pre + pause_mora + post
+    pau_starts = [e.start for e in ev if e.symbol == "pau"]
+    assert pau_starts == pytest.approx([0.0, 0.68, 0.88])
+
+
+def test_parse_voicevox_maps_openjtalk_phonemes_to_native_targets():
+    ev = T.resolve_ends(T.parse_voicevox(_voicevox_query()))
+    segs, warnings = T.viseme_events_to_segments(ev, T.VOICEVOX_TO_TARGET)
+    m = T.build_vendor_mapping(T.VOICEVOX_TO_TARGET)
+    got = [m.targets[max(m.row(s.phoneme), key=m.row(s.phoneme).get)].name
+           for s in segs]
+    assert got == ["sil", "kk", "O", "nn", "nn", "I", "CH", "I", "RR", "aa", "sil"]
+    assert warnings == []                              # every symbol is known
+    # unvoiced (uppercase) vowels share their voiced target, and cl -> sil
+    assert T.VOICEVOX_TO_TARGET["I"] == T.VOICEVOX_TO_TARGET["i"] == "I"
+    assert T.VOICEVOX_TO_TARGET["U"] == T.VOICEVOX_TO_TARGET["u"] == "U"
+    assert T.VOICEVOX_TO_TARGET["cl"] == "sil"
+
+
+def test_parse_voicevox_rejects_malformed():
+    with pytest.raises(ValueError, match="not valid JSON"):
+        T.parse_voicevox("nope")
+    with pytest.raises(ValueError, match="accent_phrases"):
+        T.parse_voicevox(json.dumps({"speedScale": 1.0}))
+    with pytest.raises(ValueError, match="speedScale must be > 0"):
+        T.parse_voicevox(json.dumps({"accent_phrases": [], "speedScale": 0.0}))
+    with pytest.raises(ValueError, match="no moras"):
+        T.parse_voicevox(json.dumps({"accent_phrases": [], "prePhonemeLength": 0.0}))
+    with pytest.raises(ValueError, match="vowel"):
+        T.parse_voicevox(json.dumps({"accent_phrases": [
+            {"moras": [{"consonant": "k", "consonant_length": 0.05}]}]}))
+
+
+def test_cli_from_timing_voicevox(tmp_path):
+    q = tmp_path / "aq.json"
+    q.write_text(_voicevox_query(), encoding="utf-8")
+    out = tmp_path / "vv.json"
+    assert cli_main(["from-timing", "--format", "voicevox", "--file", str(q),
+                     "-o", str(out)]) == 0
+    d = json.loads(out.read_text())
+    names = {c["name"] for c in d["channels"]}
+    assert {"kk", "O", "nn", "I", "CH", "RR", "aa"} & names   # native targets present
+
+
+# --------------------------------------------------------------------------- #
 # resolve_ends / to_segments                                                    #
 # --------------------------------------------------------------------------- #
 

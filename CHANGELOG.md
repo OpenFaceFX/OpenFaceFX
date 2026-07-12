@@ -9,6 +9,26 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **MikuMikuDance `.vmd` exporter** ([#57](https://github.com/OpenFaceFX/OpenFaceFX/issues/57)):
+  `write_vmd(track, path, ...)` + `vmd_bytes(track) -> bytes` in a new
+  `export_vmd.py`, reaching the MMD / VTuber ecosystem (blender_mmd_tools, three.js
+  `MMDLoader`, babylon-mmd, Saba, MMDAgent-EX) that reads neither glTF nor our
+  other formats. Little-endian `struct` + stdlib only; native visemes map to the
+  Japanese kana lip morphs (あ/い/う/え/お/ん, consonants collapsing to the nearest
+  vowel/closed shape like the `vrm` preset), map overridable via `morph_map=`.
+  Wired into the CLI (`-o motion.vmd`, `--vmd-model`/`--vmd-fps`). Deterministic
+  (pinned golden byte-hash) and byte-identical on py3.9/3.13; verified by
+  re-parsing its own bytes, no MMD needed.
+- **VOICEVOX AudioQuery timing adapter** ([#58](https://github.com/OpenFaceFX/OpenFaceFX/issues/58)):
+  `parse_voicevox(json_text) -> List[TimingEvent]` in `timing.py`, joining the
+  `parse_cartesia`/`parse_azure_visemes`/`parse_polly_marks` vendor-adapter family
+  (`--format voicevox`). Turns a VOICEVOX `/audio_query` into viseme-unit events —
+  timeline from `prePhonemeLength`, per-mora `consonant_length`+`vowel_length`,
+  `pause_mora` gaps, `postPhonemeLength`, all ÷ `speedScale` — and a
+  `VOICEVOX_TO_TARGET` OpenJTalk-phoneme→Oculus-15 map. One adapter covers the
+  API-compatible forks (COEIROINK, SHAREVOX, LMROID, AivisSpeech). With the `.vmd`
+  exporter this is the first pure-Python VOICEVOX → visemes → MMD JP pipeline.
+  Pure JSON in, deterministic, numpy-free.
 - **JALI follow-ups** ([#53](https://github.com/OpenFaceFX/OpenFaceFX/issues/53),
   follow-up to [#19](https://github.com/OpenFaceFX/OpenFaceFX/issues/19)): two more
   coarticulation habits and NVIDIA-A2F-style tongue-channel tuning, all opt-in and

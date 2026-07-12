@@ -24,6 +24,7 @@ from .qa import normalize_transcript, summarize
 from .export_unity import write_unity_anim
 from .export_live2d import write_live2d_motion, lipsync_param_ids
 from .export_godot import write_godot_anim
+from .export_vmd import write_vmd
 from .export_lip import write_lip, lip_calibrate
 from .export_cues import (
     write_rhubarb_tsv, write_rhubarb_xml, write_rhubarb_json,
@@ -34,8 +35,9 @@ from .coarticulation import CoartParams, STYLE_PRESETS, style_params
 from .retarget import retarget, apply_adjust, PRESETS, PRESET_FALLBACKS
 from .timing import (
     parse_pho, parse_piper_alignments, parse_cartesia, parse_azure_visemes,
-    parse_polly_marks, resolve_ends, to_segments, viseme_events_to_segments,
-    build_vendor_mapping, AZURE_VISEME_TO_TARGET, POLLY_VISEME_TO_TARGET,
+    parse_polly_marks, parse_voicevox, resolve_ends, to_segments,
+    viseme_events_to_segments, build_vendor_mapping, AZURE_VISEME_TO_TARGET,
+    POLLY_VISEME_TO_TARGET, VOICEVOX_TO_TARGET,
 )
 from .ipa import IPA_MAPPING, ipa_unknown_symbols
 from .anchors import (
@@ -77,8 +79,10 @@ _TIMING_PARSERS = {
     "cartesia": (parse_cartesia, False),
     "azure": (parse_azure_visemes, True),
     "polly": (parse_polly_marks, True),
+    "voicevox": (parse_voicevox, True),
 }
-_VISEME_TABLES = {"azure": AZURE_VISEME_TO_TARGET, "polly": POLLY_VISEME_TO_TARGET}
+_VISEME_TABLES = {"azure": AZURE_VISEME_TO_TARGET, "polly": POLLY_VISEME_TO_TARGET,
+                  "voicevox": VOICEVOX_TO_TARGET}
 
 
 # Cue-list formats reachable by output extension. `.json` is deliberately
@@ -254,6 +258,17 @@ def _write_godot(track, out: str, args) -> None:
     _say(args, f"wrote {out}: Godot .tres Animation, {track.duration:.2f}s")
 
 
+def _write_vmd(track, out: str, args) -> None:
+    if getattr(args, "retarget", None):
+        raise SystemExit(
+            "--retarget does not apply to MMD .vmd; it has its own viseme->morph "
+            "map (override in the library via write_vmd(morph_map=...))")
+    _reject_trim_flags(args, "MMD .vmd")
+    write_vmd(track, out, model_name=getattr(args, "vmd_model", "OpenFaceFX"),
+              fps=getattr(args, "vmd_fps", None))
+    _say(args, f"wrote {out}: MMD .vmd morph animation, {track.duration:.2f}s")
+
+
 def _write(track, out: str, args=None) -> None:
     if out.endswith(".lip"):
         raise SystemExit(
@@ -265,6 +280,9 @@ def _write(track, out: str, args=None) -> None:
         return
     if out.endswith(".tres"):
         _write_godot(track, out, args)
+        return
+    if out.endswith(".vmd"):
+        _write_vmd(track, out, args)
         return
     if out.endswith((".gltf", ".glb")):
         from .export_gltf import write_gltf
@@ -358,6 +376,14 @@ def _add_output_options(p) -> None:
                         "channels (headPitch/Yaw/Roll) as a separate node "
                         "'rotation' (Euler->quaternion) animation, kept distinct "
                         "from the [0,1] morph-weight targets")
+    p.add_argument("--vmd-model", default="OpenFaceFX",
+                   help="model name embedded in .vmd output (ShiftJIS, <=20 "
+                        "bytes; MMD shows it but a morph-only motion ignores it; "
+                        "default: OpenFaceFX)")
+    p.add_argument("--vmd-fps", type=float, default=30.0,
+                   help="frame rate for .vmd frame numbers (MMD-native default "
+                        "30; frame# = round(time*fps), independent of the solver "
+                        "sampling fps)")
     p.add_argument("--cue-format",
                    choices=["tsv", "xml", "json-cues", "dat", "pgo"],
                    help="write a stepped cue list instead of curves: Rhubarb "
