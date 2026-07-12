@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenFaceFX — try it in your browser</title>
+<!--
+  In-browser "try it with your own audio" demo (issue #28). OpenFaceFX runs
+  ENTIRELY in your browser here: Pyodide (CPython -> WebAssembly) loads the
+  real numpy-only openfacefx wheel from PyPI via micropip, and the same
+  pipeline you'd run locally generates the viseme track. No server, no upload
+  of your audio anywhere — the WAV is decoded and processed on your machine.
+
+  First load pulls ~24 MB (Pyodide runtime + numpy wasm), cached by the browser
+  afterwards. The openfacefx wheel itself is tens of KB.
+-->
+<style>
+  :root { --bg1:#12181f; --bg2:#0a0e13; --fg:#e8edf4; --dim:#8b96a4;
+          --accent:#f4b942; --line:#39424f; --panel:#161d26; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:linear-gradient(160deg,var(--bg1),var(--bg2));
+         font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--fg);
+         line-height:1.5; }
+  main { max-width:760px; margin:0 auto; padding:28px 20px 60px; }
+  header { text-align:center; margin-bottom:22px; }
+  header img { width:84px; }
+  h1 { letter-spacing:.02em; margin:.3em 0 .1em; } h1 b { color:var(--accent); }
+  .sub { color:var(--dim); margin:0 auto; max-width:44em; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+           padding:18px; margin:16px 0; }
+  label { display:block; color:var(--dim); font-size:13px; margin:0 0 6px; }
+  textarea, input[type=number] { width:100%; background:#0d131a; color:var(--fg);
+           border:1px solid var(--line); border-radius:8px; padding:10px;
+           font-family:inherit; font-size:14px; }
+  textarea { resize:vertical; min-height:56px; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; }
+  .row > div { flex:1 1 200px; }
+  button, .filebtn { display:inline-block; margin-top:12px; padding:11px 20px; border-radius:9px;
+           border:1.5px solid var(--accent); background:transparent; color:var(--accent);
+           font-family:inherit; font-size:14px; cursor:pointer; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.alt, .filebtn { border-color:var(--line); color:var(--dim); }
+  input[type=file] { display:none; }
+  #status { min-height:22px; color:var(--dim); font-size:13px; margin-top:10px; }
+  #status.err { color:#ff8f8f; }
+  .bar { height:6px; background:#0d131a; border-radius:4px; overflow:hidden; margin-top:8px; display:none; }
+  .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
+  #stage { display:none; }
+  svg { width:100%; max-width:320px; display:block; margin:6px auto 0; }
+  .controls { text-align:center; }
+  a.dl { color:var(--accent); }
+  .foot { color:var(--dim); font-size:12px; text-align:center; margin-top:26px; }
+  a { color:var(--accent); }
+  #nowasm { display:none; }
+</style>
+</head><body><main>
+  <header>
+    <img src="logo.svg" alt="OpenFaceFX logo"
+         onerror="this.style.display='none'">
+    <h1><b>Open</b>FaceFX — try it live</h1>
+    <p class="sub">Type a line, optionally add a voice clip, and generate viseme
+       animation curves <b>entirely in your browser</b> — the real numpy-only
+       pipeline, running on WebAssembly. Nothing is uploaded.</p>
+  </header>
+
+  <div id="nowasm" class="panel">
+    <b>WebAssembly isn't available in this browser.</b> This live demo needs it.
+    See the <a href="face.html">pre-rendered demo</a> instead, or
+    <a href="https://github.com/OpenFaceFX/OpenFaceFX">install locally</a>.
+  </div>
+
+  <div id="app">
+    <div class="panel">
+      <label for="text">Transcript</label>
+      <textarea id="text">hello world, this is open face f x running in your browser</textarea>
+      <div class="row">
+        <div>
+          <label for="dur">Duration (seconds) — used when no audio is given</label>
+          <input type="number" id="dur" value="3.0" min="0.3" step="0.1">
+        </div>
+        <div>
+          <label>Voice clip (optional — drives open/close timing from loudness)</label>
+          <label class="filebtn" for="wav">Choose audio…</label>
+          <input type="file" id="wav" accept="audio/*,.wav">
+          <button class="alt" id="sample" type="button">Use sample voice</button>
+          <span id="wavname" style="font-size:12px;color:var(--dim)"></span>
+        </div>
+      </div>
+      <button id="run" disabled>Booting Python…</button>
+      <div class="bar" id="bar"><i></i></div>
+      <div id="status">Loading the in-browser runtime…</div>
+    </div>
+
+    <div class="panel" id="stage">
+      <svg viewBox="0 0 200 140" id="face" aria-label="schematic mouth preview">
+        <ellipse cx="100" cy="70" rx="86" ry="64" fill="#1d2732" stroke="#2b3745"/>
+        <circle cx="72" cy="52" r="6" fill="#0d131a"/>
+        <circle cx="128" cy="52" r="6" fill="#0d131a"/>
+        <path id="mouth" fill="#7a1f2b" stroke="#c65b68" stroke-width="2"/>
+      </svg>
+      <div class="controls">
+        <button id="play" type="button">&#9654; Play</button>
+        <a class="dl" id="download" download="openfacefx-track.json" href="#">Download track JSON</a>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">
+    OpenFaceFX · MIT · numpy-only · runs here via
+    <a href="https://pyodide.org">Pyodide</a>.
+    <a href="https://github.com/OpenFaceFX/OpenFaceFX">source</a> ·
+    <a href="docs/">docs</a>
+  </p>
+</main>
+
+<script>
+// ---- version-pinned wheel (stamped by pages.yml on deploy; see release flow) --
+const OFFX_VERSION = "0.19.1";
+const PYODIDE_VER = "v0.26.1";
+
+const $ = id => document.getElementById(id);
+const statusEl = $("status"), bar = $("bar"), barI = bar.querySelector("i");
+function setStatus(msg, err=false){ statusEl.textContent = msg; statusEl.className = err?"err":""; }
+function prog(f){ bar.style.display = f==null?"none":"block"; if(f!=null) barI.style.width = Math.round(f*100)+"%"; }
+
+// ---- graceful degrade ------------------------------------------------------
+if (typeof WebAssembly === "undefined") {
+  $("app").style.display = "none";
+  $("nowasm").style.display = "block";
+}
+
+// ---- viseme -> schematic mouth geometry (normalized) -----------------------
+const SHAPES = {
+  sil:{w:.30,h:.03,r:.2}, PP:{w:.34,h:.02,r:.1}, FF:{w:.34,h:.10,r:.1},
+  TH:{w:.34,h:.16,r:.2}, DD:{w:.34,h:.18,r:.2}, kk:{w:.34,h:.20,r:.3},
+  CH:{w:.24,h:.20,r:.8}, SS:{w:.30,h:.08,r:.2}, nn:{w:.32,h:.16,r:.2},
+  RR:{w:.26,h:.20,r:.6}, aa:{w:.40,h:.55,r:.4}, E:{w:.44,h:.30,r:.2},
+  I:{w:.50,h:.14,r:.1}, O:{w:.30,h:.42,r:.9}, U:{w:.22,h:.22,r:1.0},
+};
+
+// linear-sample a channel [[t,v],...] at time t
+function sampleKeys(keys, t){
+  if(!keys.length) return 0;
+  if(t<=keys[0][0]) return keys[0][1];
+  const n=keys.length; if(t>=keys[n-1][0]) return keys[n-1][1];
+  for(let i=1;i<n;i++){ if(t<=keys[i][0]){
+    const [t0,v0]=keys[i-1],[t1,v1]=keys[i]; const f=(t1===t0)?0:(t-t0)/(t1-t0);
+    return v0+(v1-v0)*f; } }
+  return keys[n-1][1];
+}
+
+let TRACK=null, playing=false, clock=0, lastTs=0;
+function shapeAt(t){
+  // weighted blend of viseme shapes by channel value
+  let W=0, w=0, h=0, r=0;
+  for(const ch of TRACK.channels){
+    const v=Math.max(0,sampleKeys(ch.keys,t)); if(v<1e-3) continue;
+    const s=SHAPES[ch.name]||SHAPES.sil; W+=v; w+=v*s.w; h+=v*s.h; r+=v*s.r;
+  }
+  if(W<1e-3){ const s=SHAPES.sil; return {w:s.w,h:s.h,r:s.r}; }
+  return {w:w/W,h:h/W,r:r/W};
+}
+function drawMouth(t){
+  const s=shapeAt(t);
+  const cx=100, cy=82, rx=Math.max(6,s.w*150), ry=Math.max(2,s.h*95);
+  // rounded lozenge: two cubic arcs; r blends toward a circle
+  const k=0.55*ry + s.r*0.25*rx;
+  const d=`M ${cx-rx} ${cy} C ${cx-rx} ${cy-k}, ${cx-rx*(1-s.r*0.3)} ${cy-ry}, ${cx} ${cy-ry}`
+        +` C ${cx+rx*(1-s.r*0.3)} ${cy-ry}, ${cx+rx} ${cy-k}, ${cx+rx} ${cy}`
+        +` C ${cx+rx} ${cy+k}, ${cx+rx*(1-s.r*0.3)} ${cy+ry}, ${cx} ${cy+ry}`
+        +` C ${cx-rx*(1-s.r*0.3)} ${cy+ry}, ${cx-rx} ${cy+k}, ${cx-rx} ${cy} Z`;
+  $("mouth").setAttribute("d",d);
+}
+function frame(ts){
+  if(!playing) return;
+  if(lastTs) clock += (ts-lastTs)/1000; lastTs=ts;
+  if(clock>TRACK.duration){ clock=0; }
+  drawMouth(clock);
+  requestAnimationFrame(frame);
+}
+$("play").onclick=()=>{ if(!TRACK) return;
+  playing=!playing; $("play").innerHTML = playing?"&#10073;&#10073; Pause":"&#9654; Play";
+  if(playing){ lastTs=0; requestAnimationFrame(frame); }
+};
+
+// ---- Float32 PCM -> 16-bit mono WAV bytes (for openfacefx's stdlib wave reader)
+function encodeWav(float32, rate){
+  const n=float32.length, buf=new ArrayBuffer(44+n*2), dv=new DataView(buf);
+  const ws=(o,s)=>{ for(let i=0;i<s.length;i++) dv.setUint8(o+i,s.charCodeAt(i)); };
+  ws(0,"RIFF"); dv.setUint32(4,36+n*2,true); ws(8,"WAVE"); ws(12,"fmt ");
+  dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
+  dv.setUint32(24,rate,true); dv.setUint32(28,rate*2,true); dv.setUint16(32,2,true);
+  dv.setUint16(34,16,true); ws(36,"data"); dv.setUint32(40,n*2,true);
+  let o=44; for(let i=0;i<n;i++){ let x=Math.max(-1,Math.min(1,float32[i])); dv.setInt16(o,x<0?x*0x8000:x*0x7fff,true); o+=2; }
+  return new Uint8Array(buf);
+}
+let wavBytes=null;
+async function loadAudioFile(file){
+  setStatus("decoding audio…");
+  const ab=await file.arrayBuffer();
+  const ac=new (window.AudioContext||window.webkitAudioContext)();
+  const audio=await ac.decodeAudioData(ab);
+  const ch0=audio.getChannelData(0);
+  wavBytes=encodeWav(ch0, audio.sampleRate);
+  $("wavname").textContent = file.name+" ("+audio.duration.toFixed(1)+"s)";
+  $("dur").value = audio.duration.toFixed(2);
+  setStatus("audio ready — press Generate.");
+}
+$("wav").onchange = e => { if(e.target.files[0]) loadAudioFile(e.target.files[0]).catch(err=>setStatus("audio decode failed: "+err,true)); };
+$("sample").onclick = async () => {
+  try { setStatus("fetching sample voice…");
+    const r=await fetch("voice.wav"); if(!r.ok) throw new Error("no sample on this host");
+    await loadAudioFile(new File([await r.blob()],"voice.wav"));
+  } catch(err){ setStatus("sample unavailable ("+err.message+") — upload your own.",true); }
+};
+
+// ---- boot Pyodide + install openfacefx -------------------------------------
+let pyodide=null;
+async function boot(){
+  if (typeof WebAssembly === "undefined") return;
+  try {
+    setStatus("loading Pyodide runtime (~24 MB first visit, then cached)…"); prog(0.05);
+    const s=document.createElement("script");
+    s.src=`https://cdn.jsdelivr.net/pyodide/${PYODIDE_VER}/full/pyodide.js`;
+    await new Promise((res,rej)=>{ s.onload=res; s.onerror=()=>rej(new Error("Pyodide CDN load failed")); document.head.appendChild(s); });
+    prog(0.25); pyodide=await loadPyodide();
+    prog(0.5); setStatus("loading numpy (wasm)…");
+    await pyodide.loadPackage(["micropip","numpy"]); prog(0.75);
+    setStatus(`installing openfacefx ${OFFX_VERSION} from PyPI…`);
+    const mp=pyodide.pyimport("micropip");
+    await mp.install(`openfacefx==${OFFX_VERSION}`); prog(0.95);
+    await pyodide.runPythonAsync(`
+import json, openfacefx as offx
+def run_offx(text, has_wav, dur):
+    if has_wav:
+        d = offx.wav_duration('/tmp/in.wav')
+        tk = offx.generate_naive(text, d, wav='/tmp/in.wav')
+    else:
+        tk = offx.generate_naive(text, float(dur))
+    return json.dumps(offx.to_dict(tk))
+`);
+    prog(1); prog(null);
+    setStatus(`ready — openfacefx ${OFFX_VERSION} running in your browser.`);
+    $("run").disabled=false; $("run").textContent="Generate lip-sync";
+  } catch(err){ prog(null); setStatus("failed to boot: "+err.message+" — try the pre-rendered demo (face.html).",true); }
+}
+
+$("run").onclick = async () => {
+  if(!pyodide) return;
+  $("run").disabled=true; setStatus("generating in the browser…"); prog(0.3);
+  try {
+    const text=$("text").value.trim()||"hello";
+    const dur=parseFloat($("dur").value)||3.0;
+    if(wavBytes) pyodide.FS.writeFile("/tmp/in.wav", wavBytes);
+    const fn=pyodide.globals.get("run_offx");
+    const jsonStr = await fn(text, !!wavBytes, dur);
+    fn.destroy();
+    TRACK=JSON.parse(jsonStr);
+    prog(1); prog(null);
+    const nk=TRACK.channels.reduce((a,c)=>a+c.keys.length,0);
+    setStatus(`done — ${TRACK.channels.length} viseme channels, ${nk} keyframes, ${TRACK.duration.toFixed(2)}s.`);
+    $("stage").style.display="block";
+    const blob=new Blob([jsonStr],{type:"application/json"});
+    $("download").href=URL.createObjectURL(blob);
+    clock=0; drawMouth(0); if(!playing) $("play").click();
+  } catch(err){ prog(null); setStatus("generation failed: "+err.message,true); }
+  $("run").disabled=false;
+};
+
+boot();
+</script>
+</body></html>

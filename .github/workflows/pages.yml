@@ -42,6 +42,19 @@ jobs:
             --segments demo_segments.json --autoplay
           cp docs/logo.svg site/logo.svg
           cp examples/talking-face-demo.html site/face.html
+          # Interactive "try it with your own audio" demo (issue #28): the real
+          # numpy-only openfacefx wheel runs in-browser via Pyodide + micropip.
+          # Ship the page and the sample voice it offers, and pin it to the latest
+          # PUBLISHED release so micropip can always resolve it (main may sit ahead
+          # of PyPI). Stamp is non-fatal: if PyPI is unreachable the committed pin
+          # stands, which is a valid released version.
+          cp examples/try-it.html site/try-it.html
+          cp examples/voice.wav site/voice.wav
+          OFFX_PUB=$(python -c "import urllib.request,json;print(json.load(urllib.request.urlopen('https://pypi.org/pypi/openfacefx/json',timeout=15))['info']['version'])" 2>/dev/null || true)
+          if [ -n "$OFFX_PUB" ]; then
+            sed -i "s/const OFFX_VERSION = \"[0-9][0-9A-Za-z.-]*\"/const OFFX_VERSION = \"$OFFX_PUB\"/" site/try-it.html
+            echo "Pinned in-browser demo to openfacefx $OFFX_PUB"
+          fi
           cat > site/index.html <<'EOF'
           <!doctype html>
           <html lang="en"><head><meta charset="utf-8">
@@ -64,6 +77,7 @@ jobs:
             <p>Open-source lip-sync: voice recording + transcript &rarr; viseme
                animation curves for any engine. MIT, numpy-only.</p>
             <a class="btn" href="demo/">&#9654; Live demo</a>
+            <a class="btn" href="try-it.html">&#127908; Try your audio</a>
             <a class="btn" href="face.html">&#128266; Hear it</a>
             <a class="btn alt" href="docs/">Docs</a>
             <a class="btn alt" href="https://github.com/OpenFaceFX/OpenFaceFX">GitHub</a>
