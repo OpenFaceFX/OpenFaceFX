@@ -8,6 +8,39 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-07-12
+
+Hardening and performance. No API changes; every valid input produces
+byte-identical output to 0.19.0 (the prior test suite passes unchanged).
+
+### Fixed
+- **VMD exporter crash on negative keyframe times** — `vmd_bytes`/`write_vmd`
+  threw `struct.error` on tracks carrying negative (anticipatory/preroll,
+  `allow_negative_time`) keyframe times; the frame number is now clamped to 0
+  like the glTF exporter, and `fps` is validated `> 0`. VMD was the only
+  exporter of the eight that crashed on such tracks.
+- **Clear errors at input boundaries** — malformed hand-edited `.track.json`
+  (`from_dict`/`read_json`), `events`/`variants` blocks, Rhubarb cue files
+  (`from-cues`), and `--mapping` files now raise a `ValueError` naming the
+  offending field/index instead of a bare `KeyError`/`TypeError`/`AttributeError`
+  — which was both opaque and slipped past the CLI's `except (OSError, ValueError)`
+  into a raw traceback. Non-finite (`NaN`/`Infinity`) times in the TTS/aligner
+  parsers (parsed by `json.loads` by default) are rejected at the `TimingEvent`
+  schema boundary, and negative VOICEVOX per-mora durations are rejected, before
+  either can reach the solver.
+- **fps/duration validation** — `generate_naive`/`generate_from_alignment`/
+  `naive_segments` reject non-finite or `<= 0` fps/duration (previously a silent
+  empty or `NaN` track, written with exit 0); the scalar-generate CLIs exit
+  cleanly on a bad `--fps`/`--duration`.
+
+### Changed
+- **Long-clip performance** — the always-on dominance blend is frame-blocked,
+  capping peak memory (the `O(clip²)` temporaries that thrashed at ~3.7 GB): a
+  ~10-minute clip drops from ~35 s to ~6 s (6.9×) and ~3.7 GB to ~1 GB. The JALI
+  hard-constraint pass uses `searchsorted` index ranges instead of per-segment
+  boolean scans (21–31× on the `--jali` path). Both are **byte-identical** — no
+  emitted track changes.
+
 ## [0.19.0] - 2026-07-12
 
 ### Added
