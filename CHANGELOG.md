@@ -19,6 +19,18 @@ its `version` field.
   retarget or re-export it. Pure `struct` + stdlib, deterministic on py3.9/3.13,
   verified by a true round-trip against the writer (no MMD needed). Additive —
   existing output is byte-identical.
+- **ARKit / Live Link Face wide-CSV exporter** (#61) — `write_livelink_csv(track,
+  path)` / `livelink_csv_string(track)` and a `.livelink.csv` output extension write
+  the per-frame CSV Epic's Live Link Face app records, the write side of the
+  `importers_csv` wide branch that had no counterpart. Emits the canonical 61-column
+  header (`Timecode,BlendShapeCount,` + 52 ARKit `ARFaceAnchor.BlendShapeLocation`
+  coefficients + 9 head/eye columns, verified against JimWest/PyLiveLinkFace) with
+  SMPTE `HH:MM:SS:FF` timecodes; channels match columns case-insensitively so a
+  `--retarget arkit` track lands directly (a still-viseme track warns), head/eye
+  columns are zero-filled for now. So a synthetic performance can be replayed as a
+  Live Link Face take in MetaHuman Animator / Unreal / DCC retarget tools. numpy +
+  stdlib, deterministic, verified by a true round-trip through our own wide-CSV
+  importer + exact-bytes golden. Additive.
 
 ## [0.19.1] - 2026-07-12
 

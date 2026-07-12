@@ -269,6 +269,16 @@ def _write_vmd(track, out: str, args) -> None:
     _say(args, f"wrote {out}: MMD .vmd morph animation, {track.duration:.2f}s")
 
 
+def _write_livelink(track, out: str, args) -> None:
+    from .export_livelink import write_livelink_csv
+    matched = write_livelink_csv(track, out,
+                                 fps=getattr(args, "livelink_fps", None))
+    if matched == 0:
+        _warn(args, "livelink: no ARKit blendshape channels matched — the track is "
+                    "likely in viseme space; pass --retarget arkit to map it first")
+    _say(args, f"wrote {out}: ARKit / Live Link Face CSV, {track.duration:.2f}s")
+
+
 def _write(track, out: str, args=None) -> None:
     if out.endswith(".lip"):
         raise SystemExit(
@@ -313,7 +323,9 @@ def _write(track, out: str, args=None) -> None:
                          "chosen rig preset's shapes); pass --retarget too")
     if args is not None and getattr(args, "adjust", None):
         track = apply_adjust(track, _load_adjust(args.adjust))
-    if out.endswith(".csv"):
+    if out.endswith(".livelink.csv"):
+        _write_livelink(track, out, args)
+    elif out.endswith(".csv"):
         write_csv(track, out)
     elif out.endswith(".anim"):
         write_unity_anim(track, out,
@@ -384,6 +396,10 @@ def _add_output_options(p) -> None:
                    help="frame rate for .vmd frame numbers (MMD-native default "
                         "30; frame# = round(time*fps), independent of the solver "
                         "sampling fps)")
+    p.add_argument("--livelink-fps", type=_positive_float, default=60.0,
+                   help="frame rate for .livelink.csv rows (ARKit / Live Link Face "
+                        "wide CSV; default 60, Live Link's rate). Retarget viseme "
+                        "tracks with --retarget arkit first")
     p.add_argument("--cue-format",
                    choices=["tsv", "xml", "json-cues", "dat", "pgo"],
                    help="write a stepped cue list instead of curves: Rhubarb "
