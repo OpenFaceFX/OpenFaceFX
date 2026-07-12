@@ -169,6 +169,13 @@ _DIPHTHONGS = {
 # Articulator classes whose targets get closure enforcement.
 _CLOSURE_CLASSES = ("lips",)
 
+# Frame-block size for the dominance blend (perf pass): the dense per-frame
+# temporaries are built one block at a time so a long clip caps peak memory at
+# O(block x segs) instead of O(clip^2). A free knob — the per-segment reduction is
+# identical regardless of block, so any size is byte-identical; 2048 balances peak
+# memory against Python-loop overhead.
+_BLEND_BLOCK = 2048
+
 
 def _preprocess(segments: List[PhonemeSegment],
                 params: CoartParams) -> List[PhonemeSegment]:
@@ -307,20 +314,28 @@ def _blend(segments: List[PhonemeSegment], times: np.ndarray,
             names = mapping.target_names if mapping is not None else list(VISEMES)
             coart_jali.mask_tongue_lips(weights, segments, mapping, names)
 
-    # Dominance of every segment at every sample time: shape (n, n_seg)
-    dt = np.abs(times[:, None] - centres[None, :])
-    before = times[:, None] < centres[None, :]
-    theta_eff = np.where(before,
-                         (thetas * scale_in)[None, :],
-                         (thetas * scale_out)[None, :])
-    dom = alphas[None, :] * np.exp(-theta_eff * dt)
-
-    denom = dom.sum(axis=1, keepdims=True)
-    denom[denom == 0] = 1.0
-
+    # Dominance blend, frame-BLOCKED to cap peak memory. The dense (frames x segs)
+    # dt/theta_eff/dom temporaries are the O(clip^2) memory wall that thrashes on
+    # long clips (why cost is super-linear in clip length); building them for one
+    # frame block at a time caps peak memory at O(block x segs). The reduction is
+    # the SAME per-target ``.sum(axis=1)`` over segments as before -- frames are
+    # independent rows and the sum is over the segment axis, so the result is
+    # byte-identical to the unblocked loop, and streaming (per-frame) shares the
+    # identical reduction, so raw matrices stay bit-exact (perf pass).
+    centres_r = centres[None, :]
+    theta_in = (thetas * scale_in)[None, :]
+    theta_out = (thetas * scale_out)[None, :]
+    alphas_r = alphas[None, :]
     matrix = np.zeros((n, n_targets))
-    for v in range(n_targets):
-        matrix[:, v] = (dom * weights[None, :, v]).sum(axis=1) / denom[:, 0]
+    for bs in range(0, n, _BLEND_BLOCK):
+        be = min(bs + _BLEND_BLOCK, n)
+        tb = times[bs:be][:, None]
+        theta_eff = np.where(tb < centres_r, theta_in, theta_out)
+        dom = alphas_r * np.exp(-theta_eff * np.abs(tb - centres_r))
+        denom = dom.sum(axis=1, keepdims=True)
+        denom[denom == 0] = 1.0
+        for v in range(n_targets):
+            matrix[bs:be, v] = (dom * weights[None, :, v]).sum(axis=1) / denom[:, 0]
 
     # Clean numerical dust and clamp, apply the artistic intensity/gain dials
     # (a no-op at defaults), optionally smooth the dense curves, then enforce
