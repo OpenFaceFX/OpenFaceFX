@@ -29,6 +29,13 @@ its `version` field.
   API-compatible forks (COEIROINK, SHAREVOX, LMROID, AivisSpeech). With the `.vmd`
   exporter this is the first pure-Python VOICEVOX → visemes → MMD JP pipeline.
   Pure JSON in, deterministic, numpy-free.
+  - **Pause-length overrides** ([#59](https://github.com/OpenFaceFX/OpenFaceFX/issues/59)):
+    `parse_voicevox` now honors the top-level `pauseLength` (replaces every pause
+    mora's length globally when set) and `pauseLengthScale` (multiplies) fields,
+    composed as `(pauseLength ?? pause_mora.vowel_length) * pauseLengthScale ÷
+    speedScale` — the VOICEVOX engine's verified replace-then-scale order. A pure
+    superset: absent/null fields (with `pauseLengthScale` 1.0) are byte-identical to
+    before.
 - **JALI follow-ups** ([#53](https://github.com/OpenFaceFX/OpenFaceFX/issues/53),
   follow-up to [#19](https://github.com/OpenFaceFX/OpenFaceFX/issues/19)): two more
   coarticulation habits and NVIDIA-A2F-style tongue-channel tuning, all opt-in and

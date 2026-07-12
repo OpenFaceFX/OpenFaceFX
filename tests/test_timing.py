@@ -207,8 +207,10 @@ def test_parse_polly_rejects_malformed():
 # parse_voicevox (VOICEVOX /audio_query, + the API-compatible forks)            #
 # --------------------------------------------------------------------------- #
 
-def _voicevox_query(pre=0.1, post=0.1, speed=1.0, pause=None):
+def _voicevox_query(pre=0.1, post=0.1, speed=1.0, pause=None, **top):
     # こんにちは = ko / N / ni / chi / wa, with round lengths for exact math.
+    # **top injects top-level fields (e.g. pauseLength/pauseLengthScale); when
+    # unused the JSON is byte-identical to the #58 fixture.
     moras = [
         {"text": "コ", "consonant": "k", "consonant_length": 0.05, "vowel": "o", "vowel_length": 0.10},
         {"text": "ン", "consonant": None, "consonant_length": None, "vowel": "N", "vowel_length": 0.08},
@@ -216,11 +218,11 @@ def _voicevox_query(pre=0.1, post=0.1, speed=1.0, pause=None):
         {"text": "チ", "consonant": "ch", "consonant_length": 0.04, "vowel": "i", "vowel_length": 0.06},
         {"text": "ワ", "consonant": "w", "consonant_length": 0.03, "vowel": "a", "vowel_length": 0.12},
     ]
-    return json.dumps({
-        "accent_phrases": [{"moras": moras, "accent": 5, "pause_mora": pause,
+    q = {"accent_phrases": [{"moras": moras, "accent": 5, "pause_mora": pause,
                             "is_interrogative": False}],
-        "prePhonemeLength": pre, "postPhonemeLength": post, "speedScale": speed,
-    })
+         "prePhonemeLength": pre, "postPhonemeLength": post, "speedScale": speed}
+    q.update(top)
+    return json.dumps(q)
 
 
 def test_parse_voicevox_timeline_cumulative_starts():
@@ -287,6 +289,56 @@ def test_cli_from_timing_voicevox(tmp_path):
     d = json.loads(out.read_text())
     names = {c["name"] for c in d["channels"]}
     assert {"kk", "O", "nn", "I", "CH", "RR", "aa"} & names   # native targets present
+
+
+# --------------------------------------------------------------------------- #
+# parse_voicevox: pauseLength / pauseLengthScale overrides (#59)                #
+# --------------------------------------------------------------------------- #
+
+_PAUSE = {"text": "、", "vowel": "pau", "vowel_length": 0.2}
+
+
+def _pause_span(**top):
+    # pre/post 0 so the pause_mora is the only "pau" event; return its duration.
+    ev = T.parse_voicevox(_voicevox_query(pre=0.0, post=0.0, pause=_PAUSE, **top))
+    pau = [e for e in ev if e.symbol == "pau"]
+    assert len(pau) == 1
+    return pau[0].end - pau[0].start
+
+
+def test_voicevox_pauselength_replaces_pause_globally():
+    assert _pause_span() == pytest.approx(0.2)                    # pause_mora default
+    assert _pause_span(pauseLength=0.5) == pytest.approx(0.5)     # replaced
+    assert _pause_span(pauseLength=0.0) == pytest.approx(0.0)     # explicit zero, not None
+
+
+def test_voicevox_pauselengthscale_multiplies_then_speed():
+    assert _pause_span(pauseLengthScale=2.0) == pytest.approx(0.4)   # 0.2 * 2
+    assert _pause_span(pauseLengthScale=0.0) == pytest.approx(0.0)   # 0 allowed (engine 0-2)
+    # compose replace + scale + speed exactly as the engine: 0.6 * 0.5 / 2.0 = 0.15
+    assert _pause_span(pauseLength=0.6, pauseLengthScale=0.5,
+                       speedScale=2.0) == pytest.approx(0.15)
+
+
+def test_voicevox_pause_overrides_absent_is_byte_identical():
+    # the pure-superset guarantee: no override (or explicit nulls / a 1.0 scale)
+    # yields the exact #58 event stream.
+    base = [(e.symbol, e.start, e.end) for e in
+            T.parse_voicevox(_voicevox_query(pause=_PAUSE))]
+    for variant in ({}, {"pauseLength": None, "pauseLengthScale": None},
+                    {"pauseLengthScale": 1.0}):
+        got = [(e.symbol, e.start, e.end) for e in
+               T.parse_voicevox(_voicevox_query(pause=_PAUSE, **variant))]
+        assert got == base, variant
+
+
+def test_voicevox_pause_override_validation():
+    with pytest.raises(ValueError, match="must be >= 0"):
+        T.parse_voicevox(_voicevox_query(pause=_PAUSE, pauseLength=-0.1))
+    with pytest.raises(ValueError, match="must be >= 0"):
+        T.parse_voicevox(_voicevox_query(pause=_PAUSE, pauseLengthScale=-1.0))
+    with pytest.raises(ValueError, match="non-numeric"):
+        T.parse_voicevox(_voicevox_query(pause=_PAUSE, pauseLength="x"))
 
 
 # --------------------------------------------------------------------------- #

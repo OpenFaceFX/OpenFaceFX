@@ -6,21 +6,16 @@ can replace the aligner entirely. This module defines one intermediate schema --
 dump into a list of them. From there:
 
   * phoneme-unit events -> ``to_segments`` -> the existing weighted mapping and
-    coarticulation, unchanged. The symbol is used verbatim as the phoneme label,
-    so the source's alphabet must match the active mapping's: the default
-    pipeline expects ARPABET, while Piper/Cartesia emit IPA and MBROLA emits its
-    voice's SAMPA -- feed those a matching ``--mapping`` (which may itself set
-    ``allow_custom_symbols``) for meaningful visemes.
+    coarticulation, unchanged. The symbol is the phoneme label verbatim, so the
+    source alphabet must match the mapping's (ARPABET by default; Piper/Cartesia
+    IPA and MBROLA SAMPA want a matching ``--mapping`` / ``allow_custom_symbols``).
   * viseme-unit events (Azure, Polly, VOICEVOX) skip phoneme->target mapping: the
-    vendor's small fixed symbol set is remapped straight onto the Oculus-15 targets
-    via ``AZURE_VISEME_TO_TARGET`` / ``POLLY_VISEME_TO_TARGET`` /
-    ``VOICEVOX_TO_TARGET`` and fed to coarticulation through a
-    ``Mapping(allow_custom_symbols=True)``. VOICEVOX's symbols are OpenJTalk
-    phonemes rather than a viseme id, but they route the same direct-to-target way.
+    vendor's fixed symbol set remaps straight onto the Oculus-15 targets via
+    ``AZURE_VISEME_TO_TARGET`` / ``POLLY_VISEME_TO_TARGET`` / ``VOICEVOX_TO_TARGET``
+    (VOICEVOX's are OpenJTalk phonemes) and coarticulates via a custom-symbol Mapping.
 
-Only start times are guaranteed. ``resolve_ends`` fills any missing end from the
-next event's start (the start-time-only sources, Azure and Polly), with a
-configurable duration for the final event.
+Only start times are guaranteed; ``resolve_ends`` fills any missing end from the
+next event's start (Azure/Polly), with a configurable final-event duration.
 
 Time units per vendor, all converted to float seconds:
   * MBROLA .pho   -- per-phoneme duration in **milliseconds**, cumulative.
@@ -28,8 +23,7 @@ Time units per vendor, all converted to float seconds:
   * Cartesia      -- explicit start/end **seconds**.
   * Azure viseme  -- audio offset in **100-ns ticks** (ticks / 10000 = ms).
   * Polly marks   -- ``time`` in integer **milliseconds**.
-  * VOICEVOX      -- per-mora consonant/vowel durations in **seconds**, cumulative
-                     from ``prePhonemeLength``, every span divided by ``speedScale``.
+  * VOICEVOX      -- per-mora consonant/vowel durations in **seconds** ÷ ``speedScale``.
 
 Parsers are pure stdlib text/JSON (numpy is not imported here) and reject
 malformed input with a clear ValueError. Field names for the SDK-event sources
@@ -287,21 +281,17 @@ def parse_polly_marks(text: str) -> List[TimingEvent]:
 
 def parse_voicevox(json_text: str) -> List[TimingEvent]:
     """VOICEVOX ``/audio_query`` JSON -> viseme-unit events (OpenJTalk phoneme
-    symbols, remapped by :data:`VOICEVOX_TO_TARGET`). Covers the API-compatible
-    forks too — COEIROINK, SHAREVOX, LMROID, AivisSpeech emit the same schema.
+    symbols, remapped by :data:`VOICEVOX_TO_TARGET`; also covers the API-compatible
+    forks COEIROINK / SHAREVOX / LMROID / AivisSpeech).
 
-    Timeline (all durations are **seconds**, each divided by ``speedScale``):
-    the first phoneme starts at ``prePhonemeLength``; each mora advances by its
-    ``consonant_length`` (when a ``consonant`` is present) then ``vowel_length``;
-    an accent phrase's ``pause_mora`` inserts a silence gap; a trailing
-    ``postPhonemeLength`` silence closes it. Unvoiced vowels (uppercase ``A/I/U/
-    E/O``) still allocate their time. Ends are set here, so ``resolve_ends`` is a
-    no-op. Symbols missing from the map route to silence at mapping time.
-
-    Pause durations come from ``pause_mora.vowel_length``; the newer top-level
-    ``pauseLength`` / ``pauseLengthScale`` override fields are not yet honored
-    (issue #59), so pauses whose length was overridden in the VOICEVOX UI may be
-    slightly off. All other timing is exact."""
+    All durations are **seconds** ÷ ``speedScale``. The first phoneme starts at
+    ``prePhonemeLength``; each mora advances by ``consonant_length`` (when present)
+    then ``vowel_length``; a ``pause_mora`` gap is ``(pauseLength if set else
+    pause_mora.vowel_length) * pauseLengthScale`` — the VOICEVOX pause-override
+    fields (#59), matching the engine's replace-then-scale order and both
+    defaulting to a no-op; a trailing ``postPhonemeLength`` closes it. Unvoiced
+    (uppercase) vowels still allocate time. Ends are set here (``resolve_ends`` is
+    a no-op); unmapped symbols route to silence."""
     try:
         d = json.loads(json_text)
     except json.JSONDecodeError as e:
@@ -310,14 +300,19 @@ def parse_voicevox(json_text: str) -> List[TimingEvent]:
         raise ValueError(
             "voicevox: expected an AudioQuery object with an 'accent_phrases' array")
     try:
-        raw_speed = d.get("speedScale", 1.0)             # explicit null -> 1.0,
-        speed = 1.0 if raw_speed is None else float(raw_speed)  # but keep a real 0.0
+        raw_speed = d.get("speedScale", 1.0)             # explicit null -> 1.0
+        speed = 1.0 if raw_speed is None else float(raw_speed)  # keep a real 0.0
         pre = float(d.get("prePhonemeLength") or 0.0)
         post = float(d.get("postPhonemeLength") or 0.0)
+        pl, ps = d.get("pauseLength"), d.get("pauseLengthScale")
+        pause_len = None if pl is None else float(pl)    # None -> use pause_mora len
+        pause_scale = 1.0 if ps is None else float(ps)   # both default to a no-op
     except (TypeError, ValueError):
-        raise ValueError("voicevox: non-numeric speedScale/pre/postPhonemeLength") from None
+        raise ValueError("voicevox: non-numeric speedScale / pre|post|pause field") from None
     if speed <= 0.0:
         raise ValueError(f"voicevox: speedScale must be > 0, got {speed!r}")
+    if pause_scale < 0.0 or (pause_len is not None and pause_len < 0.0):
+        raise ValueError("voicevox: pauseLength / pauseLengthScale must be >= 0")
 
     events: List[TimingEvent] = []
     clock = [0.0]
@@ -343,7 +338,9 @@ def parse_voicevox(json_text: str) -> List[TimingEvent]:
             emit(str(mora["vowel"]), mora["vowel_length"])
         pause = ap.get("pause_mora")
         if isinstance(pause, dict) and pause.get("vowel_length") is not None:
-            emit(str(pause.get("vowel") or "pau"), pause["vowel_length"])
+            # honor the pauseLength / pauseLengthScale overrides (#59); /speed in emit
+            base = pause_len if pause_len is not None else float(pause["vowel_length"])
+            emit(str(pause.get("vowel") or "pau"), base * pause_scale)
     if post > 0.0:
         emit("pau", post)
     if not events:

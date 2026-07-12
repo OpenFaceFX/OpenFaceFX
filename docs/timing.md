@@ -35,7 +35,7 @@ event's end from the next event's start; the final event is held for
 | `cartesia` | phoneme | explicit start/end **seconds** | `phoneme_timestamps:{phonemes[],start[],end[]}` |
 | `azure` | viseme | audio offset in **100-ns ticks** (÷10000 = ms) | array of `{audio_offset, viseme_id}` |
 | `polly` | viseme | `time` in integer **ms** | NDJSON marks; `type=="viseme"`, `value`, `time` |
-| `voicevox` | viseme | per-mora consonant/vowel **seconds**, cumulative from `prePhonemeLength`, ÷ `speedScale` | `/audio_query`: `accent_phrases[].moras[].{consonant,consonant_length,vowel,vowel_length}`, `pause_mora`, `pre`/`postPhonemeLength`, `speedScale` |
+| `voicevox` | viseme | per-mora consonant/vowel **seconds**, cumulative from `prePhonemeLength`, ÷ `speedScale`; pauses honor the `pauseLength`/`pauseLengthScale` overrides | `/audio_query`: `accent_phrases[].moras[].{consonant,consonant_length,vowel,vowel_length}`, `pause_mora`, `pre`/`postPhonemeLength`, `speedScale`, `pauseLength`, `pauseLengthScale` |
 
 `pho`, `piper` and `cartesia` symbols are the source's own alphabet (IPA for
 Piper/Cartesia, a SAMPA variant for MBROLA `.pho`) — **not** ARPABET. So for
