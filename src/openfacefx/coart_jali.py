@@ -179,22 +179,27 @@ def mask_tongue_lips(weights: np.ndarray, segments: List[PhonemeSegment],
 # hard constraints + jaw habit (post-blend forcings over the dense matrix)      #
 # --------------------------------------------------------------------------- #
 
-def _selection(times: np.ndarray, centre: float, half: float) -> np.ndarray:
-    sel = np.abs(times - centre) <= half
-    if not np.any(sel):
-        sel = np.zeros(len(times), bool)
-        sel[int(np.argmin(np.abs(times - centre)))] = True
-    return sel
+def _sel_range(times: np.ndarray, centre: float, half: float):
+    """Frame index range ``[lo, hi)`` within ``half`` of ``centre``. ``times`` is
+    sorted, so this is the exact set ``|times - centre| <= half`` selects; falls
+    back to the single nearest frame when the window spans none. Two searchsorted
+    lookups replace an O(frames) boolean scan per segment (perf pass)."""
+    lo = int(np.searchsorted(times, centre - half, "left"))
+    hi = int(np.searchsorted(times, centre + half, "right"))
+    if hi <= lo:
+        k = int(np.argmin(np.abs(times - centre)))
+        return k, k + 1
+    return lo, hi
 
 
 def _force_closure(matrix: np.ndarray, weights: np.ndarray, i: int,
-                   sel: np.ndarray, floor: float) -> None:
-    """Raise segment ``i``'s main target to ``floor`` over ``sel`` and rescale the
-    rest so each frame still sums to ~1 (the closure-enforcement math)."""
+                   lo: int, hi: int, floor: float) -> None:
+    """Raise segment ``i``'s main target to ``floor`` over frames ``[lo, hi)`` and
+    rescale the rest so each frame still sums to ~1 (the closure-enforcement math)."""
     v = int(np.argmax(weights[i]))
     if weights[i, v] <= 0.0:
         return
-    for f in np.nonzero(sel)[0]:
+    for f in range(lo, hi):
         cur = matrix[f, v]
         if cur >= floor:
             continue
@@ -220,18 +225,22 @@ def apply_constraints(times: np.ndarray, matrix: np.ndarray,
     for i, s in enumerate(segments):
         ph = _phon(s)
         centre = (s.start + s.end) / 2.0
-        sel = _selection(times, centre, max(s.dur * 0.25, 1.0 / 120.0))
+        # searchsorted index ranges over the sorted ``times`` grid replace the
+        # per-segment O(frames) boolean masks (perf pass, #59-era `short_no_jaw`
+        # already used the idiom); each range is the exact same frame set.
+        lo, hi = _sel_range(times, centre, max(s.dur * 0.25, 1.0 / 120.0))
         # constraints 1 & 2: bilabial / labiodental lip closure
         for cid, cat in (("bilabial_close", "bilabial"),
                          ("labiodental_teeth", "labiodental")):
             if rule_enabled(params, cid) and ph in cats[cat]:
-                _force_closure(matrix, weights, i, sel, cons[cid]["floor"])
+                _force_closure(matrix, weights, i, lo, hi, cons[cid]["floor"])
         # constraint 3: sibilants narrow the jaw across the segment
         if rule_enabled(params, "sibilant_jaw") and ph in cats["sibilant"] and jaw_cols:
             cap = cons["sibilant_jaw"]["jaw_cap"]
-            span = (times >= s.start) & (times <= s.end)
+            a = int(np.searchsorted(times, s.start, "left"))
+            b = int(np.searchsorted(times, s.end, "right"))
             for j in jaw_cols:
-                matrix[span, j] = np.minimum(matrix[span, j], cap)
+                matrix[a:b, j] = np.minimum(matrix[a:b, j], cap)
         # habit (#53): a SHORT obstruent/nasal leaves the jaw untouched — floor the
         # jaw over the segment to the neighbouring (vowel) level so a quick
         # stop/nasal cannot dip it (the jaw is slow; it rides through). Only bites
@@ -240,13 +249,14 @@ def apply_constraints(times: np.ndarray, matrix: np.ndarray,
         if (rule_enabled(params, "short_no_jaw") and jaw_cols
                 and s.dur < short_max_dur
                 and (ph in cats["obstruent"] or ph in cats["nasal"])):
-            span = (times >= s.start) & (times <= s.end)
-            if np.any(span):
-                lo = max(int(np.searchsorted(times, s.start)) - 1, 0)
-                hi = min(int(np.searchsorted(times, s.end)), len(times) - 1)
+            a = int(np.searchsorted(times, s.start, "left"))
+            b = int(np.searchsorted(times, s.end, "right"))
+            if b > a:
+                blo = max(int(np.searchsorted(times, s.start)) - 1, 0)
+                bhi = min(int(np.searchsorted(times, s.end)), len(times) - 1)
                 for j in jaw_cols:
-                    hold = min(matrix[lo, j], matrix[hi, j])
-                    matrix[span, j] = np.maximum(matrix[span, j], hold)
+                    hold = min(matrix[blo, j], matrix[bhi, j])
+                    matrix[a:b, j] = np.maximum(matrix[a:b, j], hold)
         # constraint 4: non-nasal open segments open the lips (cap closed-lip
         # targets so a neighbour's closure does not bleed across)
         if (rule_enabled(params, "nonnasal_lip_open") and lip_cols
@@ -254,4 +264,4 @@ def apply_constraints(times: np.ndarray, matrix: np.ndarray,
                 and ph not in cats["labiodental"]):
             cap = cons["nonnasal_lip_open"]["lip_cap"]
             for j in lip_cols:
-                matrix[sel, j] = np.minimum(matrix[sel, j], cap)
+                matrix[lo:hi, j] = np.minimum(matrix[lo:hi, j], cap)
