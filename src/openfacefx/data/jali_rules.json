@@ -7,6 +7,8 @@
     "labiodental": ["F", "V"],
     "sibilant": ["S", "Z", "SH", "ZH", "CH", "JH"],
     "nasal": ["M", "N", "NG"],
+    "obstruent": ["P", "B", "T", "D", "K", "G", "F", "V", "TH", "DH",
+                  "S", "Z", "SH", "ZH", "HH", "CH", "JH"],
     "tongue": ["T", "D", "L", "N", "NG", "K", "G"],
     "lip_heavy": ["UW", "OW", "OY", "W", "S", "Z", "JH", "SH", "ZH", "CH"]
   },
@@ -19,6 +21,12 @@
       "_note": "hard constraint 3: sibilants narrow the jaw"},
     "nonnasal_lip_open": {"lip_cap": 0.30,
       "_note": "hard constraint 4: non-nasal open segments open the lips (cap the closed-lip targets)"}
+  },
+  "habits": {
+    "short_no_jaw": {"max_dur": 0.10,
+      "_note": "habit: a short (<max_dur s) obstruent or nasal leaves the jaw untouched — post-blend in apply_constraints, floor the jaw-class targets across the segment up to the lower of the two neighbouring (vowel) jaw levels, so a quick stop/nasal cannot dip the slow-moving jaw (it rides through on the surrounding vowels). This is a floor over the dense matrix, NOT a pre-blend weight mask like tongue_no_lip; it fires wherever the mapping exposes jaw-class targets, including the built-in viseme set (aa/E/I/O/U are jaw-class), so it does shape default JALI-on output (JALI-off is unaffected)."},
+    "wordfinal_lip": {"onset_ext": 0.10,
+      "_note": "habit: a word-final lip-shaped (lip_heavy) phoneme anticipates — extend its onset lead-in so the word-final lip shape forms early. Needs jali_timing, like lip_heavy. Word-final is approximated as pre-silence / utterance-final, because the phoneme stream carries no inter-word boundaries."}
   },
   "timing": {
     "_note": "measured onset/decay extents in seconds; onset ~120ms before the apex, ~120ms decay, tighter after a vowel, lip protrusion extends ~150ms",

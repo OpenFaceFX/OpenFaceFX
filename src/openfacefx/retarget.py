@@ -208,9 +208,16 @@ def rename_only(prefix: str = "", names: Dict[str, str] = None) -> Mapping:
 # ---------------------------------------------------------------------------
 
 # Apple ARKit 52 blendshapes. Weights reproduced verbatim from
-# met4citizen/TalkingHead (MIT), a shipping viseme->ARKit map. Known quirks
-# kept as-published: CH and RR are identical; PP seals via lip-roll rather
-# than mouthClose.
+# met4citizen/TalkingHead (MIT), a shipping viseme->ARKit map, EXCEPT the
+# alveolar tongueOut on DD noted below. Known quirks kept as-published: CH and
+# RR are identical; PP seals via lip-roll rather than mouthClose.
+#
+# tongueOut coverage (issue #53): the alveolar family drives ARKit's tongue-
+# protrusion morph — TH 0.4, nn 0.2, and now DD 0.2 (t/d/l, "tongue to the
+# alveolar ridge", added to match nn and close the gap). kk (k/g) deliberately
+# does NOT: it is velar ("back of tongue raised"), the tongue TIP stays down, so
+# protrusion would misrepresent it — and ARKit has no tongue-back morph. This is
+# a deliberate, versioned change to the shipped preset's output (docs/retargeting.md).
 _ARKIT = {
     "PP": (("mouthRollLower", 0.8), ("mouthRollUpper", 0.8),
            ("mouthUpperUpLeft", 0.3), ("mouthUpperUpRight", 0.3)),
@@ -220,7 +227,8 @@ _ARKIT = {
            ("mouthLowerDownRight", 0.2)),
     "TH": (("mouthRollUpper", 0.6), ("jawOpen", 0.2), ("tongueOut", 0.4)),
     "DD": (("mouthPressLeft", 0.8), ("mouthPressRight", 0.8),
-           ("mouthFunnel", 0.5), ("jawOpen", 0.2)),
+           ("mouthFunnel", 0.5), ("jawOpen", 0.2), ("tongueOut", 0.2)),
+    # kk is velar — no tongueOut on purpose (see the header note).
     "kk": (("mouthLowerDownLeft", 0.4), ("mouthLowerDownRight", 0.4),
            ("mouthDimpleLeft", 0.3), ("mouthDimpleRight", 0.3),
            ("mouthFunnel", 0.3), ("mouthPucker", 0.3), ("jawOpen", 0.15)),

@@ -17,16 +17,15 @@ prioritised set):
     sibilant jaw narrowing, non-nasal lip opening;
   * **habits** — duplicated-viseme merge across word boundaries ("po_p m_an"),
     lip-heavy anticipation/hysteresis (UW/OW/OY/w/S/Z/J/C start early & end late),
-    tongue-only visemes never influence lip channels;
+    tongue-only visemes never influence lip channels, short obstruents/nasals
+    leave the jaw untouched, and a word-final lip shape anticipates (#53);
   * **empirical timing** — per-phoneme, context-dependent onset/decay (post-pause
     vs post-vowel; a 150 ms lip-protrusion extension) replacing the per-class
     ``lead`` constants when :attr:`CoartParams.jali_timing` is on.
 
-Deferred (flagged, not yet implemented): the short-obstruent / nasal
-"leave-the-jaw-untouched" and word-final anticipatory-lip habits, and the
-tongue-channel gain/offset mapping fields (NVIDIA A2F style) with the ARKit tongue
-targets — those touch the mapping schema / shipped presets and are left for a
-follow-up.
+The NVIDIA-A2F-style per-target tongue gain/offset fields (#53) live in the
+mapping schema (:mod:`openfacefx.mapping`) and are applied at keyframe reduction,
+not here.
 """
 
 from __future__ import annotations
@@ -46,6 +45,7 @@ from .visemes import phoneme_to_viseme
 RULE_IDS: Tuple[str, ...] = (
     "bilabial_close", "labiodental_teeth", "sibilant_jaw", "nonnasal_lip_open",
     "duplicated_merge", "lip_heavy", "tongue_no_lip",
+    "short_no_jaw", "wordfinal_lip",
 )
 
 
@@ -122,14 +122,20 @@ def timing_leads(segments: List[PhonemeSegment], params
                  ) -> Tuple[np.ndarray, np.ndarray]:
     """Per-segment ``(lead_in, lead_out)`` influence extents (seconds) from the
     empirical table, replacing the per-class ``lead`` constants. Onset is
-    context-dependent — longer after a pause, tighter after a vowel — and the
-    lip-heavy habit extends both sides by the lip-protrusion constant."""
-    t = load_rules()["timing"]
-    cats = load_rules()["categories"]
+    context-dependent — longer after a pause, tighter after a vowel — the
+    lip-heavy habit extends both sides by the lip-protrusion constant, and the
+    word-final habit (#53) extends the onset of a word-final lip-shaped phoneme so
+    its lip shape anticipates."""
+    rules = load_rules()
+    t = rules["timing"]
+    cats = rules["categories"]
+    habits = rules.get("habits", {})
     n = len(segments)
     lead_in = np.full(n, float(t["onset"]))
     lead_out = np.full(n, float(t["decay"]))
     lip_heavy = rule_enabled(params, "lip_heavy")
+    wordfinal = rule_enabled(params, "wordfinal_lip")
+    wf_ext = float(habits.get("wordfinal_lip", {}).get("onset_ext", 0.0))
     for i, s in enumerate(segments):
         prev = segments[i - 1] if i > 0 else None
         if prev is None or prev.phoneme == SILENCE:
@@ -139,6 +145,15 @@ def timing_leads(segments: List[PhonemeSegment], params
         if lip_heavy and _phon(s) in cats["lip_heavy"]:
             lead_in[i] += t["lip_protrusion_ext"]
             lead_out[i] += t["lip_protrusion_ext"]
+        # word-final anticipatory lip shape (#53): a lip-shaped (lip_heavy)
+        # phoneme that ends a word — next segment is silence, or it is the last
+        # segment — forms its lip shape early, so extend the onset lead-in.
+        # Word-final is approximated as pre-silence / utterance-final because the
+        # phoneme stream carries no inter-word boundaries.
+        if wordfinal and _phon(s) in cats["lip_heavy"]:
+            nxt = segments[i + 1] if i + 1 < n else None
+            if nxt is None or nxt.phoneme == SILENCE:
+                lead_in[i] += wf_ext
     return lead_in, lead_out
 
 
@@ -161,7 +176,7 @@ def mask_tongue_lips(weights: np.ndarray, segments: List[PhonemeSegment],
 
 
 # --------------------------------------------------------------------------- #
-# hard constraints (post-blend forcings over the dense matrix)                  #
+# hard constraints + jaw habit (post-blend forcings over the dense matrix)      #
 # --------------------------------------------------------------------------- #
 
 def _selection(times: np.ndarray, centre: float, half: float) -> np.ndarray:
@@ -192,11 +207,13 @@ def _force_closure(matrix: np.ndarray, weights: np.ndarray, i: int,
 def apply_constraints(times: np.ndarray, matrix: np.ndarray,
                       segments: List[PhonemeSegment], mapping,
                       weights: np.ndarray, names: List[str], params) -> None:
-    """Apply the enabled hard constraints to the dense matrix, in place. Called
-    from :func:`coarticulation._blend` in place of the legacy
-    ``_enforce_closures`` when JALI is on."""
+    """Apply the enabled hard constraints (and the #53 short-obstruent jaw habit)
+    to the dense matrix, in place. Called from :func:`coarticulation._blend` in
+    place of the legacy ``_enforce_closures`` when JALI is on."""
     rules = load_rules()
     cats, cons = rules["categories"], rules["constraints"]
+    habits = rules.get("habits", {})
+    short_max_dur = float(habits.get("short_no_jaw", {}).get("max_dur", 0.0))
     classes = _target_classes(names, mapping)
     jaw_cols = [j for j, c in enumerate(classes) if c == "jaw"]
     lip_cols = [j for j, c in enumerate(classes) if c == "lips"]
@@ -215,6 +232,21 @@ def apply_constraints(times: np.ndarray, matrix: np.ndarray,
             span = (times >= s.start) & (times <= s.end)
             for j in jaw_cols:
                 matrix[span, j] = np.minimum(matrix[span, j], cap)
+        # habit (#53): a SHORT obstruent/nasal leaves the jaw untouched — floor the
+        # jaw over the segment to the neighbouring (vowel) level so a quick
+        # stop/nasal cannot dip it (the jaw is slow; it rides through). Only bites
+        # when a jaw target is held either side; a no-op next to a closed jaw or on
+        # the built-in map, where consonants carry no jaw weight.
+        if (rule_enabled(params, "short_no_jaw") and jaw_cols
+                and s.dur < short_max_dur
+                and (ph in cats["obstruent"] or ph in cats["nasal"])):
+            span = (times >= s.start) & (times <= s.end)
+            if np.any(span):
+                lo = max(int(np.searchsorted(times, s.start)) - 1, 0)
+                hi = min(int(np.searchsorted(times, s.end)), len(times) - 1)
+                for j in jaw_cols:
+                    hold = min(matrix[lo, j], matrix[hi, j])
+                    matrix[span, j] = np.maximum(matrix[span, j], hold)
         # constraint 4: non-nasal open segments open the lips (cap closed-lip
         # targets so a neighbour's closure does not bleed across)
         if (rule_enabled(params, "nonnasal_lip_open") and lip_cols

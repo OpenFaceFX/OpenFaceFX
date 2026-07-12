@@ -77,8 +77,10 @@ def _rdp(times: np.ndarray, values: np.ndarray, eps: float) -> List[int]:
 def reduce_to_track(times: np.ndarray, matrix: np.ndarray, fps: float,
                     epsilon: float = 0.015, targets=None) -> FaceTrack:
     """``targets``: optional list of ``mapping.Target`` — supplies channel
-    names and per-target min/max clamps. Defaults to the Oculus viseme set
-    with no clamping (identical to previous releases)."""
+    names, per-target min/max clamps and (schema v2, issue #53) optional
+    ``gain``/``offset`` applied as ``clamp(gain*value + offset, min, max)`` before
+    reduction. Defaults to the Oculus viseme set with no clamping and no
+    gain/offset (identical to previous releases)."""
     if targets is None:
         names, clamps = VISEMES, [None] * len(VISEMES)
     else:
@@ -88,7 +90,16 @@ def reduce_to_track(times: np.ndarray, matrix: np.ndarray, fps: float,
     channels: List[Channel] = []
     for v, name in enumerate(names):
         col = matrix[:, v]
-        if clamps[v] is not None:
+        # A2F-style per-target gain/offset (issue #53): scale/bias a channel's
+        # output, then clamp. getattr keeps non-Target callers (e.g. the CSV
+        # importer's _Col) working; gain=1/offset=0 skips this branch entirely,
+        # so default mappings and the built-in viseme set stay byte-identical.
+        g = getattr(targets[v], "gain", 1.0) if targets is not None else 1.0
+        o = getattr(targets[v], "offset", 0.0) if targets is not None else 0.0
+        if g != 1.0 or o != 0.0:
+            lo, hi = clamps[v] if clamps[v] is not None else (0.0, 1.0)
+            col = np.clip(col * g + o, lo, hi)
+        elif clamps[v] is not None:
             col = np.clip(col, clamps[v][0], clamps[v][1])
         if not np.any(col > 1e-3):
             continue  # channel never fires; skip entirely

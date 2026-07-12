@@ -33,7 +33,11 @@ times, matrix = build_viseme_curves(segments, mapping=mapping, params=params)
   word boundary into one hold ("po_p m_an"); `lip_heavy` gives the rounded/
   protruded visemes (UW OW OY w S Z J C) an earlier onset and longer hold;
   `tongue_no_lip` guarantees a tongue articulation (l n t d g k ng) never pulls a
-  lip channel.
+  lip channel; `short_no_jaw` (#53) holds the jaw at the neighbouring level
+  through a *short* obstruent or nasal so a quick stop/nasal can't dip it; and
+  `wordfinal_lip` (#53) gives a word-final lip-shaped phoneme an earlier onset so
+  its lip shape anticipates (word-final is approximated as pre-silence /
+  utterance-final, as the phoneme stream carries no inter-word boundaries).
 - **Empirical timing** (`jali_timing`, on by default when JALI is on): a
   per-phoneme, context-dependent onset/decay lookup — onset ~120 ms before the
   apex, tighter after a vowel (~60 ms) than after a pause (~120 ms), with a
@@ -41,17 +45,20 @@ times, matrix = build_viseme_curves(segments, mapping=mapping, params=params)
 
 ## Data, not code
 
-The categories (phoneme sets), constraint floors/caps and timing constants live
-in `data/jali_rules.json` so new measurements drop in without touching code. The
-tongue articulator **class** was already in the mapping schema, so no schema
-version bump was needed.
+The categories (phoneme sets), constraint floors/caps, habit thresholds and
+timing constants live in `data/jali_rules.json` so new measurements drop in
+without touching code. The tongue articulator **class** was already in the mapping
+schema; issue #53 adds optional per-target **gain/offset** fields (NVIDIA-A2F-style
+channel tuning), which bump the mapping schema to **version 2** — version-1 files
+still load, the absent fields reading as the no-op defaults.
 
-## Deferred (flagged for a follow-up)
+## Follow-up (#53)
 
-Two lower-value habits — short-obstruent / nasal "leave-the-jaw-untouched" and
-word-final anticipatory lip shape — and the NVIDIA-A2F-style tongue-channel
-**gain/offset** mapping fields (with the ARKit tongue targets) are **not** in this
-pass. Adding the gain/offset fields *would* bump the mapping schema version; it is
-left out here so the schema and shipped ARKit preset stay byte-identical.
+Issue #53 completes the two remaining JALI habits above — `short_no_jaw` and
+`wordfinal_lip`, both off by default and byte-identical when off — and adds the
+tongue-channel **gain/offset** mapping fields (schema v2, applied at keyframe
+reduction; see [`openfacefx.mapping`][openfacefx.mapping] and
+[`reduce_to_track`][openfacefx.curves.reduce_to_track]). At the no-op defaults
+(`gain=1.0`, `offset=0.0`) a mapping is byte-identical to before.
 
 ::: openfacefx.coart_jali

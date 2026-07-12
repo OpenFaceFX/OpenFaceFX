@@ -64,11 +64,23 @@ a duplicate table:
 - **NVIDIA Audio2Face-3D**: emits [ARKit
   blendshapes](https://docs.nvidia.com/ace/audio2face-3d-microservice/latest/text/getting-started/overview.html),
   so drive it with `arkit`. A2F does not animate the tongue — pass `available=`
-  without `tongueOut` and the arkit fallback reroutes the `TH`/`nn` tongue weight
-  to a small `jawOpen` (below). (A2F's `MouthClose` also folds in jaw opening,
-  deviating from Apple's, but that is moot here: `arkit` seals `PP` with
+  without `tongueOut` and the arkit fallback reroutes the `TH`/`nn`/`DD` tongue
+  weight to a small `jawOpen` (below). (A2F's `MouthClose` also folds in jaw
+  opening, deviating from Apple's, but that is moot here: `arkit` seals `PP` with
   lip-roll, not `mouthClose`.)
 - **Reallusion CC3**: shares CC4's Viseme Panel labels — use `cc4`.
+
+### ARKit `tongueOut` coverage
+
+The `arkit` preset drives Apple's tongue-protrusion morph from the **alveolar**
+visemes: `TH` (0.4), `nn` (0.2), and — **new in this release** (issue #53) — `DD`
+(0.2, the `t`/`d`/`l` family, "tongue to the alveolar ridge"), added to match `nn`
+and close the gap. This is a deliberate, versioned change to the shipped preset's
+output: a track containing `t`/`d`/`l` now emits a small `tongueOut` channel, and
+a tongue-less rig reroutes it to `jawOpen` like `TH`/`nn` already do. The **velar**
+viseme `kk` (`k`/`g`) is deliberately left tongue-free: it is "back of tongue
+raised", the tongue *tip* stays down, so protrusion would misrepresent it — and
+ARKit has no tongue-back morph.
 
 ## Optional shapes and fallbacks
 
@@ -93,7 +105,7 @@ not looped. With `available=None` (the default) nothing is filtered, so a plain
 
 | Preset | Fallback | Rationale |
 |---|---|---|
-| `arkit` | `tongueOut → jawOpen × 0.2` | Tongue-less rigs (e.g. Audio2Face) keep a hint of the `TH`/`nn` opening instead of losing it. Our heuristic, not an Apple convention. |
+| `arkit` | `tongueOut → jawOpen × 0.2` | Tongue-less rigs (e.g. Audio2Face) keep a hint of the `TH`/`nn`/`DD` opening instead of losing it. Our heuristic, not an Apple convention. |
 | `rhubarb` | `G → A`, `H → C`, `X → A` | Rhubarb's own documented [basic-set collapse](https://github.com/DanielSWolf/rhubarb-lip-sync) for art with only the six basic shapes. Single source of truth: the cue exporters (`--rhubarb-shapes`) derive their collapse from this same table. |
 
 The tables are data — extend `PRESET_FALLBACKS` or pass your own `fallbacks=`.

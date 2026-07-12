@@ -8,6 +8,40 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **JALI follow-ups** ([#53](https://github.com/OpenFaceFX/OpenFaceFX/issues/53),
+  follow-up to [#19](https://github.com/OpenFaceFX/OpenFaceFX/issues/19)): two more
+  coarticulation habits and NVIDIA-A2F-style tongue-channel tuning, all opt-in and
+  byte-identical to v0.18.2 when off/default.
+  - Two new JALI habits, each individually toggleable via `jali_rules` and **off
+    by default**: `short_no_jaw` holds the jaw at the neighbouring vowel level
+    through a *short* obstruent or nasal so a quick stop/nasal can't dip it, and
+    `wordfinal_lip` gives a word-final lip-shaped phoneme an earlier onset so its
+    lip shape anticipates (word-final is approximated as pre-silence /
+    utterance-final, as the phoneme stream carries no inter-word boundaries). Adds
+    an `obstruent` category and a `habits` block (thresholds) to
+    `data/jali_rules.json`.
+  - Optional per-target **`gain`/`offset`** fields on the mapping schema — at
+    keyframe reduction a channel becomes `clamp(gain*value + offset, min, max)`,
+    chiefly to scale/bias the independent tongue channel (NVIDIA-A2F-style). This
+    bumps the **mapping schema to version 2**; version-1 files still load, the
+    absent fields reading as the no-op defaults (`gain=1.0`, `offset=0.0`), so
+    existing mappings stay byte-identical.
+
+### Changed
+- `Mapping.to_json` now writes schema **version 2**, emitting `gain`/`offset` only
+  when non-default so a mapping that uses no A2F tuning keeps its minimal target
+  entries. `Mapping.from_json` reads both version 1 and 2.
+- **ARKit retarget preset output change** (part of
+  [#53](https://github.com/OpenFaceFX/OpenFaceFX/issues/53)): the alveolar `DD`
+  viseme (`t`/`d`/`l`) now drives `tongueOut` at 0.2, matching `nn`. A deliberate,
+  versioned change to the shipped preset — tracks containing `t`/`d`/`l` gain a
+  small `tongueOut` channel, and tongue-less rigs reroute it to `jawOpen` exactly
+  as `TH`/`nn` already do. Velar `kk` (`k`/`g`) is left tongue-free on purpose
+  (back-of-tongue articulation; ARKit's `tongueOut` is protrusion). Existing
+  non-`t`/`d`/`l` output and the `TH`/`nn` channels are unchanged. See
+  `docs/retargeting.md`.
+
 ## [0.18.2] — 2026-07-11
 
 ### Fixed

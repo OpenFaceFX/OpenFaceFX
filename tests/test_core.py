@@ -334,6 +334,77 @@ def test_mapping_files_load():
     assert "MBP" in m2.target_names and len(m2.rows) >= 39
 
 
+def test_mapping_gain_offset_applied():
+    # NVIDIA-A2F-style per-target gain/offset (schema v2, issue #53).
+    from openfacefx.mapping import Mapping, Target
+    from openfacefx import generate_from_alignment
+    from openfacefx.alignment import PhonemeSegment
+    segs = [PhonemeSegment("sil", 0.0, 0.2), PhonemeSegment("L", 0.2, 0.8),
+            PhonemeSegment("sil", 0.8, 1.0)]
+    rows = {"L": {"tng": 0.5}, "sil": {}}
+    base = Mapping([Target("tng", "tongue"), Target("sil", "basic")], rows)
+    # default gain=1.0 / offset=0.0 is an exact no-op (byte-identical channels)
+    plain = Mapping([Target("tng", "tongue", gain=1.0, offset=0.0),
+                     Target("sil", "basic")], rows)
+    assert (to_dict(generate_from_alignment(segs, mapping=plain))
+            == to_dict(generate_from_alignment(segs, mapping=base)))
+    peak = lambda mp, name: max(
+        (k.value for c in generate_from_alignment(segs, mapping=mp).channels
+         if c.name == name for k in c.keys), default=0.0)
+    # gain scales the tongue channel up
+    gained = Mapping([Target("tng", "tongue", gain=1.8), Target("sil", "basic")],
+                     rows)
+    assert peak(gained, "tng") > peak(base, "tng")
+    # offset biases an otherwise-silent channel into existence ("held slightly on")
+    biased = Mapping([Target("tng", "tongue"),
+                      Target("hint", "tongue", offset=0.2),
+                      Target("sil", "basic")], rows)
+    assert abs(peak(biased, "hint") - 0.2) < 1e-9
+    # the min/max clamp still bounds the scaled value
+    capped = Mapping([Target("tng", "tongue", gain=5.0, hi=0.6),
+                      Target("sil", "basic")], rows)
+    assert peak(capped, "tng") <= 0.6 + 1e-9
+
+
+def test_mapping_gain_offset_schema_v2_roundtrip_and_v1_compat():
+    import json
+    import tempfile
+    from openfacefx.mapping import Mapping, Target
+    m = Mapping([Target("tng", "tongue", gain=1.5, offset=0.05),
+                 Target("jaw", "jaw")],
+                {"AA": {"jaw": 1.0}, "L": {"tng": 1.0}, "sil": {}})
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "m.json")
+        m.to_json(p)
+        with open(p) as fh:
+            raw = json.load(fh)
+        assert raw["version"] == 2                            # schema bumped 1 -> 2
+        by = {t["name"]: t for t in raw["targets"]}
+        # gain/offset written only when non-default (jaw omits them -> minimal)
+        assert by["tng"]["gain"] == 1.5 and by["tng"]["offset"] == 0.05
+        assert "gain" not in by["jaw"] and "offset" not in by["jaw"]
+        m2 = Mapping.from_json(p)                             # round-trips
+        assert (m2.targets[0].gain, m2.targets[0].offset) == (1.5, 0.05)
+        assert (m2.targets[1].gain, m2.targets[1].offset) == (1.0, 0.0)
+        # a hand-written v1 file (no gain/offset) still loads as no-op defaults
+        p1 = os.path.join(d, "v1.json")
+        with open(p1, "w") as fh:
+            json.dump({"format": "openfacefx.mapping", "version": 1,
+                       "targets": [{"name": "tng", "class": "tongue"}],
+                       "phonemes": {"L": {"tng": 1.0}, "sil": {}}}, fh)
+        mv1 = Mapping.from_json(p1)
+        assert (mv1.targets[0].gain, mv1.targets[0].offset) == (1.0, 0.0)
+
+
+def test_mapping_gain_offset_validation():
+    import pytest
+    from openfacefx.mapping import Mapping, Target
+    with pytest.raises(ValueError, match="gain/offset"):
+        Mapping([Target("x", gain=float("nan"))], {"AA": {"x": 1.0}})
+    with pytest.raises(ValueError, match="gain/offset"):
+        Mapping([Target("x", offset=float("inf"))], {"AA": {"x": 1.0}})
+
+
 def test_fuz_container_roundtrip():
     import tempfile
     from openfacefx.bethesda import read_fuz, write_fuz

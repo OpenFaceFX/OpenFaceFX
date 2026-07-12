@@ -118,6 +118,29 @@ def test_retarget_available_and_fallbacks():
         retarget(tk, {"aa": [("jawOpen", 0.6)]}, available=None))
 
 
+def test_arkit_dd_gains_tongue_out_kk_stays_velar():
+    # issue #53 (A'): the alveolar DD viseme (t/d/l) now fires ARKit's tongueOut
+    # at 0.2, matching nn — a deliberate, versioned change to the shipped preset's
+    # output for t/d/l tracks. Velar kk (k/g) stays tongue-free on purpose.
+    from openfacefx.curves import Channel, FaceTrack, Keyframe
+    from openfacefx.retarget import retarget, PRESETS, PRESET_FALLBACKS
+    dd = FaceTrack(fps=60, channels=[Channel("DD", [Keyframe(0.0, 1.0)])])
+    full = {c.name: c.keys[0].value for c in retarget(dd, PRESETS["arkit"]).channels}
+    assert full == {"mouthPressLeft": 0.8, "mouthPressRight": 0.8,
+                    "mouthFunnel": 0.5, "jawOpen": 0.2, "tongueOut": 0.2}
+    # a tongue-less rig reroutes DD's tongueOut to jawOpen, exactly like nn/TH
+    avail = {"mouthPressLeft", "mouthPressRight", "mouthFunnel", "jawOpen"}
+    out = {c.name: c.keys[0].value for c in
+           retarget(dd, PRESETS["arkit"], available=avail,
+                    fallbacks=PRESET_FALLBACKS["arkit"]).channels}
+    assert out == {"mouthPressLeft": 0.8, "mouthPressRight": 0.8,
+                   "mouthFunnel": 0.5, "jawOpen": 0.24}   # 0.2 direct + 0.2*0.2 rerouted
+    assert "tongueOut" not in out                          # advertised as rerouted
+    # velar kk (k/g) is deliberately tongue-free: back of tongue, no protrusion
+    kk = FaceTrack(fps=60, channels=[Channel("kk", [Keyframe(0.0, 1.0)])])
+    assert "tongueOut" not in {c.name for c in retarget(kk, PRESETS["arkit"]).channels}
+
+
 def test_rhubarb_fallback_single_source():
     # The Rhubarb basic-set collapse lives once, in retarget.PRESET_FALLBACKS;
     # export_cues derives its single-shape cue-label view from that table.

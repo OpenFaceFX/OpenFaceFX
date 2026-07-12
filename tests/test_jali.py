@@ -61,18 +61,30 @@ def test_rule_table_is_json_data_and_toggleable():
     rules = coart_jali.load_rules()
     assert rules["format"] == "openfacefx.jali"
     assert {"bilabial", "labiodental", "sibilant", "nasal", "tongue",
-            "lip_heavy"} <= set(rules["categories"])
+            "lip_heavy", "obstruent"} <= set(rules["categories"])
     assert {"bilabial_close", "labiodental_teeth", "sibilant_jaw",
             "nonnasal_lip_open"} <= set(rules["constraints"])
+    # the two #53 habits carry their tunables as data too
+    assert {"short_no_jaw", "wordfinal_lip"} <= set(rules["habits"])
+    assert rules["habits"]["short_no_jaw"]["max_dur"] > 0.0
+    assert rules["habits"]["wordfinal_lip"]["onset_ext"] > 0.0
     # every constraint + the prioritised habits are individually addressable
     assert {"bilabial_close", "labiodental_teeth", "sibilant_jaw",
             "nonnasal_lip_open", "duplicated_merge", "lip_heavy",
-            "tongue_no_lip"} == set(coart_jali.RULE_IDS)
-    # rule_enabled respects the master flag and the selected set
+            "tongue_no_lip", "short_no_jaw", "wordfinal_lip"} == set(
+        coart_jali.RULE_IDS)
+    # rule_enabled respects the master flag and the selected set (incl. the new
+    # habits — off by default, individually selectable)
     assert not coart_jali.rule_enabled(CoartParams(jali=False), "sibilant_jaw")
     assert coart_jali.rule_enabled(CoartParams(jali=True), "sibilant_jaw")
     assert not coart_jali.rule_enabled(
         CoartParams(jali=True, jali_rules=("lip_heavy",)), "sibilant_jaw")
+    for hid in ("short_no_jaw", "wordfinal_lip"):
+        assert not coart_jali.rule_enabled(CoartParams(jali=False), hid)  # off
+        assert coart_jali.rule_enabled(
+            CoartParams(jali=True, jali_rules=(hid,)), hid)               # on
+        assert not coart_jali.rule_enabled(
+            CoartParams(jali=True, jali_rules=("lip_heavy",)), hid)       # isolable
 
 
 # --------------------------------------------------------------------------- #
@@ -107,6 +119,70 @@ def test_tongue_class_never_contributes_to_lip_channels():
         params=CoartParams(jali=True, jali_rules=("tongue_no_lip",)))[1]
     assert without[:, 0].max() > 0.1                      # the leak is real ...
     assert with_rule[:, 0].max() < 1e-9                   # ... and fully removed
+
+
+# --------------------------------------------------------------------------- #
+# habit (#53): a short obstruent/nasal leaves the jaw untouched                 #
+# --------------------------------------------------------------------------- #
+
+def test_short_obstruent_leaves_the_jaw_untouched():
+    # a JALI/A2F-style rig with a dedicated jaw channel: the vowels hold the jaw
+    # open and /d/ drives only the tongue. A *short* /d/ must not dip the jaw.
+    m = Mapping([Target("JAW", "jaw"), Target("TNG", "tongue"),
+                 Target("sil", "basic")],
+                {"D": {"TNG": 1.0}, "AA": {"JAW": 1.0}, "sil": {}})
+    short = [PhonemeSegment("AA", 0.0, 0.30), PhonemeSegment("D", 0.30, 0.35),
+             PhonemeSegment("AA", 0.35, 0.65)]                # 50 ms /d/
+    times, off = build_viseme_curves(short, 120.0, mapping=m,
+                                     params=CoartParams(jali=True, jali_rules=()))
+    _, on = build_viseme_curves(short, 120.0, mapping=m,
+                                params=CoartParams(jali=True,
+                                                   jali_rules=("short_no_jaw",)))
+    span = (times >= 0.30) & (times <= 0.35)
+    assert off[span, 0].min() < 0.5                          # the jaw dips ...
+    assert on[span, 0].min() > off[span, 0].min() + 0.1      # ... the habit holds it
+    # the habit is individually toggleable and off by default
+    default = build_viseme_curves(short, 120.0, mapping=m,
+                                  params=CoartParams(jali=True))[1]  # all rules
+    assert on[span, 0].min() == pytest.approx(default[span, 0].min())
+    # a LONG /d/ (beyond the short threshold) is left alone
+    long_d = [PhonemeSegment("AA", 0.0, 0.30), PhonemeSegment("D", 0.30, 0.60),
+              PhonemeSegment("AA", 0.60, 0.90)]               # 300 ms /d/
+    off2 = build_viseme_curves(long_d, 120.0, mapping=m,
+                               params=CoartParams(jali=True, jali_rules=()))[1]
+    on2 = build_viseme_curves(long_d, 120.0, mapping=m,
+                              params=CoartParams(jali=True,
+                                                 jali_rules=("short_no_jaw",)))[1]
+    assert np.array_equal(off2, on2)                         # untouched
+
+
+# --------------------------------------------------------------------------- #
+# habit (#53): word-final anticipatory lip shape                                #
+# --------------------------------------------------------------------------- #
+
+def test_wordfinal_lip_anticipates():
+    on = CoartParams(jali=True, jali_rules=("wordfinal_lip",))
+    off = CoartParams(jali=True, jali_rules=())
+    lead = lambda segs, p: coart_jali.timing_leads(segs, p)[0][1]
+    # UW is a lip-heavy shape; word-final (next is silence) it forms early
+    final = [PhonemeSegment("sil", 0.0, 0.2), PhonemeSegment("UW", 0.2, 0.4),
+             PhonemeSegment("sil", 0.4, 0.6)]
+    assert lead(final, on) > lead(final, off)                # onset extended
+    # a mid-word UW (followed by a vowel, not silence) is not anticipated
+    mid = [PhonemeSegment("sil", 0.0, 0.2), PhonemeSegment("UW", 0.2, 0.4),
+           PhonemeSegment("AA", 0.4, 0.6)]
+    assert lead(mid, on) == lead(mid, off)
+    # it needs a lip shape: a word-final /t/ (viseme DD, not lip-heavy) is untouched
+    final_t = [PhonemeSegment("sil", 0.0, 0.2), PhonemeSegment("T", 0.2, 0.4),
+               PhonemeSegment("sil", 0.4, 0.6)]
+    assert lead(final_t, on) == lead(final_t, off)
+    # end-to-end: the earlier onset gives the word-final U viseme more area
+    ui = VISEME_INDEX["U"]
+    curve_off = build_viseme_curves(final, 120.0, params=off)[1][:, ui]
+    curve_on = build_viseme_curves(final, 120.0, params=on)[1][:, ui]
+    _onset = lambda col: int(np.argmax(col > 0.1))
+    assert _onset(curve_on) <= _onset(curve_off)             # earlier (or equal)
+    assert curve_on.sum() > curve_off.sum()                  # more anticipation area
 
 
 # --------------------------------------------------------------------------- #

@@ -10,13 +10,23 @@ JSON file format (validated on load)::
 
     {
       "format": "openfacefx.mapping",
-      "version": 1,
+      "version": 2,
       "targets": [
         {"name": "PP", "class": "lips", "min": 0.0, "max": 1.0},
+        {"name": "tng", "class": "tongue", "gain": 1.5, "offset": 0.05},
         ...
       ],
       "phonemes": { "P": {"PP": 1.0}, "AY": {"aa": 0.7, "E": 0.3}, ... }
     }
+
+Optional per-target ``gain``/``offset`` (schema **version 2**, issue #53) tune a
+channel's output NVIDIA-Audio2Face-style — at keyframe reduction the channel
+becomes ``clamp(gain*value + offset, min, max)`` — chiefly to scale/bias the
+independent tongue channel. They default to ``gain=1.0`` / ``offset=0.0`` (an
+exact no-op) and are distinct from :attr:`coarticulation.CoartParams.gains`,
+which scales per-class dominance mid-blend. Version-1 files (no gain/offset) still
+load — the absent fields read as the no-op defaults — so old mappings stay
+byte-identical.
 
 ``Mapping.default()`` reproduces the built-in table exactly — running without
 ``--mapping`` is bit-for-bit identical to previous releases.
@@ -51,6 +61,11 @@ class Target:
     articulator: str = "basic"
     lo: float = 0.0
     hi: float = 1.0
+    # NVIDIA-A2F-style per-target output tuning (schema v2, issue #53): at
+    # keyframe reduction the channel becomes clamp(gain*value + offset, lo, hi).
+    # Defaults are an exact no-op, so a v1 mapping (no fields) is byte-identical.
+    gain: float = 1.0
+    offset: float = 0.0
 
 
 @dataclass
@@ -85,6 +100,10 @@ class Mapping:
             if not (0.0 <= t.lo <= t.hi <= 1.0):
                 raise ValueError(
                     f"target {t.name!r}: invalid clamp range [{t.lo}, {t.hi}]")
+            if not (math.isfinite(t.gain) and math.isfinite(t.offset)):
+                raise ValueError(
+                    f"target {t.name!r}: gain/offset must be finite numbers "
+                    f"(got gain={t.gain!r}, offset={t.offset!r})")
         for ph, row in self.rows.items():
             if not self.allow_custom_symbols:
                 key = strip_stress(ph).upper() if ph != SILENCE else SILENCE
@@ -132,12 +151,15 @@ class Mapping:
                 d = json.load(fh)
             except json.JSONDecodeError as e:
                 raise ValueError(f"{path}: not valid JSON ({e})") from None
-        if d.get("format") != "openfacefx.mapping" or d.get("version") != 1:
+        if d.get("format") != "openfacefx.mapping" or d.get("version") not in (1, 2):
             raise ValueError(
-                f"{path}: expected format 'openfacefx.mapping' version 1")
+                f"{path}: expected format 'openfacefx.mapping' version 1 or 2")
         try:
+            # gain/offset are v2 (issue #53); a v1 file omits them and reads the
+            # no-op defaults, so old mappings load unchanged.
             targets = [Target(t["name"], t.get("class", "basic"),
-                              float(t.get("min", 0.0)), float(t.get("max", 1.0)))
+                              float(t.get("min", 0.0)), float(t.get("max", 1.0)),
+                              float(t.get("gain", 1.0)), float(t.get("offset", 0.0)))
                        for t in d["targets"]]
         except (KeyError, TypeError) as e:
             raise ValueError(f"{path}: malformed targets entry ({e})") from None
@@ -150,14 +172,22 @@ class Mapping:
                    allow_custom_symbols=bool(d.get("custom_symbols", False)))
 
     def to_json(self, path: str) -> None:
+        # Emit schema v2, but omit gain/offset when they are the no-op defaults so
+        # a mapping that uses no A2F tuning round-trips to the same minimal target
+        # entries it always had (only the version tag advances 1 -> 2).
+        targets = []
+        for t in self.targets:
+            entry = {"name": t.name, "class": t.articulator,
+                     "min": t.lo, "max": t.hi}
+            if t.gain != 1.0:
+                entry["gain"] = t.gain
+            if t.offset != 0.0:
+                entry["offset"] = t.offset
+            targets.append(entry)
         d = {
             "format": "openfacefx.mapping",
-            "version": 1,
-            "targets": [
-                {"name": t.name, "class": t.articulator,
-                 "min": t.lo, "max": t.hi}
-                for t in self.targets
-            ],
+            "version": 2,
+            "targets": targets,
             "phonemes": self.rows,
         }
         with open(path, "w", encoding="utf-8") as fh:
