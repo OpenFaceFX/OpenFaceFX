@@ -1176,6 +1176,22 @@ def main(argv=None) -> int:
     _add_output_options(cs)
     _add_qa_options(cs)
 
+    fv = sub.add_parser("from-vmd",
+                        help="import a MikuMikuDance .vmd morph animation into a "
+                             "track — the read side of the .vmd exporter (issue "
+                             "#60); unknown morphs pass through, 頭/首 bones become "
+                             "head-pose channels")
+    fv.add_argument("file", help="the .vmd motion file to import")
+    fv.add_argument("--fps", type=float, default=30.0,
+                    help="frame rate timing the .vmd frames (frame -> seconds; "
+                         "default 30, MMD-native)")
+    fv.add_argument("--no-head-pose", action="store_true",
+                    help="skip harvesting the 頭/首 head bones into "
+                         "headPitch/headYaw/headRoll channels")
+    fv.add_argument("-o", "--out", required=True)
+    _add_output_options(fv)
+    _add_qa_options(fv)
+
     cv = sub.add_parser("convert",
                         help="re-export or retarget an existing track.json to any "
                              "format (Unity/Godot/Live2D/cues/.lip/CSV/JSON) "
@@ -1520,6 +1536,17 @@ def main(argv=None) -> int:
             raise SystemExit(f"from-csv: {ex}")
         for w in warnings:
             _warn(args, w)
+        _write(track, args.out, args)
+        _emit_summary(args, track)
+        return 0
+
+    if args.cmd == "from-vmd":
+        from .importers_vmd import read_vmd
+        try:
+            track = read_vmd(args.file, fps=args.fps,
+                             head_pose=not args.no_head_pose)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"from-vmd: {ex}")
         _write(track, args.out, args)
         _emit_summary(args, track)
         return 0

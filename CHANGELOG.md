@@ -8,6 +8,18 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **VMD (MikuMikuDance) morph-animation importer** (#60) — `parse_vmd(bytes)` /
+  `read_vmd(path)` and a `from-vmd` CLI verb read a `.vmd` back into a `FaceTrack`,
+  the read side of the 0.19.0 `.vmd` exporter. Morph frames invert the unambiguous
+  vowel subset (あ→aa, い→I, う→U, え→E, お→O, ん→nn); any other morph passes through as
+  its own channel (reported, never dropped, since the forward map is many→one); the
+  頭/首 head bones become `headPitch/headYaw/headRoll`, and the camera/light/IK
+  tail is skipped. A studio can now bring a `.vmd` lip library in to re-coarticulate,
+  retarget or re-export it. Pure `struct` + stdlib, deterministic on py3.9/3.13,
+  verified by a true round-trip against the writer (no MMD needed). Additive —
+  existing output is byte-identical.
+
 ## [0.19.1] - 2026-07-12
 
 Hardening and performance. No API changes; every valid input produces

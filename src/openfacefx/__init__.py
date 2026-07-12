@@ -40,6 +40,7 @@ from .emotion import (EmotionEnvelope, bake_emotion, load_envelope,
 from .importers import (import_cues, detect_format, build_cue_track,
                        RHUBARB_TO_VISEME, PRESTON_BLAIR_TO_VISEME)
 from .importers_csv import read_csv
+from .importers_vmd import parse_vmd, read_vmd
 from .inspect import (inspect_track, validate_asset, validate_file,
                      detect_kind)
 from .transforms import (retime, retime_to_duration, mirror, trim, concat,
@@ -120,6 +121,7 @@ __all__ = [
     "va_to_pose", "VA_TABLE", "VA_EMOTION_CHANNELS",
     "import_cues", "detect_format", "build_cue_track",
     "RHUBARB_TO_VISEME", "PRESTON_BLAIR_TO_VISEME", "read_csv",
+    "parse_vmd", "read_vmd",
     "inspect_track", "validate_asset", "validate_file", "detect_kind",
     "retime", "retime_to_duration", "mirror", "trim", "concat",
     "MIRROR_PAIRS", "MIRROR_NEGATE",
