@@ -47,6 +47,7 @@ from .anchors import (
 )
 from .aligners import (from_whisper_json, from_whisperx, from_gentle,
                       from_gentle_phones)
+from .aligners_acoustic import from_allosaurus, from_phone_timestamps
 from .export_captions import parse_vtt
 from . import facefxwrapper
 
@@ -67,7 +68,10 @@ _ANCHOR_PARSERS = {
 # Formats whose anchors carry the words, so --text is optional (like srt) — SRT/
 # WebVTT cues and the open-source aligners all supply their own transcript.
 _SELF_TRANSCRIBING = ("srt", "vtt", "whisper", "whisperx", "gentle")
-_ANCHOR_FORMATS = list(_ANCHOR_PARSERS) + ["google", "gentle-phones"]
+# `gentle-phones`, `allosaurus` and `phones` produce PhonemeSegments directly from
+# phone timings (no transcript at all — the acoustic-recognizer path).
+_PHONE_SEGMENT_FORMATS = ("gentle-phones", "allosaurus", "phones")
+_ANCHOR_FORMATS = list(_ANCHOR_PARSERS) + ["google"] + list(_PHONE_SEGMENT_FORMATS)
 
 # TTS timing formats: name -> (parser, is_viseme_unit). Phoneme-unit formats
 # feed the existing mapping/coarticulation; viseme-unit formats use the vendor
@@ -825,6 +829,12 @@ def _anchored_segments(args, dur, g2p):
     fmt = args.anchors_format
     if fmt == "gentle-phones":                 # phone timings -> segments directly
         return from_gentle_phones(text)        # (the accurate phone path, no naive spacer)
+    if fmt == "allosaurus":                    # acoustic recognizer, NO transcript
+        return from_allosaurus(text)
+    if fmt == "phones":                        # generic acoustic phone timings
+        return from_phone_timestamps(
+            text, alphabet=getattr(args, "phones_alphabet", "ipa"),
+            timing=getattr(args, "phones_timing", "start_end"))
     if fmt in _SELF_TRANSCRIBING:              # srt + the aligners carry the words
         anchors = _ANCHOR_PARSERS[fmt](text)
         transcript = args.text if args.text else anchors_transcript(anchors)
@@ -1029,7 +1039,10 @@ def main(argv=None) -> int:
     n = sub.add_parser("naive", help="text + duration -> curves (no models)")
     n.add_argument("--text", help="transcript (required unless "
                    "--anchors-format srt supplies it from the cue text)")
-    g = n.add_mutually_exclusive_group(required=True)
+    # Not argparse-`required`: the phone-timing formats (gentle-phones/allosaurus/
+    # phones) carry their own timeline, so they need neither --wav nor --duration.
+    # Every other path still requires one — enforced in the handler.
+    g = n.add_mutually_exclusive_group(required=False)
     g.add_argument("--wav", help="WAV file to read duration from")
     g.add_argument("--duration", type=_positive_float, help="duration in seconds")
     n.add_argument("--cmudict", help="optional CMUdict file for better G2P")
@@ -1037,7 +1050,16 @@ def main(argv=None) -> int:
                    "aligner at known boundaries (SRT cues or TTS word timings)")
     n.add_argument("--anchors-format", choices=_ANCHOR_FORMATS,
                    help="format of --anchors: srt|words|azure|elevenlabs|kokoro|"
-                        "google (only valid together with --anchors)")
+                        "google, the aligners whisper|whisperx|gentle|gentle-phones, "
+                        "or the transcript-free acoustic recognizers "
+                        "allosaurus|phones (only valid together with --anchors)")
+    n.add_argument("--phones-alphabet", choices=["ipa", "arpabet", "sampa"],
+                   default="ipa",
+                   help="phone alphabet for --anchors-format phones (default ipa)")
+    n.add_argument("--phones-timing", choices=["start_end", "start_dur"],
+                   default="start_end",
+                   help="second column of --anchors-format phones rows: an absolute "
+                        "end time or a duration (default start_end)")
     n.add_argument("--fps", type=_positive_float, default=60.0)
     n.add_argument("-o", "--out", required=True)
     n.add_argument("--emit-segments", metavar="PATH",
@@ -1741,7 +1763,12 @@ def main(argv=None) -> int:
         if bool(args.anchors) != bool(args.anchors_format):
             raise SystemExit(
                 "--anchors and --anchors-format are only valid together")
-        dur = args.duration if args.duration else wav_duration(args.wav)
+        dur = (args.duration if args.duration
+               else wav_duration(args.wav) if args.wav else None)
+        if dur is None and args.anchors_format not in _PHONE_SEGMENT_FORMATS:
+            raise SystemExit(
+                "naive: one of --wav / --duration is required (only the phone-timing "
+                f"formats {'/'.join(_PHONE_SEGMENT_FORMATS)} carry their own timeline)")
         subs = []
         if args.text and not args.no_normalize:
             args.text, subs = normalize_transcript(args.text)
@@ -1780,6 +1807,8 @@ def main(argv=None) -> int:
                           substitutions=subs)
             return 0
         segs = _naive_input_segments(args, dur, g2p)
+        if dur is None:                    # phone-timing format: timeline is the segments'
+            dur = segs[-1].end if segs else 0.0
         oov = g2p.oov_words(args.text) if (args.text and _want_summary(args)) else []
         _emit_segments(segs, args)
         _emit_captions(args, dur, g2p, args.text)

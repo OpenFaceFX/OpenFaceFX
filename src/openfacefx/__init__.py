@@ -90,6 +90,7 @@ from .anchors import (
 )
 from .aligners import (from_whisper_json, from_whisperx, from_gentle,
                       from_gentle_phones)
+from .aligners_acoustic import from_allosaurus, from_phone_timestamps
 
 __version__ = "0.19.1"
 
@@ -161,4 +162,5 @@ __all__ = [
     "from_elevenlabs_alignment", "from_kokoro_tokens", "google_ssml_with_marks",
     "from_google_timepoints",
     "from_whisper_json", "from_whisperx", "from_gentle", "from_gentle_phones",
+    "from_allosaurus", "from_phone_timestamps",
 ]

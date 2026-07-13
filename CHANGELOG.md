@@ -31,6 +31,20 @@ its `version` field.
   Live Link Face take in MetaHuman Animator / Unreal / DCC retarget tools. numpy +
   stdlib, deterministic, verified by a true round-trip through our own wide-CSV
   importer + exact-bytes golden. Additive.
+- **Acoustic phoneme-recognizer adapters** — `from_allosaurus(text)` and the generic
+  `from_phone_timestamps(...)` (new `aligners_acoustic.py`), plus the
+  `--anchors-format allosaurus|phones` CLI formats. These close the one capability
+  FaceFX Studio has that OpenFaceFX lacked — **phonemes from audio with no
+  transcript**. The neural/DSP recognition runs in an external tool the user already
+  has (Allosaurus, wav2vec2 phoneme-CTC, PocketSphinx `-allphone`, …); the adapter
+  parses its `start duration/​end phone` output (IPA/ARPAbet/SAMPA) into
+  `PhonemeSegment`s that feed `generate_from_alignment` — so the core stays numpy +
+  stdlib and deterministic, exactly like the Whisper/Gentle adapters. Unknown phones
+  fall to `sil`, gaps become silence, CTC overlaps are clamped. The phone-timing
+  formats derive their timeline from the file, so `naive --anchors phones.txt
+  --anchors-format allosaurus -o out.json` needs **neither `--text` nor `--duration`**
+  (also relaxes the same requirement for `gentle-phones`). Verified end-to-end
+  (recognizer output → track) plus the alphabet/timing/gap/overlap paths.
 
 ## [0.19.1] - 2026-07-12
 
