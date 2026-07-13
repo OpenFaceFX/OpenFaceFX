@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-13
+
 ### Added
 - **VMD (MikuMikuDance) morph-animation importer** (#60) — `parse_vmd(bytes)` /
   `read_vmd(path)` and a `from-vmd` CLI verb read a `.vmd` back into a `FaceTrack`,
