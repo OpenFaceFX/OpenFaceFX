@@ -30,6 +30,16 @@ jobs:
             --text "hello world this is a test of open face f x" \
             --wav examples/voice.wav -o demo_track.json \
             --emit-segments demo_segments.json
+          # Acoustic-adapter demo: rebuilt from a REAL recognizer run. Allosaurus
+          # is run once, locally, by tools/build-acoustic-demo.sh to produce the
+          # committed examples/speech.allosaurus.txt — its phones + timings, with
+          # NO transcript. CI only re-runs the numpy adapter over that file (no ML
+          # here), and skips cleanly until the recognizer output is committed.
+          if [ -f examples/speech.allosaurus.txt ]; then
+            python -m openfacefx naive \
+              --anchors examples/speech.allosaurus.txt --anchors-format allosaurus \
+              -o acoustic_track.json --emit-segments acoustic_segments.json
+          fi
       - name: Build site
         run: |
           mkdir -p site/demo
@@ -40,6 +50,14 @@ jobs:
           # for synced audio + waveform (see the README preview section).
           python tools/build_preview.py demo_track.json site/demo/index.html \
             --segments demo_segments.json --autoplay
+          # Acoustic demo keeps --wav (a play button) — the point is to HEAR the
+          # recognizer's phones line up with real speech. Not --autoplay: browsers
+          # block autoplaying audio without a user gesture. Built only when the
+          # recognizer output above was present.
+          if [ -f acoustic_track.json ]; then
+            python tools/build_preview.py acoustic_track.json site/acoustic.html \
+              --wav examples/speech.wav --segments acoustic_segments.json
+          fi
           cp docs/logo.svg site/logo.svg
           cp examples/talking-face-demo.html site/face.html
           # Interactive "try it with your own audio" demo (issue #28): the real
@@ -78,14 +96,23 @@ jobs:
                animation curves for any engine. MIT, numpy-only.</p>
             <a class="btn" href="demo/">&#9654; Live demo</a>
             <a class="btn" href="try-it.html">&#127908; Try your audio</a>
+            <a class="btn" href="acoustic.html">&#128483; Acoustic</a>
             <a class="btn" href="face.html">&#128266; Hear it</a>
             <a class="btn alt" href="docs/">Docs</a>
             <a class="btn alt" href="https://github.com/OpenFaceFX/OpenFaceFX">GitHub</a>
             <p style="font-size:13px">The demo is regenerated from the current
                pipeline on every push:<br>
                <code>openfacefx naive --text "hello world this is a test of open face f x" --wav examples/voice.wav</code></p>
+            <p style="font-size:13px"><b style="color:#e8edf4">Acoustic</b> is built
+               from a real recognizer run: Allosaurus hears the phones straight from
+               the speech &mdash; no transcript &mdash; and openfacefx animates them.
+               Reproduce it on any clip:<br>
+               <code>bash tools/build-acoustic-demo.sh yourclip.wav</code></p>
           </main></body></html>
           EOF
+          # Never show a dead Acoustic link: drop it if that demo was not built
+          # (no committed recognizer output yet — run tools/build-acoustic-demo.sh).
+          [ -f site/acoustic.html ] || sed -i '/href="acoustic.html"/d' site/index.html
       - name: Build the docs site into site/docs (MkDocs Material + mkdocstrings)
         # mkdocs only (re)writes the site/docs subdirectory, so the landing page,
         # demo/, logo.svg and quickstart.gif already in site/ are left untouched.

@@ -45,6 +45,15 @@ its `version` field.
   --anchors-format allosaurus -o out.json` needs **neither `--text` nor `--duration`**
   (also relaxes the same requirement for `gentle-phones`). Verified end-to-end
   (recognizer output → track) plus the alphabet/timing/gap/overlap paths.
+- **Acoustic demo** — `tools/build-acoustic-demo.sh` builds the honest end-to-end
+  proof of the acoustic adapter: it runs a real phoneme recognizer (Allosaurus) on a
+  speech clip with **no transcript**, feeds the recognized phones through
+  `--anchors-format allosaurus`, and bakes a self-contained `examples/acoustic-demo.html`
+  that plays the real audio with the phoneme lane scrolling in sync. Ships with a real
+  3.27 s speech sample (`examples/speech.wav`). The recognizer (ML) runs once, locally;
+  the committed `examples/speech.allosaurus.txt` pins its output so the hosted
+  `acoustic.html` is rebuilt by the numpy-only pipeline on every Pages deploy — no ML
+  in CI. (An earlier draft paired the render with a placeholder tone; replaced.)
 
 ## [0.19.1] - 2026-07-12
 
