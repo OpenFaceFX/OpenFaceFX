@@ -37,10 +37,15 @@ if ! "$PY" -c "import allosaurus" 2>/dev/null; then
   "$PY" -m pip install allosaurus
 fi
 echo "==> recognizing phones from $CLIP with Allosaurus (no transcript)…"
-"$PY" -m allosaurus.run --timestamp true -i "$CLIP" > "$PHONES"
+"$PY" -m allosaurus.run --timestamp true -i "$CLIP" > "$PHONES.raw"
+# On first use Allosaurus prints a one-time model-download banner to stdout;
+# keep only real phone rows (each begins with a numeric timestamp) so that
+# banner never contaminates the phone file.
+grep -E '^[0-9]' "$PHONES.raw" > "$PHONES" || true
+rm -f "$PHONES.raw"
 # (Python-API equivalent if the CLI differs in your version:
 #   $PY -c "from allosaurus.app import read_recognizer as r; \
-#           print(r().recognize('$CLIP', timestamp=True))" > "$PHONES" )
+#           print(r().recognize('$CLIP', timestamp=True))" | grep -E '^[0-9]' > "$PHONES" )
 lines=$(grep -cve '^[[:space:]]*$' "$PHONES" || true)
 [ "$lines" -gt 0 ] || { echo "error: allosaurus produced no phones for $CLIP" >&2; exit 1; }
 echo "    -> $PHONES ($lines phones). First few:"; head -4 "$PHONES" | sed 's/^/       /'
