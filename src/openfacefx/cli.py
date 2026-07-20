@@ -273,6 +273,18 @@ def _write_vmd(track, out: str, args) -> None:
     _say(args, f"wrote {out}: MMD .vmd morph animation, {track.duration:.2f}s")
 
 
+def _write_vrma(track, out: str, args) -> None:
+    if getattr(args, "retarget", None):
+        raise SystemExit(
+            "--retarget does not apply to VRM .vrma; it maps onto the VRM 1.0 "
+            "vowel expressions (aa/ih/ou/ee/oh) internally")
+    _reject_trim_flags(args, "VRM .vrma")
+    from .export_vrma import write_vrma
+    write_vrma(track, out, head_node=getattr(args, "vrma_head_node", False))
+    _say(args, f"wrote {out}: VRM Animation (VRMC_vrm_animation) expression clip, "
+         f"{track.duration:.2f}s")
+
+
 def _write_livelink(track, out: str, args) -> None:
     from .export_livelink import write_livelink_csv
     matched = write_livelink_csv(track, out,
@@ -297,6 +309,9 @@ def _write(track, out: str, args=None) -> None:
         return
     if out.endswith(".vmd"):
         _write_vmd(track, out, args)
+        return
+    if out.endswith(".vrma"):
+        _write_vrma(track, out, args)
         return
     if out.endswith((".gltf", ".glb")):
         from .export_gltf import write_gltf
@@ -392,6 +407,10 @@ def _add_output_options(p) -> None:
                         "channels (headPitch/Yaw/Roll) as a separate node "
                         "'rotation' (Euler->quaternion) animation, kept distinct "
                         "from the [0,1] morph-weight targets")
+    p.add_argument("--vrma-head-node", action="store_true",
+                   help="for .vrma output, also map the signed head pose "
+                        "(headPitch/Yaw/Roll) onto VRM humanoid.humanBones.head "
+                        "as a quaternion 'rotation' animation")
     p.add_argument("--vmd-model", default="OpenFaceFX",
                    help="model name embedded in .vmd output (ShiftJIS, <=20 "
                         "bytes; MMD shows it but a morph-only motion ignores it; "

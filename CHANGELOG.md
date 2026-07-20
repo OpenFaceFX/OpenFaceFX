@@ -8,6 +8,27 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **VRM Animation (`.vrma`) expression-clip exporter** (#62) — `write_vrma(track,
+  path)` / `build_vrma(track)` and a `.vrma` output extension write a VRM 1.0
+  animation clip a VRM avatar will actually lip-sync to. Our glTF exporter drives
+  generic morph-target `weights`, which VRM runtimes **ignore** for expression
+  playback; this emits the `VRMC_vrm_animation` extension instead, where each
+  expression is a node whose **translation X** carries the `[0, 1]` weight over
+  time. Like the other engine exporters it maps onto the VRM vowel expressions
+  (`aa/ih/ou/ee/oh`) internally via `PRESETS["vrm"]` (so `--retarget` is rejected),
+  registers each under `expressions.preset.<name>.node`, and — since the root
+  extension needs only `specVersion` — writes a skeleton-free, expression-only clip
+  (no rig required). `--vrma-head-node` additionally maps the signed head pose onto
+  `humanoid.humanBones.head` as a quaternion rotation. `.vrma` is the GLB binary
+  container; the `.gltf` JSON form parses too. Reuses `export_gltf` wholesale (its
+  float32 accessor packer, GLB writer, base64 `data:` URI path and
+  Euler→quaternion helper). Consumed by UniVRM, `@pixiv/three-vrm-animation`, the
+  Blender VRM add-on, VRoid Hub and VMagicMirror. numpy + stdlib, deterministic on
+  py3.9/3.13, verified by a full accessor round-trip (each expression node's
+  `translation.X` reconstructs its weight channel within 1e-6). Additive — existing
+  output is byte-identical.
+
 ## [0.20.0] - 2026-07-13
 
 ### Added

@@ -196,12 +196,16 @@ python -m openfacefx mfa --textgrid voice.TextGrid -o cues.json --cue-format jso
 Or bake into a VTuber/game engine's own animation asset — a Live2D Cubism
 `motion3.json` (a single mouth-open parameter curve by default, or per-vowel
 `ParamA/I/U/E/O` via `--live2d-params`, or read the target from a model's
-`model3.json` LipSync group) and a Godot 4 `AnimationPlayer` resource (`.tres`,
-one blendshape value track per viseme, `--godot-node`/`--godot-naming`):
+`model3.json` LipSync group), a Godot 4 `AnimationPlayer` resource (`.tres`,
+one blendshape value track per viseme, `--godot-node`/`--godot-naming`), or a
+**VRM Animation** (`.vrma`) expression clip a VRM 1.0 avatar will lip-sync to in
+UniVRM / three-vrm / VMagicMirror (`VRMC_vrm_animation`, the vowel expressions
+`aa/ih/ou/ee/oh`, `--vrma-head-node` for head pose):
 
 ```bash
 python -m openfacefx naive --text "..." --wav voice.wav -o mouth.motion3.json  # Live2D Cubism
 python -m openfacefx mfa --textgrid voice.TextGrid -o lipsync.tres            # Godot 4
+python -m openfacefx naive --text "..." --wav voice.wav -o avatar.vrma        # VRM 1.0 avatar
 ```
 
 Whole dialogue trees at once, with an OOV/confidence QA report and

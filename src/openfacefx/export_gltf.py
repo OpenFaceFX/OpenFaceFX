@@ -52,6 +52,34 @@ _CHUNK_BIN = 0x004E4942      # "BIN\0"
 _FLOAT = 5126                # glTF componentType FLOAT
 
 
+def _add_accessor(parts: List[bytes], bufferviews: List[Dict],
+                  accessors: List[Dict], arr: np.ndarray, ncomp: int,
+                  gltf_type: str) -> int:
+    """Pack ``arr`` as a little-endian FLOAT accessor + bufferView, appending to
+    the running ``parts``/``bufferviews``/``accessors`` lists and returning the new
+    accessor index. All accessors here are float32, so byte offsets stay 4-aligned.
+
+    Shared by :func:`build_gltf` and :mod:`openfacefx.export_vrma` (the VRM
+    animation exporter reuses this exact packer, GLB writer and ``data:`` URI path)
+    so both produce identical, spec-conformant accessor blocks."""
+    arr = np.ascontiguousarray(arr, dtype=np.float32)
+    blob = arr.tobytes()                                   # LE float32
+    offset = sum(len(p) for p in parts)                    # 4-aligned (all float32)
+    bufferviews.append({"buffer": 0, "byteOffset": offset,
+                        "byteLength": len(blob)})
+    flat = arr.reshape(-1, ncomp)
+    accessors.append({
+        "bufferView": len(bufferviews) - 1,
+        "componentType": _FLOAT,
+        "count": int(flat.shape[0]),
+        "type": gltf_type,
+        "min": [float(v) for v in flat.min(axis=0)],
+        "max": [float(v) for v in flat.max(axis=0)],
+    })
+    parts.append(blob)
+    return len(accessors) - 1
+
+
 def _weight_channels(track: FaceTrack):
     """The ``[0, 1]`` morph-weight channels, in track order (pose excluded)."""
     return [c for c in track.channels if c.name not in POSE_CHANNELS]
@@ -87,22 +115,7 @@ def build_gltf(track: FaceTrack, *, head_node: bool = False
     accessors: List[Dict] = []
 
     def add(arr: np.ndarray, ncomp: int, gltf_type: str) -> int:
-        arr = np.ascontiguousarray(arr, dtype=np.float32)
-        blob = arr.tobytes()                               # LE float32
-        offset = sum(len(p) for p in parts)                # 4-aligned (all float32)
-        bufferviews.append({"buffer": 0, "byteOffset": offset,
-                            "byteLength": len(blob)})
-        flat = arr.reshape(-1, ncomp)
-        accessors.append({
-            "bufferView": len(bufferviews) - 1,
-            "componentType": _FLOAT,
-            "count": int(flat.shape[0]),
-            "type": gltf_type,
-            "min": [float(v) for v in flat.min(axis=0)],
-            "max": [float(v) for v in flat.max(axis=0)],
-        })
-        parts.append(blob)
-        return len(accessors) - 1
+        return _add_accessor(parts, bufferviews, accessors, arr, ncomp, gltf_type)
 
     a_pos = add(np.zeros((1, 3), np.float32), 3, "VEC3")   # stub base POSITION
     a_delta = add(np.zeros((1, 3), np.float32), 3, "VEC3")  # shared zero morph delta
