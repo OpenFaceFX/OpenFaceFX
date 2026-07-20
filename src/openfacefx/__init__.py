@@ -69,6 +69,8 @@ from .export_cues import (
     dominant_cues, write_rhubarb_tsv, write_rhubarb_xml, write_rhubarb_json,
     write_moho_dat, write_pgo,
 )
+from .export_spine import (write_spine, build_spine, splice_spine,
+                           read_spine_cues, DEFAULT_ATTACHMENT_MAP)
 from .export_captions import (
     write_captions, write_srt, write_vtt, srt_text, vtt_text, build_cues,
     word_timings, format_timestamp, CaptionCue, parse_vtt,
@@ -148,6 +150,8 @@ __all__ = [
     "write_lip", "lip_bytes", "skyrim_mapping", "SKYRIM_SLOT_MAP",
     "dominant_cues", "write_rhubarb_tsv", "write_rhubarb_xml",
     "write_rhubarb_json", "write_moho_dat", "write_pgo",
+    "write_spine", "build_spine", "splice_spine", "read_spine_cues",
+    "DEFAULT_ATTACHMENT_MAP",
     "write_captions", "write_srt", "write_vtt", "srt_text", "vtt_text",
     "build_cues", "word_timings", "format_timestamp", "CaptionCue", "parse_vtt",
     "Mapping", "Target",

@@ -28,6 +28,21 @@ its `version` field.
   py3.9/3.13, verified by a full accessor round-trip (each expression node's
   `translation.X` reconstructs its weight channel within 1e-6). Additive — existing
   output is byte-identical.
+- **Esoteric Spine slot-attachment lip-sync exporter** (#63) — `write_spine(track,
+  path)` / `build_spine` / `splice_spine` and a `.spine.json` output extension write
+  a Spine (Esoteric Software) mouth-slot attachment timeline, reaching the de-facto
+  2D game-animation runtime (Unity/Unreal/Godot/web/C++). A Spine attachment
+  timeline is switch data — `animations.<anim>.slots.<slot>.attachment =
+  [{"time": <seconds>, "name": <attachment>}]` — so this reuses the dominant-cue
+  reduction in `export_cues` (one Rhubarb A–H/X shape per interval) and maps each
+  shape to an attachment name (`mouth_a`..`mouth_x`, override with
+  `--spine-attachments`). Two modes, matching Rhubarb's own Spine bridge:
+  **splice** (`--spine-base rig.json`) inserts the mouth timeline into an artist's
+  existing Spine project, leaving bones/skins/other slots/other animations
+  byte-for-byte untouched; **standalone** emits a minimal skeleton (one bone, one
+  mouth slot, a skin listing the attachments as region stubs). Times are seconds,
+  so no fps quantisation. `read_spine_cues` recovers the timeline for the round-trip
+  proof. Pure stdlib `json`, deterministic on py3.9/3.13, additive.
 
 ## [0.20.0] - 2026-07-13
 

@@ -206,7 +206,12 @@ UniVRM / three-vrm / VMagicMirror (`VRMC_vrm_animation`, the vowel expressions
 python -m openfacefx naive --text "..." --wav voice.wav -o mouth.motion3.json  # Live2D Cubism
 python -m openfacefx mfa --textgrid voice.TextGrid -o lipsync.tres            # Godot 4
 python -m openfacefx naive --text "..." --wav voice.wav -o avatar.vrma        # VRM 1.0 avatar
+python -m openfacefx naive --text "..." --spine-base rig.json -o rig.spine.json  # Spine (2D)
 ```
+
+For 2D games on **Spine** (Esoteric Software), `--spine-base rig.json` splices a
+mouth-slot attachment timeline into your existing Spine project (bones, skins and
+other animations untouched); omit it for a standalone stub skeleton.
 
 Whole dialogue trees at once, with an OOV/confidence QA report and
 incremental re-runs:

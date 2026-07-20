@@ -285,6 +285,27 @@ def _write_vrma(track, out: str, args) -> None:
          f"{track.duration:.2f}s")
 
 
+def _write_spine(track, out: str, args) -> None:
+    if getattr(args, "retarget", None):
+        raise SystemExit(
+            "--retarget does not apply to Spine .spine.json; it flattens the "
+            "track to mouth-slot attachments internally (override the shape->"
+            "attachment names with --spine-attachments)")
+    _reject_trim_flags(args, "Spine .spine.json")
+    from .export_spine import write_spine
+    amap = None
+    if getattr(args, "spine_attachments", None):
+        amap = _load_str_map(args.spine_attachments, "--spine-attachments")
+    base = getattr(args, "spine_base", None)
+    write_spine(track, out, base=base,
+                anim_name=getattr(args, "spine_anim", None) or "lipsync",
+                slot=getattr(args, "spine_slot", None) or "mouth",
+                attachment_map=amap)
+    mode = f"spliced into {base}" if base else "standalone skeleton"
+    _say(args, f"wrote {out}: Spine slot-attachment lip-sync ({mode}), "
+         f"{track.duration:.2f}s")
+
+
 def _write_livelink(track, out: str, args) -> None:
     from .export_livelink import write_livelink_csv
     matched = write_livelink_csv(track, out,
@@ -312,6 +333,9 @@ def _write(track, out: str, args=None) -> None:
         return
     if out.endswith(".vrma"):
         _write_vrma(track, out, args)
+        return
+    if out.endswith(".spine.json"):
+        _write_spine(track, out, args)
         return
     if out.endswith((".gltf", ".glb")):
         from .export_gltf import write_gltf
@@ -423,6 +447,18 @@ def _add_output_options(p) -> None:
                    help="frame rate for .livelink.csv rows (ARKit / Live Link Face "
                         "wide CSV; default 60, Live Link's rate). Retarget viseme "
                         "tracks with --retarget arkit first")
+    p.add_argument("--spine-base", metavar="JSON",
+                   help="for .spine.json output, splice the mouth timeline into "
+                        "this existing Spine skeleton JSON (leaves bones/skins/"
+                        "other animations untouched); omit for a standalone stub")
+    p.add_argument("--spine-anim", default="lipsync",
+                   help="animation name for .spine.json output (default: lipsync)")
+    p.add_argument("--spine-slot", default="mouth",
+                   help="mouth slot name for .spine.json output (default: mouth)")
+    p.add_argument("--spine-attachments", metavar="JSON",
+                   help="JSON map of Rhubarb A-H/X mouth shapes to Spine "
+                        "attachment names for .spine.json (default: mouth_a.."
+                        "mouth_x)")
     p.add_argument("--cue-format",
                    choices=["tsv", "xml", "json-cues", "dat", "pgo"],
                    help="write a stepped cue list instead of curves: Rhubarb "
