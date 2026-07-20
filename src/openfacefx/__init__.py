@@ -56,7 +56,8 @@ from .vo_audit import audit_delivery, audit_report_text
 from .trackdiff import diff_tracks, render_diff
 from .export_unity import write_unity_anim, NAMING_PRESETS
 from .export_unreal_notifies import write_unreal_notifies, notifies_to_dict
-from .export_live2d import write_live2d_motion, lipsync_param_ids
+from .export_live2d import (write_live2d_motion, write_live2d_expression,
+                            build_expression, lipsync_param_ids)
 from .export_godot import write_godot_anim
 from .export_gltf import write_gltf, build_gltf
 from .export_vrma import write_vrma, build_vrma, VRM_EXPRESSION_PRESETS
@@ -143,7 +144,8 @@ __all__ = [
     "diff_tracks", "render_diff",
     "write_unity_anim", "NAMING_PRESETS",
     "write_unreal_notifies", "notifies_to_dict",
-    "write_live2d_motion", "lipsync_param_ids", "write_godot_anim",
+    "write_live2d_motion", "write_live2d_expression", "build_expression",
+    "lipsync_param_ids", "write_godot_anim",
     "write_gltf", "build_gltf",
     "write_vrma", "build_vrma", "VRM_EXPRESSION_PRESETS",
     "write_vmd", "vmd_bytes", "DEFAULT_MORPH_MAP",

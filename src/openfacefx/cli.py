@@ -22,7 +22,8 @@ from .pipeline import generate_from_alignment, wav_duration
 from .io_export import write_json, write_csv
 from .qa import normalize_transcript, summarize
 from .export_unity import write_unity_anim
-from .export_live2d import write_live2d_motion, lipsync_param_ids
+from .export_live2d import (write_live2d_motion, write_live2d_expression,
+                            lipsync_param_ids)
 from .export_godot import write_godot_anim
 from .export_vmd import write_vmd
 from .export_lip import write_lip, lip_calibrate
@@ -221,12 +222,9 @@ def _reject_trim_flags(args, what: str) -> None:
             raise SystemExit(f"{dash} does not apply to {what}")
 
 
-def _write_live2d(track, out: str, args) -> None:
-    if getattr(args, "retarget", None):
-        raise SystemExit(
-            "--retarget does not apply to Live2D .motion3.json; use "
-            "--live2d-params to map visemes onto parameter Ids")
-    _reject_trim_flags(args, "Live2D .motion3.json")
+def _live2d_target(args, fmt: str):
+    """Resolve ``(params, mouth_param)`` from --live2d-params/--live2d-model3/
+    --live2d-param, shared by the motion3.json and exp3.json writers."""
     params_file = getattr(args, "live2d_params", None)
     model3 = getattr(args, "live2d_model3", None)
     if params_file and model3:
@@ -244,8 +242,32 @@ def _write_live2d(track, out: str, args) -> None:
                 f"{model3} LipSync group declares {len(ids)} parameters {ids}; "
                 "supply --live2d-params to assign visemes to them")
         mouth = ids[0]
+    return params, mouth
+
+
+def _write_live2d(track, out: str, args) -> None:
+    if getattr(args, "retarget", None):
+        raise SystemExit(
+            "--retarget does not apply to Live2D .motion3.json; use "
+            "--live2d-params to map visemes onto parameter Ids")
+    _reject_trim_flags(args, "Live2D .motion3.json")
+    params, mouth = _live2d_target(args, "Live2D .motion3.json")
     write_live2d_motion(track, out, params=params, mouth_param=mouth)
     _say(args, f"wrote {out}: Live2D motion3.json, {track.duration:.2f}s")
+
+
+def _write_live2d_expression(track, out: str, args) -> None:
+    if getattr(args, "retarget", None):
+        raise SystemExit(
+            "--retarget does not apply to Live2D .exp3.json; use "
+            "--live2d-params to map visemes onto parameter Ids")
+    _reject_trim_flags(args, "Live2D .exp3.json")
+    params, mouth = _live2d_target(args, "Live2D .exp3.json")
+    write_live2d_expression(track, out, at=getattr(args, "exp3_at", None),
+                            params=params, mouth_param=mouth)
+    when = ("peak" if getattr(args, "exp3_at", None) is None
+            else f"{args.exp3_at:.2f}s")
+    _say(args, f"wrote {out}: Live2D exp3.json expression (pose @ {when})")
 
 
 def _write_godot(track, out: str, args) -> None:
@@ -333,6 +355,9 @@ def _write(track, out: str, args=None) -> None:
             "reduced viseme curves")
     if out.endswith(".motion3.json"):
         _write_live2d(track, out, args)
+        return
+    if out.endswith(".exp3.json"):
+        _write_live2d_expression(track, out, args)
         return
     if out.endswith(".tres"):
         _write_godot(track, out, args)
@@ -428,6 +453,10 @@ def _add_output_options(p) -> None:
     p.add_argument("--live2d-model3",
                    help="read the mouth parameter Id from a Cubism model3.json's "
                         "Groups:LipSync entry (.motion3.json single-curve target)")
+    p.add_argument("--exp3-at", type=float, default=None,
+                   help="for .exp3.json output, the time (seconds) to freeze the "
+                        "pose at; default is the peak-activity frame. Reuses the "
+                        "--live2d-param/-params/-model3 targeting")
     p.add_argument("--godot-node", default="Head",
                    help="animated node name for .tres blendshape track paths, "
                         "relative to the AnimationPlayer root (default: Head)")

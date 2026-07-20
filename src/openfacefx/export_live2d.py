@@ -35,7 +35,7 @@ import json
 from typing import Dict, List, Optional
 
 from .curves import FaceTrack
-from .retarget import retarget
+from .retarget import retarget, _sampler
 from .visemes import VISEMES
 
 # Segment ids in the flat Cubism segment stream. Each *point* is two numbers
@@ -46,6 +46,8 @@ _LINEAR = 0
 _BEZIER = 1
 
 DEFAULT_MOUTH_PARAM = "ParamMouthOpenY"
+#: Cubism editor default fade for an expression (seconds).
+DEFAULT_EXPRESSION_FADE = 1.0
 
 
 def _num(x: float) -> str:
@@ -165,3 +167,68 @@ def write_live2d_motion(
     lines += ["  ]", "}"]
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write("\n".join(lines) + "\n")
+
+
+def _pose_time(baked: FaceTrack, at: Optional[float]) -> float:
+    """The instant to freeze the pose at: an explicit ``at``, else the peak-
+    activity frame (the keyframe time where the summed parameter value is highest —
+    the most expressive moment, a sensible default for a snapshot)."""
+    if at is not None:
+        return float(at)
+    times = sorted({k.time for ch in baked.channels for k in ch.keys})
+    if not times:
+        return 0.0
+    samplers = [_sampler(ch) for ch in baked.channels]
+    best_t, best = times[0], float("-inf")
+    for t in times:
+        s = sum(sm(t) for sm in samplers)
+        if s > best:
+            best, best_t = s, t
+    return best_t
+
+
+def build_expression(track: FaceTrack, *, at: Optional[float] = None,
+                     params: Optional[Dict[str, str]] = None,
+                     mouth_param: str = DEFAULT_MOUTH_PARAM,
+                     fade_in: float = DEFAULT_EXPRESSION_FADE,
+                     fade_out: float = DEFAULT_EXPRESSION_FADE) -> Dict:
+    """Build a Cubism ``exp3.json`` expression dict: the track's pose at **one
+    instant** as absolute (``Blend`` = ``Overwrite``) parameter values.
+
+    Same viseme→ParamId targeting as :func:`write_live2d_motion` (``params`` for
+    per-parameter mode, else a single ``mouth_param``); ``at`` picks the instant
+    (default: the peak-activity frame). ``Overwrite`` is used because a frozen pose
+    is an absolute value, not a delta from the parameter's default (``Add`` would
+    store the wrong thing)."""
+    mapping = _collapse_mapping(params, mouth_param)
+    baked = retarget(track, mapping)
+    t = _pose_time(baked, at)
+    parameters = [
+        {"Id": ch.name, "Value": round(float(_sampler(ch)(t)), 4),
+         "Blend": "Overwrite"}
+        for ch in baked.channels if ch.keys
+    ]
+    return {
+        "Type": "Live2D Expression",
+        "FadeInTime": round(float(fade_in), 4),
+        "FadeOutTime": round(float(fade_out), 4),
+        "Parameters": parameters,
+    }
+
+
+def write_live2d_expression(track: FaceTrack, path: str, *,
+                            at: Optional[float] = None,
+                            params: Optional[Dict[str, str]] = None,
+                            mouth_param: str = DEFAULT_MOUTH_PARAM,
+                            fade_in: float = DEFAULT_EXPRESSION_FADE,
+                            fade_out: float = DEFAULT_EXPRESSION_FADE) -> None:
+    """Write the track's pose at one instant as a Cubism ``exp3.json`` expression —
+    the static, hotkey-bindable companion to :func:`write_live2d_motion` (VTube
+    Studio binds these to hotkeys). See :func:`build_expression`. Pure-stdlib JSON,
+    LF endings; the schema forbids extra keys, so only ``Type``/``FadeInTime``/
+    ``FadeOutTime``/``Parameters`` are emitted."""
+    doc = build_expression(track, at=at, params=params, mouth_param=mouth_param,
+                           fade_in=fade_in, fade_out=fade_out)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(doc, fh, indent=2)
+        fh.write("\n")

@@ -9,6 +9,18 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Live2D Cubism `.exp3.json` expression-pose exporter** (#65) —
+  `write_live2d_expression(track, path)` / `build_expression(track)` and a
+  `.exp3.json` output extension freeze the track's pose at **one instant** as a
+  Cubism expression, the static companion to the shipped animated `motion3.json`
+  (issue #20). VTube Studio binds these to hotkeys. Same viseme→ParamId targeting
+  as the motion exporter (`--live2d-params`/`--live2d-model3`/`--live2d-param`);
+  `--exp3-at` picks the instant (default: the peak-activity frame). Values are
+  absolute (`Blend: "Overwrite"` — a frozen pose is a value, not a delta from the
+  parameter default). Emits exactly the schema-permitted keys (`Type`/`FadeInTime`/
+  `FadeOutTime`/`Parameters` with `Id`/`Value`/`Blend`; no `Version`,
+  `additionalProperties: false`), verified against Live2D's CubismSpecs. Pure-stdlib
+  JSON, deterministic on py3.9/3.13, additive.
 - **NVIDIA Audio2Face blendshape-JSON interop** (#64) — `write_a2f(track, path)` /
   `read_a2f(path)` with a `.a2f.json` output extension and a `from-a2f` CLI verb
   read and write A2F's dense per-frame ARKit-FACS JSON (`facsNames` + `weightMat`

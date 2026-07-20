@@ -207,11 +207,14 @@ python -m openfacefx naive --text "..." --wav voice.wav -o mouth.motion3.json  #
 python -m openfacefx mfa --textgrid voice.TextGrid -o lipsync.tres            # Godot 4
 python -m openfacefx naive --text "..." --wav voice.wav -o avatar.vrma        # VRM 1.0 avatar
 python -m openfacefx naive --text "..." --spine-base rig.json -o rig.spine.json  # Spine (2D)
+python -m openfacefx naive --text "..." --wav voice.wav -o smile.exp3.json    # Live2D expression pose
 ```
 
 For 2D games on **Spine** (Esoteric Software), `--spine-base rig.json` splices a
 mouth-slot attachment timeline into your existing Spine project (bones, skins and
-other animations untouched); omit it for a standalone stub skeleton.
+other animations untouched); omit it for a standalone stub skeleton. A Live2D
+`.exp3.json` freezes one pose (default: the peak-activity frame, or `--exp3-at`)
+as a VTube-Studio-bindable expression — the static companion to `motion3.json`.
 
 Whole dialogue trees at once, with an OOV/confidence QA report and
 incremental re-runs:
