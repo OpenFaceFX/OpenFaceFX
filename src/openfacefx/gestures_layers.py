@@ -366,6 +366,31 @@ def head_layer(stresses, duration, fps, params) -> List[Channel]:
 
 
 # --------------------------------------------------------------------------- #
+# Step 3b: idle breathing (opt-in, issue #69)                                  #
+# --------------------------------------------------------------------------- #
+
+def _breath(t, p, rng_) -> np.ndarray:
+    """Idle chest rise/fall as a ``[0, breath_amp]`` cycle: a slow ~0.25 Hz sine
+    (12-20 breaths/min) with a small per-clip rate jitter and a random phase, so
+    breathing neither freezes nor lines up across clips. Its own rng sub-stream
+    (4), so enabling it does not shift the blink/head/gaze streams."""
+    f = p.breath_rate_hz * (1.0 + rng_.uniform(-p.breath_jitter, p.breath_jitter))
+    phase = rng_.uniform(0.0, 2.0 * np.pi)
+    return p.breath_amp * (0.5 + 0.5 * np.sin(2.0 * np.pi * f * t + phase))
+
+
+def breath_layer(duration, fps, params) -> List[Channel]:
+    """The opt-in ``breath`` channel ([0, 1], drives e.g. Live2D ParamBreath).
+    Empty unless ``params.breath_enable`` — so the default gesture set is unchanged."""
+    if not params.breath_enable:
+        return []
+    t = np.arange(int(round(duration * fps)) + 1) / fps
+    sig = np.clip(_breath(t, params, rng(params.seed, 4)), 0.0, 1.0)
+    c = _rdp_channel("breath", t, sig, 0.01, 0.0, 1.0)
+    return [c] if c is not None else []
+
+
+# --------------------------------------------------------------------------- #
 # Step 4: gaze saccades (step fixations, occasionally blink-locked)            #
 # --------------------------------------------------------------------------- #
 

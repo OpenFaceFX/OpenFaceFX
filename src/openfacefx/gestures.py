@@ -93,6 +93,13 @@ class GestureParams:
     gaze_yaw_deg: float = 8.0
     gaze_pitch_deg: float = 5.0
     gaze_align_blink_every: int = 3       # every Nth saccade snaps to a blink
+    # breath (issue #69): opt-in idle chest rise/fall as a [0, breath_amp] cycle,
+    # for a rig with a breath target (e.g. Live2D ParamBreath). OFF by default, so
+    # existing gesture output is byte-identical.
+    breath_enable: bool = False
+    breath_amp: float = 1.0               # peak inhale value (channel spans [0, amp])
+    breath_rate_hz: float = 0.25          # ~15 breaths/min (12-20/min is typical)
+    breath_jitter: float = 0.1            # per-clip rate jitter fraction (in seed)
     # units
     head_eye_in_degrees: bool = True      # False => signed [-1, 1] pose channels
 
@@ -103,6 +110,7 @@ class GestureParams:
 GESTURE_CHANNELS = frozenset({
     "blink_L", "blink_R", "browUp", "browInnerUp", "browOuterUp",
     "headPitch", "headYaw", "headRoll", "eyePitch", "eyeYaw",
+    "breath",
 })
 
 
@@ -141,6 +149,7 @@ def generate_gestures(duration: float, fps: float = 60.0,
     channels.extend(_gl.head_layer(stresses, duration, fps, params))
     if params.gaze_enable:
         channels.extend(_gl.gaze_layer(duration, fps, apexes, params))
+    channels.extend(_gl.breath_layer(duration, fps, params))  # #69 (opt-in)
     return channels
 
 

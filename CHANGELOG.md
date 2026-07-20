@@ -9,6 +9,16 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Procedural breathing channel** (#69) — an opt-in idle chest rise/fall added to
+  the gesture layer: a `breath` channel in `[0, 1]` (a slow ~0.25 Hz sine,
+  ~15 breaths/min, with a per-clip rate jitter and random phase), for a rig with a
+  breath target such as Live2D `ParamBreath`. Enabled with `GestureParams(
+  breath_enable=True)` or the CLI `--breath` flag (alongside `--gestures`), built
+  like the proven `_ambient()` head-sway generator on its own rng sub-stream (4) so
+  turning it on leaves the blink/brow/head/gaze channels byte-identical; OFF by
+  default, so existing output is unchanged. Flows through the pipeline by name
+  (retarget/glTF/Unity/Godot carry it as a `breath` target). Pure numpy,
+  deterministic in the seed, additive.
 - **Nonlinear link functions** (#68) — FaceFX-style response curves beyond the
   linear gain+offset, in a new `openfacefx.links` module: `linear`, `quadratic`,
   `cubic`, `sqrt`, `negate`, `constant`, and `clamped_linear`. Applied at the two

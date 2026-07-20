@@ -695,6 +695,10 @@ def _add_gesture_options(p) -> None:
                    help="blinks per minute for --gestures (default ~15)")
     p.add_argument("--no-brows", action="store_true",
                    help="disable the eyebrow-flash channel in --gestures")
+    p.add_argument("--breath", action="store_true",
+                   help="add an idle procedural breathing channel ('breath', [0,1]) "
+                        "to --gestures: a slow chest rise/fall (~15/min) for a rig "
+                        "with a breath target (e.g. Live2D ParamBreath)")
 
 
 def _gesture_params(args):
@@ -713,6 +717,8 @@ def _gesture_params(args):
         p.blink_mean_interval = 60.0 / rate
     if getattr(args, "no_brows", False):
         p.brow_enable = False
+    if getattr(args, "breath", False):
+        p.breath_enable = True
     return p
 
 

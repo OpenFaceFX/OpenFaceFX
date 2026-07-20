@@ -294,7 +294,8 @@ write_json(track, "track.json")
 
 A mouth that moves but a face that's otherwise frozen reads as a mask. Pass
 `--gestures` to layer the *other* channels a believable performance needs — eye
-blinks, eyebrow raises, head nods and idle sway, and gaze saccades — on top of
+blinks, eyebrow raises, head nods and idle sway, gaze saccades, and (with
+`--breath`) an idle chest rise/fall — on top of
 any generated track (issue [#5](https://github.com/OpenFaceFX/OpenFaceFX/issues/5)):
 
 ```bash
