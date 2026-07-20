@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-20
+
 ### Added
 - **Low-confidence phoneme QA flagging** (#72) — a `confidence_flags(segments,
   min_confidence)` helper (a sibling of `cue_flags`) and a `confidence_warnings`
