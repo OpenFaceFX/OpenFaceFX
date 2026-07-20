@@ -164,6 +164,27 @@ python -m openfacefx mfa --textgrid voice.TextGrid -o rig.json \
     --retarget arkit --adjust adjust.json
 ```
 
+### Nonlinear link functions (issue #68)
+
+For FaceFX-grade control beyond a linear trim, a target's entry can instead be a
+**link function** `{"function": name, ...params}` — a closed-form response curve
+applied where `clamp(gain*value + offset)` is applied today. Available functions
+(`openfacefx.links`): `linear` (`m`,`b`), `quadratic`, `cubic`, `sqrt` (`m`,`b`),
+`negate`, `constant` (`c`), and `clamped_linear` (`m`,`clampx`,`clampy`,`clampdir`).
+For example, give `jawOpen` an ease-in response, or hold `tongueOut` off until the
+driver crosses a threshold:
+
+```bash
+# adjust.json: {"jawOpen": {"function": "quadratic", "m": 1.2},
+#               "tongueOut": {"function": "clamped_linear", "m": 2, "clampx": 0.5, "clampy": 1}}
+python -m openfacefx mfa --textgrid voice.TextGrid -o rig.json \
+    --retarget arkit --adjust adjust.json
+```
+
+Authored mapping files carry the same per-target `link` (schema **v3**); a mapping
+with no link stays schema v2 (byte-identical). FaceFX's `inverse` and the two-input
+`corrective` links are out of scope (see `openfacefx.links`).
+
 It composes with `--retarget-shapes` (shapes are filtered first, then trimmed)
 and is validated at the CLI boundary — an unknown key or a non-numeric
 gain/offset is a clear error, not a stray failure deeper in. `--adjust` is a

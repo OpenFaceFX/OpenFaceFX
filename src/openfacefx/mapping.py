@@ -66,6 +66,12 @@ class Target:
     # Defaults are an exact no-op, so a v1 mapping (no fields) is byte-identical.
     gain: float = 1.0
     offset: float = 0.0
+    # Optional FaceFX-style nonlinear link function (schema v3, issue #68):
+    # {"function": name, ...params} — see openfacefx.links. When set it REPLACES
+    # the linear gain/offset response (the channel becomes
+    # clamp(link(value), lo, hi)). None (the default) keeps the v2 behaviour, so a
+    # v1/v2 mapping is byte-identical.
+    link: Optional[dict] = None
 
 
 @dataclass
@@ -104,6 +110,13 @@ class Mapping:
                 raise ValueError(
                     f"target {t.name!r}: gain/offset must be finite numbers "
                     f"(got gain={t.gain!r}, offset={t.offset!r})")
+            if t.link is not None:                 # normalize + validate (issue #68)
+                from .links import normalize_link
+                try:
+                    name, params = normalize_link(t.link)
+                except ValueError as e:
+                    raise ValueError(f"target {t.name!r}: {e}") from None
+                t.link = {"function": name, **params}
         for ph, row in self.rows.items():
             if not self.allow_custom_symbols:
                 key = strip_stress(ph).upper() if ph != SILENCE else SILENCE
@@ -154,15 +167,16 @@ class Mapping:
                 d = json.load(fh)
             except json.JSONDecodeError as e:
                 raise ValueError(f"{path}: not valid JSON ({e})") from None
-        if d.get("format") != "openfacefx.mapping" or d.get("version") not in (1, 2):
+        if d.get("format") != "openfacefx.mapping" or d.get("version") not in (1, 2, 3):
             raise ValueError(
-                f"{path}: expected format 'openfacefx.mapping' version 1 or 2")
+                f"{path}: expected format 'openfacefx.mapping' version 1, 2 or 3")
         try:
-            # gain/offset are v2 (issue #53); a v1 file omits them and reads the
-            # no-op defaults, so old mappings load unchanged.
+            # gain/offset are v2 (issue #53), link is v3 (issue #68); an older file
+            # omits them and reads the no-op defaults, so old mappings load unchanged.
             targets = [Target(t["name"], t.get("class", "basic"),
                               float(t.get("min", 0.0)), float(t.get("max", 1.0)),
-                              float(t.get("gain", 1.0)), float(t.get("offset", 0.0)))
+                              float(t.get("gain", 1.0)), float(t.get("offset", 0.0)),
+                              t.get("link"))
                        for t in d["targets"]]
         except (KeyError, TypeError, ValueError) as e:
             raise ValueError(f"{path}: malformed targets entry ({e})") from None
@@ -175,10 +189,12 @@ class Mapping:
                    allow_custom_symbols=bool(d.get("custom_symbols", False)))
 
     def to_json(self, path: str) -> None:
-        # Emit schema v2, but omit gain/offset when they are the no-op defaults so
-        # a mapping that uses no A2F tuning round-trips to the same minimal target
-        # entries it always had (only the version tag advances 1 -> 2).
+        # Omit gain/offset/link when they are the no-op defaults, and only advance
+        # the version tag as far as the features actually used: a mapping with no
+        # link stays v2 (and one with no A2F tuning stays effectively v1-shaped),
+        # so it round-trips to the same minimal target entries it always had.
         targets = []
+        has_link = False
         for t in self.targets:
             entry = {"name": t.name, "class": t.articulator,
                      "min": t.lo, "max": t.hi}
@@ -186,10 +202,13 @@ class Mapping:
                 entry["gain"] = t.gain
             if t.offset != 0.0:
                 entry["offset"] = t.offset
+            if t.link is not None:
+                entry["link"] = t.link
+                has_link = True
             targets.append(entry)
         d = {
             "format": "openfacefx.mapping",
-            "version": 2,
+            "version": 3 if has_link else 2,
             "targets": targets,
             "phonemes": self.rows,
         }

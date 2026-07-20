@@ -28,13 +28,16 @@ dropped. Provenance and the fallback tables: docs/retargeting.md.
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from .curves import Channel, FaceTrack, Keyframe
+from .links import apply_link
 from .visemes import VISEMES
 
 Mapping = Dict[str, Sequence[Tuple[str, float]]]
-Adjust = Dict[str, Tuple[float, float]]     # rig target -> (gain, offset) trim
+# rig target -> a (gain, offset) linear trim, OR a nonlinear link spec
+# ``{"function": name, ...params}`` (#68). The tuple form stays byte-identical.
+Adjust = Dict[str, Union[Tuple[float, float], Dict]]
 
 
 def _sampler(channel: Channel):
@@ -144,11 +147,15 @@ def apply_adjust(track: FaceTrack, adjust: Adjust) -> FaceTrack:
     """Return a new FaceTrack with a per-target ``(gain, offset)`` trim applied.
 
     Every channel whose name has an ``adjust`` entry has each key value ``v``
-    remapped to ``clamp(gain*v + offset, 0, 1)`` (rounded like the rest of the
-    pipeline); channels without an entry pass through unchanged. This is a pure
-    post-process on already-retargeted (or native) curves, so the weighted preset
-    tables stay byte-identical — the way to trim ``jawOpen`` a touch weaker or
-    hold ``mouthSmileLeft`` slightly on without editing a mapping.
+    remapped and clamped to ``[0, 1]`` (rounded like the rest of the pipeline);
+    channels without an entry pass through unchanged. An entry is either a
+    ``(gain, offset)`` tuple — the linear ``clamp(gain*v + offset)`` trim — or a
+    nonlinear **link function** spec ``{"function": name, ...params}`` (#68, e.g.
+    ``{"function": "quadratic", "m": 1.4}``); see :mod:`openfacefx.links`. This is a
+    pure post-process on already-retargeted (or native) curves, so the weighted
+    preset tables stay byte-identical — the way to trim ``jawOpen`` a touch weaker,
+    give it an ease-in response, or hold ``mouthSmileLeft`` slightly on without
+    editing a mapping.
 
     An entry whose target has *no* channel yet but a positive constant
     (``clamp(offset, 0, 1) > 0``) is materialised as a constant channel spanning
@@ -166,10 +173,18 @@ def apply_adjust(track: FaceTrack, adjust: Adjust) -> FaceTrack:
         if adj is None:
             channels.append(c)
             continue
-        g, o = adj
-        channels.append(Channel(c.name, [
-            Keyframe(k.time, round(min(max(g * k.value + o, 0.0), 1.0), 4))
-            for k in c.keys]))
+        if isinstance(adj, tuple):                 # linear gain/offset (byte-identical)
+            g, o = adj
+            keys = [Keyframe(k.time, round(min(max(g * k.value + o, 0.0), 1.0), 4))
+                    for k in c.keys]
+        else:                                      # nonlinear link function (#68)
+            fn = adj["function"]
+            params = {k: v for k, v in adj.items() if k != "function"}
+            keys = [Keyframe(k.time,
+                             round(min(max(float(apply_link(k.value, fn, params)),
+                                           0.0), 1.0), 4))
+                    for k in c.keys]
+        channels.append(Channel(c.name, keys))
     # "Always slightly on": a positive-offset target with no curve yet becomes a
     # constant channel over the clip (deterministic, appended in name order).
     span = _clip_span(track)
@@ -177,7 +192,14 @@ def apply_adjust(track: FaceTrack, adjust: Adjust) -> FaceTrack:
     for name in sorted(adjust):
         if name in present or span is None:
             continue
-        val = round(min(max(adjust[name][1], 0.0), 1.0), 4)
+        spec = adjust[name]
+        if isinstance(spec, tuple):
+            base = spec[1]                          # the offset (absent base is 0)
+        elif spec.get("function") == "constant":
+            base = spec.get("c", 0.0)              # a constant link needs no input
+        else:
+            continue                               # other links need an input channel
+        val = round(min(max(base, 0.0), 1.0), 4)
         if val <= 0.0:
             continue
         t0, t1 = span

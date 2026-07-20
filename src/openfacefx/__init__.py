@@ -79,6 +79,7 @@ from .export_captions import (
     word_timings, format_timestamp, CaptionCue, parse_vtt,
 )
 from .mapping import Mapping, Target
+from .links import apply_link, normalize_link, LINK_FUNCTIONS
 from .ipa import IPA_MAPPING, is_ipa_vowel, ipa_unknown_symbols
 from .retarget import (retarget, apply_adjust, rename_only, PRESETS,
                        PRESET_FALLBACKS)
@@ -160,6 +161,7 @@ __all__ = [
     "write_captions", "write_srt", "write_vtt", "srt_text", "vtt_text",
     "build_cues", "word_timings", "format_timestamp", "CaptionCue", "parse_vtt",
     "Mapping", "Target",
+    "apply_link", "normalize_link", "LINK_FUNCTIONS",
     "IPA_MAPPING", "is_ipa_vowel", "ipa_unknown_symbols",
     "retarget", "apply_adjust", "rename_only", "PRESETS", "PRESET_FALLBACKS",
     "VISEMES", "phoneme_to_viseme",

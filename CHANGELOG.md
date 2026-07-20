@@ -9,6 +9,19 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Nonlinear link functions** (#68) — FaceFX-style response curves beyond the
+  linear gain+offset, in a new `openfacefx.links` module: `linear`, `quadratic`,
+  `cubic`, `sqrt`, `negate`, `constant`, and `clamped_linear`. Applied at the two
+  sites that already compute `clamp(gain*v + offset)`: an `--adjust` entry (and
+  `retarget.apply_adjust`) may now be a link spec `{"function": name, ...params}`
+  instead of a `(gain, offset)` trim, and a mapping-file target may carry a per-
+  target `link` (mapping schema **v3**). Gives integrators FaceFX-grade control
+  over how a driver reshapes a target's response (e.g. an ease-in `jawOpen`, or a
+  thresholded `tongueOut`). The linear/no-link paths are byte-identical (a mapping
+  with no link stays schema v2), so all existing output is unchanged. FaceFX's
+  `inverse` (no published formula; reciprocal semantics ill-suited to `[0,1]`
+  weights) and the two-input `corrective`/`one-clamp` links are intentionally out
+  of scope. Pure numpy+stdlib, deterministic on py3.9/3.13, additive.
 - **VRM emotion-expression mapping** (#67) — the `.vrma` exporter now drives the
   VRM emotion presets from the emotion layer, connecting two subsystems that
   existed but were disconnected: `emotion.py` produces FACS-style AU channels and

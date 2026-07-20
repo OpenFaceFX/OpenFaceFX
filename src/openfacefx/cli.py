@@ -159,13 +159,15 @@ def _load_str_map(path: str, flag: str) -> dict:
 
 
 def _load_adjust(path: str) -> dict:
-    """Load a ``--adjust`` file into a validated ``{target: (gain, offset)}``.
+    """Load a ``--adjust`` file into a validated ``{target: (gain, offset) | link}``.
 
-    Schema: a JSON object mapping each rig target name to an object with optional
-    numeric ``gain`` (default 1.0) and ``offset`` (default 0.0), e.g.
-    ``{"jawOpen": {"gain": 0.8}, "mouthSmileLeft": {"offset": 0.1}}``. Validated
-    at this CLI boundary so a malformed file is a clear SystemExit, not a stray
-    KeyError/TypeError deeper in ``apply_adjust``."""
+    Schema: a JSON object mapping each rig target name to either a linear trim with
+    optional numeric ``gain`` (default 1.0) / ``offset`` (default 0.0), e.g.
+    ``{"jawOpen": {"gain": 0.8}, "mouthSmileLeft": {"offset": 0.1}}``, or a
+    nonlinear **link function** ``{"function": name, ...params}`` (#68), e.g.
+    ``{"tongueOut": {"function": "quadratic", "m": 1.4}}`` — see
+    :mod:`openfacefx.links`. Validated at this CLI boundary so a malformed file is a
+    clear SystemExit, not a stray error deeper in ``apply_adjust``."""
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
@@ -173,16 +175,25 @@ def _load_adjust(path: str) -> dict:
         raise SystemExit(f"--adjust: cannot read {path!r}: {e}")
     if not isinstance(data, dict):
         raise SystemExit('--adjust must be a JSON object mapping target names to '
-                         '{"gain":G,"offset":O} objects')
+                         '{"gain":G,"offset":O} or {"function":name,...} objects')
     adjust = {}
     for target, spec in data.items():
         if not isinstance(spec, dict):
             raise SystemExit(f"--adjust[{target!r}] must be an object with "
-                             f"gain/offset, got {spec!r}")
+                             f"gain/offset or a 'function' link spec, got {spec!r}")
+        if "function" in spec:                     # nonlinear link function (#68)
+            from .links import normalize_link
+            try:
+                name, params = normalize_link(spec)
+            except ValueError as e:
+                raise SystemExit(f"--adjust[{target!r}]: {e}")
+            adjust[target] = {"function": name, **params}
+            continue
         extra = set(spec) - {"gain", "offset"}
         if extra:
             raise SystemExit(f"--adjust[{target!r}] has unknown key(s) "
-                             f"{sorted(extra)}; only 'gain' and 'offset' allowed")
+                             f"{sorted(extra)}; only 'gain'/'offset' or a "
+                             f"'function' link spec allowed")
         pair = []
         for key, default in (("gain", 1.0), ("offset", 0.0)):
             val = spec.get(key, default)

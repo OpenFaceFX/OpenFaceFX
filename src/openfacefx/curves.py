@@ -96,7 +96,13 @@ def reduce_to_track(times: np.ndarray, matrix: np.ndarray, fps: float,
         # so default mappings and the built-in viseme set stay byte-identical.
         g = getattr(targets[v], "gain", 1.0) if targets is not None else 1.0
         o = getattr(targets[v], "offset", 0.0) if targets is not None else 0.0
-        if g != 1.0 or o != 0.0:
+        link = getattr(targets[v], "link", None) if targets is not None else None
+        if link is not None:                       # nonlinear response (issue #68)
+            from .links import apply_link
+            lo, hi = clamps[v] if clamps[v] is not None else (0.0, 1.0)
+            params = {k: val for k, val in link.items() if k != "function"}
+            col = np.clip(apply_link(col, link["function"], params), lo, hi)
+        elif g != 1.0 or o != 0.0:
             lo, hi = clamps[v] if clamps[v] is not None else (0.0, 1.0)
             col = np.clip(col * g + o, lo, hi)
         elif clamps[v] is not None:
