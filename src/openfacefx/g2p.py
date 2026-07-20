@@ -142,6 +142,28 @@ class G2P:
                 oov.append(key)
         return oov
 
+    def emit_oov_dict(self, text: str) -> str:
+        """A CMUdict-format starter dictionary of **rule-G2P guesses** for the OOV
+        words in ``text`` (issue #66).
+
+        We already *detect* OOVs (:meth:`oov_words`) and QA warns "add to a
+        pronunciation dict", but only ever listed them — this turns that list into
+        an editable asset: one ``WORD  P1 P2 P3`` line per OOV (uppercase word,
+        ARPAbet phones from the deterministic rule fallback), sorted for stable
+        bytes, behind a header flagging the pronunciations as guesses to review
+        (mirrors MFA's validate→g2p "top hypothesis, use at your own risk" flow).
+        Fix the lines and load them back with :meth:`load_cmudict`. Words already
+        covered by the built-in or a previously loaded dictionary are skipped."""
+        words = sorted(set(self.oov_words(text)))
+        lines = [
+            ";;; OpenFaceFX OOV pronunciation guesses — rule-based G2P, REVIEW "
+            "before use",
+            f";;; {len(words)} word(s), ARPAbet; edit the phonemes, then load with "
+            "--cmudict",
+        ]
+        lines += [f"{w.upper()}  {' '.join(self.word(w))}" for w in words]
+        return "\n".join(lines) + "\n"
+
     def _fallback(self, key: str) -> List[str]:
         phones: List[str] = []
         i = 0

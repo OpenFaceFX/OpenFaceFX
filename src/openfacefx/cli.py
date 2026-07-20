@@ -1342,6 +1342,18 @@ def main(argv=None) -> int:
     _add_output_options(fa)
     _add_qa_options(fa)
 
+    eo = sub.add_parser("emit-oov-dict",
+                        help="emit a reviewable CMUdict of rule-G2P guesses for the "
+                             "out-of-vocabulary words in a transcript (issue #66); "
+                             "fix the guesses and load them with --cmudict")
+    eo.add_argument("--text", help="inline transcript text")
+    eo.add_argument("--transcript", metavar="FILE",
+                    help="a UTF-8 transcript file to scan (alternative to --text)")
+    eo.add_argument("--cmudict",
+                    help="optional CMUdict to pre-load so words it already defines "
+                         "are not emitted as OOV")
+    eo.add_argument("-o", "--out", required=True, help="output .dict path")
+
     cv = sub.add_parser("convert",
                         help="re-export or retarget an existing track.json to any "
                              "format (Unity/Godot/Live2D/cues/.lip/CSV/JSON) "
@@ -1711,6 +1723,33 @@ def main(argv=None) -> int:
             _warn(args, w)
         _write(track, args.out, args)
         _emit_summary(args, track)
+        return 0
+
+    if args.cmd == "emit-oov-dict":
+        if bool(args.text) == bool(args.transcript):
+            raise SystemExit("emit-oov-dict: pass exactly one of --text / --transcript")
+        text = args.text
+        if args.transcript:
+            try:
+                with open(args.transcript, encoding="utf-8") as fh:
+                    text = fh.read()
+            except OSError as ex:
+                raise SystemExit(f"emit-oov-dict: {ex}")
+        g2p = G2P()
+        if args.cmudict:
+            try:
+                g2p.load_cmudict(args.cmudict)
+            except OSError as ex:
+                raise SystemExit(f"emit-oov-dict: {ex}")
+        dict_text = g2p.emit_oov_dict(text)
+        try:
+            with open(args.out, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(dict_text)
+        except OSError as ex:
+            raise SystemExit(f"emit-oov-dict: {ex}")
+        n = sum(1 for ln in dict_text.splitlines() if ln and not ln.startswith(";"))
+        _say(args, f"wrote {args.out}: {n} OOV pronunciation guess(es) — "
+             f"review the phonemes before loading with --cmudict")
         return 0
 
     if args.cmd == "convert":

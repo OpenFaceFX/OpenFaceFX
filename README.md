@@ -959,6 +959,15 @@ $ openfacefx naive --text "it's a teszt" --wav vo.wav -o vo.json --json
  "warnings": ["1 word(s) fell back to G2P rules (add to a pronunciation dict): teszt"]}
 ```
 
+Turn that OOV list into an editable asset with `emit-oov-dict`: it writes a
+reviewable CMUdict of rule-G2P *guesses* for the words that fell through, which you
+fix and load back with `--cmudict` (the MFA validate→g2p loop, offline):
+
+```bash
+python -m openfacefx emit-oov-dict --transcript script.txt -o guesses.dict  # review, then:
+python -m openfacefx naive --text "…" --cmudict guesses.dict -o mouth.json
+```
+
 Every key is always present (lists empty rather than absent), so the schema is
 stable to assert on. `oov_words` are words that fell through to the crude G2P
 rule fallback — worth adding to a CMUdict; `cue_warnings` are phoneme cues below

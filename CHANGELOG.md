@@ -9,6 +9,16 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Reviewable OOV pronunciation-dictionary emit** (#66) — a new `emit-oov-dict`
+  CLI verb and `G2P.emit_oov_dict(text)` turn the out-of-vocabulary words the tool
+  already detects (`g2p.oov_words`, which `qa.summarize` warns to "add to a
+  pronunciation dict") into an **editable CMUdict** of rule-G2P guesses: one
+  `WORD  P1 P2 P3` line per OOV (uppercase, ARPAbet, sorted for stable bytes) behind
+  a header flagging them as guesses to review — the offline analogue of MFA's
+  validate→g2p workflow. Fix the phonemes and load them back with `--cmudict`; the
+  round-trip resolves exactly the words that were OOV. `--transcript FILE` or
+  `--text`, `--cmudict` pre-load skips already-defined words. Pure-stdlib,
+  deterministic, additive.
 - **Live2D Cubism `.exp3.json` expression-pose exporter** (#65) —
   `write_live2d_expression(track, path)` / `build_expression(track)` and a
   `.exp3.json` output extension freeze the track's pose at **one instant** as a
