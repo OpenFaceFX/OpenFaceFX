@@ -9,6 +9,21 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **NVIDIA Audio2Face blendshape-JSON interop** (#64) — `write_a2f(track, path)` /
+  `read_a2f(path)` with a `.a2f.json` output extension and a `from-a2f` CLI verb
+  read and write A2F's dense per-frame ARKit-FACS JSON (`facsNames` + `weightMat`
+  + `numFrames`/`numPoses`/`exportFps`), the public non-USD interchange path for the
+  dominant audio-driven-face tool. **Export** twins `export_livelink`: sample the
+  track onto a fixed-fps grid, one row per frame; `facsNames` are the track's own
+  `[0,1]` channel names verbatim (A2F's pose set is a configurable ~46/52 list, so no
+  fixed header is forced), so a `--retarget arkit` track lands as ARKit names and a
+  still-viseme track is reported. Head/eye pose channels are excluded (A2F carries
+  weights, not angles). **Import** twins `importers_csv`'s wide branch: `facsNames`
+  become channel names verbatim, `weightMat` rows become frames timed by
+  `exportFps` (a `--fps` override wins; a file without it falls back), clipped to
+  `[0,1]` and RDP-thinned via `reduce_to_track`. `write_a2f`→`read_a2f` reconstructs
+  every channel (round-trip proof). stdlib `json` + numpy, deterministic on
+  py3.9/3.13 (fixed 6-dp weights), additive.
 - **VRM Animation (`.vrma`) expression-clip exporter** (#62) — `write_vrma(track,
   path)` / `build_vrma(track)` and a `.vrma` output extension write a VRM 1.0
   animation clip a VRM avatar will actually lip-sync to. Our glTF exporter drives

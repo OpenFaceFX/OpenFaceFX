@@ -316,6 +316,15 @@ def _write_livelink(track, out: str, args) -> None:
     _say(args, f"wrote {out}: ARKit / Live Link Face CSV, {track.duration:.2f}s")
 
 
+def _write_a2f(track, out: str, args) -> None:
+    from .export_a2f import write_a2f
+    matched = write_a2f(track, out, fps=getattr(args, "a2f_fps", None))
+    if matched == 0:
+        _warn(args, "a2f: no ARKit blendshape channels matched — the track is "
+                    "likely in viseme space; pass --retarget arkit to map it first")
+    _say(args, f"wrote {out}: Audio2Face blendshape JSON, {track.duration:.2f}s")
+
+
 def _write(track, out: str, args=None) -> None:
     if out.endswith(".lip"):
         raise SystemExit(
@@ -366,7 +375,9 @@ def _write(track, out: str, args=None) -> None:
                          "chosen rig preset's shapes); pass --retarget too")
     if args is not None and getattr(args, "adjust", None):
         track = apply_adjust(track, _load_adjust(args.adjust))
-    if out.endswith(".livelink.csv"):
+    if out.endswith(".a2f.json"):
+        _write_a2f(track, out, args)
+    elif out.endswith(".livelink.csv"):
         _write_livelink(track, out, args)
     elif out.endswith(".csv"):
         write_csv(track, out)
@@ -446,6 +457,10 @@ def _add_output_options(p) -> None:
     p.add_argument("--livelink-fps", type=_positive_float, default=60.0,
                    help="frame rate for .livelink.csv rows (ARKit / Live Link Face "
                         "wide CSV; default 60, Live Link's rate). Retarget viseme "
+                        "tracks with --retarget arkit first")
+    p.add_argument("--a2f-fps", type=_positive_float, default=None,
+                   help="exportFps for .a2f.json (NVIDIA Audio2Face blendshape "
+                        "JSON); default is the track's own fps. Retarget viseme "
                         "tracks with --retarget arkit first")
     p.add_argument("--spine-base", metavar="JSON",
                    help="for .spine.json output, splice the mouth timeline into "
@@ -1285,6 +1300,19 @@ def main(argv=None) -> int:
     _add_output_options(fv)
     _add_qa_options(fv)
 
+    fa = sub.add_parser("from-a2f",
+                        help="import a NVIDIA Audio2Face blendshape JSON "
+                             "(facsNames/weightMat) into a track — the read side "
+                             "of the .a2f.json exporter (issue #64)")
+    fa.add_argument("file", help="the Audio2Face blendshape .json to import")
+    fa.add_argument("--fps", type=float, default=None,
+                    help="frame rate timing the frames (frame -> seconds); "
+                         "overrides the file's exportFps, and is the fallback when "
+                         "the file omits it (default 30, A2F-native)")
+    fa.add_argument("-o", "--out", required=True)
+    _add_output_options(fa)
+    _add_qa_options(fa)
+
     cv = sub.add_parser("convert",
                         help="re-export or retarget an existing track.json to any "
                              "format (Unity/Godot/Live2D/cues/.lip/CSV/JSON) "
@@ -1640,6 +1668,18 @@ def main(argv=None) -> int:
                              head_pose=not args.no_head_pose)
         except (OSError, ValueError) as ex:
             raise SystemExit(f"from-vmd: {ex}")
+        _write(track, args.out, args)
+        _emit_summary(args, track)
+        return 0
+
+    if args.cmd == "from-a2f":
+        from .export_a2f import read_a2f
+        try:
+            track, warnings = read_a2f(args.file, fps=args.fps)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"from-a2f: {ex}")
+        for w in warnings:
+            _warn(args, w)
         _write(track, args.out, args)
         _emit_summary(args, track)
         return 0

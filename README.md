@@ -609,6 +609,16 @@ values clamped `[0,1]`, timecode/frame → seconds, and each column RDP-thinned 
 is many-to-one) — it brings the raw channels in to condition and re-export.
 `read_csv(path)` is the library entry; numpy + stdlib, deterministic.
 
+**NVIDIA Audio2Face** interop (`.a2f.json`, the non-USD path) reads and writes A2F's
+dense blendshape JSON (`facsNames` + `weightMat`) in both directions — export a
+synthetic performance to an A2F-targeted rig, or bring A2F output in to retarget,
+condition and re-export:
+
+```bash
+python -m openfacefx naive --text "..." --wav voice.wav --retarget arkit -o perf.a2f.json  # → A2F
+python -m openfacefx from-a2f a2f_output.json -o track.json                                 # A2F →
+```
+
 ## Subtitles & captions (SRT / WebVTT)
 
 Captions and lip motion should come from **one source of truth** so they stay in

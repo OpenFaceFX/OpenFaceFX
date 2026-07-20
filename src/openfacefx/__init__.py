@@ -63,6 +63,7 @@ from .export_vrma import write_vrma, build_vrma, VRM_EXPRESSION_PRESETS
 from .export_vmd import write_vmd, vmd_bytes, DEFAULT_MORPH_MAP
 from .export_livelink import (write_livelink_csv, livelink_csv_string,
                               LIVELINK_COLUMNS)
+from .export_a2f import write_a2f, read_a2f, a2f_dict, parse_a2f
 from .export_lip import (write_lip, lip_bytes, skyrim_mapping,
                         SKYRIM_SLOT_MAP)
 from .export_cues import (
@@ -147,6 +148,7 @@ __all__ = [
     "write_vrma", "build_vrma", "VRM_EXPRESSION_PRESETS",
     "write_vmd", "vmd_bytes", "DEFAULT_MORPH_MAP",
     "write_livelink_csv", "livelink_csv_string", "LIVELINK_COLUMNS",
+    "write_a2f", "read_a2f", "a2f_dict", "parse_a2f",
     "write_lip", "lip_bytes", "skyrim_mapping", "SKYRIM_SLOT_MAP",
     "dominant_cues", "write_rhubarb_tsv", "write_rhubarb_xml",
     "write_rhubarb_json", "write_moho_dat", "write_pgo",
