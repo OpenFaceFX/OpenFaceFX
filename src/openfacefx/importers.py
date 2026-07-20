@@ -88,6 +88,11 @@ RHUBARB_TO_VISEME: Dict[str, str] = _invert_preset(PRESETS["rhubarb"])
 PRESTON_BLAIR_TO_VISEME: Dict[str, str] = dict(_invert_preset(PRESETS["preston_blair"]))
 PRESTON_BLAIR_TO_VISEME.setdefault("WQ", "U")
 
+#: Fleming-Dobbs shape -> canonical viseme (inverse of ``PRESETS['fleming_dobbs']``,
+#: issue #71) — for importing an FD-labelled mouth-shape timeline back to visemes
+#: via :func:`build_cue_track`. Every FD shape the forward preset emits is covered.
+FLEMING_DOBBS_TO_VISEME: Dict[str, str] = _invert_preset(PRESETS["fleming_dobbs"])
+
 #: Representative ARPABET phoneme per viseme (inverse of ``PHONEME_TO_VISEME``),
 #: used only by ``--coarticulate`` to synthesise segments for the dominance solve.
 _VISEME_TO_PHONEME: Dict[str, str] = {}

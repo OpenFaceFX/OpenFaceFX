@@ -38,7 +38,8 @@ from .edits import (EditsDoc, diff_edits, apply_edits, load_edits, save_edits,
 from .emotion import (EmotionEnvelope, bake_emotion, load_envelope,
                      save_envelope, va_to_pose, VA_TABLE, VA_EMOTION_CHANNELS)
 from .importers import (import_cues, detect_format, build_cue_track,
-                       RHUBARB_TO_VISEME, PRESTON_BLAIR_TO_VISEME)
+                       RHUBARB_TO_VISEME, PRESTON_BLAIR_TO_VISEME,
+                       FLEMING_DOBBS_TO_VISEME)
 from .importers_csv import read_csv
 from .importers_vmd import parse_vmd, read_vmd
 from .inspect import (inspect_track, validate_asset, validate_file,
@@ -130,7 +131,8 @@ __all__ = [
     "EmotionEnvelope", "bake_emotion", "load_envelope", "save_envelope",
     "va_to_pose", "VA_TABLE", "VA_EMOTION_CHANNELS",
     "import_cues", "detect_format", "build_cue_track",
-    "RHUBARB_TO_VISEME", "PRESTON_BLAIR_TO_VISEME", "read_csv",
+    "RHUBARB_TO_VISEME", "PRESTON_BLAIR_TO_VISEME", "FLEMING_DOBBS_TO_VISEME",
+    "read_csv",
     "parse_vmd", "read_vmd",
     "inspect_track", "validate_asset", "validate_file", "detect_kind",
     "retime", "retime_to_duration", "mirror", "trim", "concat",

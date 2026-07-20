@@ -298,6 +298,23 @@ _PRESTON_BLAIR = {
     "E": (("E", 1.0),), "O": (("O", 1.0),), "U": (("U", 1.0),),
 }
 
+# Fleming & Dobbs mouth-shape convention ("Animating Facial Features &
+# Expressions", ISBN 9781886801813), the phoneme-cluster set Papagayo-NG also
+# exposes. Each shape is labelled by the phonemes that share that mouth: MBP =
+# m/b/p closed lips, NLTDR = n/l/t/d/r, FV = f/v, GK = g/k, SH = sh/ch/j,
+# EHSZ = the eh/s/z spread, AA/IY/O the open/close-front/rounded vowels, rest =
+# neutral. A sibling of the preston_blair/rhubarb presets; pose-based (nearest
+# single shape at 1.0). Re-expressed here from the published convention (a
+# functional fact) — NOT copied from Papagayo-NG's GPLv3 fleming_dobbs.json.
+_FLEMING_DOBBS = {
+    "sil": (("rest", 1.0),),
+    "PP": (("MBP", 1.0),), "FF": (("FV", 1.0),), "TH": (("TH", 1.0),),
+    "DD": (("NLTDR", 1.0),), "nn": (("NLTDR", 1.0),), "RR": (("NLTDR", 1.0),),
+    "kk": (("GK", 1.0),), "CH": (("SH", 1.0),), "SS": (("EHSZ", 1.0),),
+    "aa": (("AA", 1.0),), "E": (("EHSZ", 1.0),), "I": (("IY", 1.0),),
+    "O": (("O", 1.0),), "U": (("O", 1.0),),
+}
+
 # VRM 1.0 expression presets: only five vowel mouths exist in the standard.
 # Vowels map canonically; consonants borrow the nearest vowel mouth (coarse
 # by design — VRM has no consonant visemes). PP/sil rest at zero.
@@ -346,6 +363,7 @@ PRESETS: Dict[str, Mapping] = {
     "arkit": _ARKIT,
     "rhubarb": _RHUBARB,
     "preston_blair": _PRESTON_BLAIR,
+    "fleming_dobbs": _FLEMING_DOBBS,
     "vrm": _VRM,
     "vrm0": _VRM0,
     "cc4": _CC4,

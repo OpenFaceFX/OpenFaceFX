@@ -9,6 +9,15 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Fleming-Dobbs mouth-shape retarget preset** (#71) — a `fleming_dobbs` preset
+  mapping the Oculus-15 visemes onto the Fleming & Dobbs phoneme-cluster shapes
+  (`MBP`/`NLTDR`/`FV`/`TH`/`GK`/`SH`/`EHSZ`/`AA`/`IY`/`O`/`rest`), a sibling of the
+  `preston_blair`/`rhubarb` presets for the Papagayo-NG / traditional-animation
+  audience. Auto-wires to `--retarget fleming_dobbs` and the API; a derived
+  `FLEMING_DOBBS_TO_VISEME` inverse table imports FD-labelled timelines back to
+  visemes (via `build_cue_track`). The grouping is re-expressed from the published
+  Fleming & Dobbs convention (ISBN 9781886801813) — a functional fact — **not**
+  copied from Papagayo-NG's GPLv3 data. Pure data, deterministic, additive.
 - **Vosk offline-ASR word-timestamp adapter** (#70) — `from_vosk(json_text,
   min_conf=0.0)` and `--anchors-format vosk` read Vosk's `SetWords(True)` output
   (`{"result": [{word, start, end, conf}], "text": ...}`, or a list of streaming
