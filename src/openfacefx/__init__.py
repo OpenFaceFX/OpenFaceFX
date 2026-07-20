@@ -93,7 +93,7 @@ from .timing import (
 from .anchors import (
     Anchor, anchored_segments, anchors_transcript, parse_srt,
     parse_word_anchors, from_azure_word_boundaries, from_elevenlabs_alignment,
-    from_kokoro_tokens, google_ssml_with_marks, from_google_timepoints,
+    from_kokoro_tokens, google_ssml_with_marks, from_google_timepoints, from_vosk,
 )
 from .aligners import (from_whisper_json, from_whisperx, from_gentle,
                       from_gentle_phones)
@@ -173,7 +173,7 @@ __all__ = [
     "Anchor", "anchored_segments", "anchors_transcript", "parse_srt",
     "parse_word_anchors", "from_azure_word_boundaries",
     "from_elevenlabs_alignment", "from_kokoro_tokens", "google_ssml_with_marks",
-    "from_google_timepoints",
+    "from_google_timepoints", "from_vosk",
     "from_whisper_json", "from_whisperx", "from_gentle", "from_gentle_phones",
     "from_allosaurus", "from_phone_timestamps",
 ]

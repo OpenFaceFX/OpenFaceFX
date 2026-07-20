@@ -1133,6 +1133,9 @@ not for shipping. For production accuracy, produce a list of
 - **Gentle** — Kaldi-based forced aligner with free **phoneme**-level timings;
   **built-in adapters** (`from_gentle` for word anchors, `from_gentle_phones` for
   the accurate phone path, or `--anchors-format gentle|gentle-phones`).
+- **Vosk** — offline Kaldi ASR with word timings + per-word confidence;
+  **built-in adapter** (`from_vosk`, or `--anchors-format vosk`, with an optional
+  `--vosk-min-conf` gate). Self-transcribing, so `--text` is optional.
 - **wav2vec2 / any other source** — produce a list of `PhonemeSegment` and pass it
   to `generate_from_alignment`.
 

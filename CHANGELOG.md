@@ -9,6 +9,16 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Vosk offline-ASR word-timestamp adapter** (#70) — `from_vosk(json_text,
+  min_conf=0.0)` and `--anchors-format vosk` read Vosk's `SetWords(True)` output
+  (`{"result": [{word, start, end, conf}], "text": ...}`, or a list of streaming
+  chunks — their `result` arrays are concatenated) into anchors, filling the one
+  gap in the offline lightweight-ASR adapters (Whisper/WhisperX/Gentle/Allosaurus
+  already ship). Vosk is self-transcribing (`--text` optional), and a `--vosk-min-conf`
+  gate drops words below a per-word confidence — the increment over the generic
+  `parse_word_anchors`. Vosk is Apache-2.0, so parsing its JSON carries no GPL
+  contamination; recognition runs externally, we only parse (pure-Python,
+  deterministic). Additive.
 - **Procedural breathing channel** (#69) — an opt-in idle chest rise/fall added to
   the gesture layer: a `breath` channel in `[0, 1]` (a slow ~0.25 Hz sine,
   ~15 breaths/min, with a per-clip rate jitter and random phase), for a rig with a

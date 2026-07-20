@@ -410,6 +410,45 @@ def google_ssml_with_marks(transcript: str) -> str:
     return "<speak>" + "".join(out) + "</speak>"
 
 
+def from_vosk(json_text: str, min_conf: float = 0.0) -> List[Anchor]:
+    """Vosk (offline Kaldi ASR) word results -> anchors (issue #70). VERIFIED field
+    names (alphacep/vosk-api, ``SetWords(True)``): a ``{"result": [{"word", "start",
+    "end", "conf"}], "text": ...}`` object, or a **list** of such objects (streaming
+    recognizer chunks — their ``result`` arrays are concatenated in order). ``start``
+    and ``end`` are already **seconds**; ``conf`` is a per-word confidence in
+    ``[0, 1]`` and ``min_conf`` (default 0.0 = keep all) drops words below it. Vosk
+    is Apache-2.0, so parsing its JSON carries no GPL contamination; the neural
+    recognition runs externally, we only read the output (pure-Python, deterministic).
+    Partial results (``{"partial": ...}`` with no ``result``) are skipped."""
+    data = _json(json_text, "vosk")
+    chunks = data if isinstance(data, list) else [data]
+    out: List[Anchor] = []
+    for ci, chunk in enumerate(chunks):
+        if not isinstance(chunk, dict):
+            raise ValueError(f"vosk: chunk {ci} is not an object")
+        result = chunk.get("result")
+        if result is None:                         # a partial/empty chunk
+            continue
+        if not isinstance(result, list):
+            raise ValueError(f"vosk: chunk {ci} 'result' must be a list of words")
+        for i, w in enumerate(result):
+            if not isinstance(w, dict):
+                raise ValueError(f"vosk: chunk {ci} word {i} is not an object")
+            word = w.get("word")
+            if not isinstance(word, str):
+                raise ValueError(f"vosk: chunk {ci} word {i} needs a string 'word'")
+            conf = w.get("conf")
+            if conf is not None and _num(conf, f"vosk word {i} 'conf'") < min_conf:
+                continue
+            start = _num(w.get("start"), f"vosk word {i} 'start'")
+            end = _num(w.get("end"), f"vosk word {i} 'end'")
+            out.append(Anchor(word, start, end))
+    if not out:
+        raise ValueError("vosk: no word results found (need SetWords(True) output; "
+                         "min_conf may have dropped every word)")
+    return out
+
+
 def from_google_timepoints(json_text: str, transcript: str) -> List[Anchor]:
     """Google Cloud TTS timepoints -> anchors. VERIFIED field names
     (cloud.google.com/.../v1beta1/text/synthesize): a top-level ``timepoints``

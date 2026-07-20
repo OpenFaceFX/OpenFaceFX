@@ -44,7 +44,7 @@ from .ipa import IPA_MAPPING, ipa_unknown_symbols
 from .anchors import (
     anchored_segments, anchors_transcript, parse_srt, parse_word_anchors,
     from_azure_word_boundaries, from_elevenlabs_alignment, from_kokoro_tokens,
-    from_google_timepoints,
+    from_google_timepoints, from_vosk,
 )
 from .aligners import (from_whisper_json, from_whisperx, from_gentle,
                       from_gentle_phones)
@@ -65,10 +65,11 @@ _ANCHOR_PARSERS = {
     "whisper": from_whisper_json,
     "whisperx": from_whisperx,
     "gentle": from_gentle,
+    "vosk": from_vosk,
 }
 # Formats whose anchors carry the words, so --text is optional (like srt) — SRT/
 # WebVTT cues and the open-source aligners all supply their own transcript.
-_SELF_TRANSCRIBING = ("srt", "vtt", "whisper", "whisperx", "gentle")
+_SELF_TRANSCRIBING = ("srt", "vtt", "whisper", "whisperx", "gentle", "vosk")
 # `gentle-phones`, `allosaurus` and `phones` produce PhonemeSegments directly from
 # phone timings (no transcript at all — the acoustic-recognizer path).
 _PHONE_SEGMENT_FORMATS = ("gentle-phones", "allosaurus", "phones")
@@ -952,7 +953,8 @@ def _anchored_segments(args, dur, g2p):
             text, alphabet=getattr(args, "phones_alphabet", "ipa"),
             timing=getattr(args, "phones_timing", "start_end"))
     if fmt in _SELF_TRANSCRIBING:              # srt + the aligners carry the words
-        anchors = _ANCHOR_PARSERS[fmt](text)
+        anchors = (from_vosk(text, min_conf=getattr(args, "vosk_min_conf", 0.0) or 0.0)
+                   if fmt == "vosk" else _ANCHOR_PARSERS[fmt](text))
         transcript = args.text if args.text else anchors_transcript(anchors)
     else:
         if not args.text:
@@ -1166,8 +1168,8 @@ def main(argv=None) -> int:
                    "aligner at known boundaries (SRT cues or TTS word timings)")
     n.add_argument("--anchors-format", choices=_ANCHOR_FORMATS,
                    help="format of --anchors: srt|words|azure|elevenlabs|kokoro|"
-                        "google, the aligners whisper|whisperx|gentle|gentle-phones, "
-                        "or the transcript-free acoustic recognizers "
+                        "google, the aligners whisper|whisperx|gentle|gentle-phones|"
+                        "vosk, or the transcript-free acoustic recognizers "
                         "allosaurus|phones (only valid together with --anchors)")
     n.add_argument("--phones-alphabet", choices=["ipa", "arpabet", "sampa"],
                    default="ipa",
@@ -1176,6 +1178,9 @@ def main(argv=None) -> int:
                    default="start_end",
                    help="second column of --anchors-format phones rows: an absolute "
                         "end time or a duration (default start_end)")
+    n.add_argument("--vosk-min-conf", type=float, default=0.0,
+                   help="for --anchors-format vosk, drop words whose per-word "
+                        "confidence is below this (0.0 = keep all; default)")
     n.add_argument("--fps", type=_positive_float, default=60.0)
     n.add_argument("-o", "--out", required=True)
     n.add_argument("--emit-segments", metavar="PATH",
