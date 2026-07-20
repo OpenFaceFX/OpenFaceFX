@@ -9,6 +9,19 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **VRM emotion-expression mapping** (#67) — the `.vrma` exporter now drives the
+  VRM emotion presets from the emotion layer, connecting two subsystems that
+  existed but were disconnected: `emotion.py` produces FACS-style AU channels and
+  `export_vrma` has `happy`/`angry`/`sad`/`surprised` slots, but `PRESETS["vrm"]`
+  mapped only the five vowels, so retargeting silently dropped emotion. A new
+  `VRM_EMOTION_MAP` overlay (`smile`→happy, `frown`→sad, `brow_lower`→angry,
+  `brow_raise`→surprised) is applied **inside** `build_vrma` on top of the vowel
+  preset — so an emotion-baked track's AUs now fill the `.vrma` emotion slots with
+  no exporter API change and no CLI flag (bake emotion, export `.vrma`). It is NOT
+  merged into the shared `vrm` preset, so `--retarget vrm` output for every other
+  exporter is byte-identical, and a viseme-only `.vrma` is unchanged. `relaxed`
+  and `cheek_raise` are intentionally left unmapped (no clean low-arousal AU; the
+  smile channel grows with arousal → happy). Deterministic, additive.
 - **Reviewable OOV pronunciation-dictionary emit** (#66) — a new `emit-oov-dict`
   CLI verb and `G2P.emit_oov_dict(text)` turn the out-of-vocabulary words the tool
   already detects (`g2p.oov_words`, which `qa.summarize` warns to "add to a

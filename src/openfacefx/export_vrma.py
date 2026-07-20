@@ -67,6 +67,27 @@ VRM_EXPRESSION_PRESETS: Tuple[str, ...] = (
 )
 _PRESET_SET = frozenset(VRM_EXPRESSION_PRESETS)
 
+# Emotion AU channels (:data:`openfacefx.emotion.VA_EMOTION_CHANNELS`) -> VRM 1.0
+# emotion expression presets (#67). This connects the emotion layer to the .vrma
+# emotion slots that nothing else fills (``PRESETS["vrm"]`` maps only the five
+# vowels). Applied *inside* this exporter as an additive overlay on the vowel
+# preset, NOT merged into the shared ``vrm`` preset -- so ``--retarget vrm`` output
+# for every other exporter is unchanged.
+#
+# Only the four AUs with a distinct expression map: smile->happy, frown->sad,
+# brow_lower (corrugator)->angry, brow_raise->surprised. ``cheek_raise`` and VRM
+# ``relaxed`` are intentionally left unmapped -- there is no clean low-arousal
+# "relaxed/content" AU (the smile channel *grows* with arousal, so it reads as
+# happy->elated, not calm), and cheek_raise shadows an aroused smile, so mapping it
+# to ``relaxed`` would fire relaxed hardest when the face is most excited. Better a
+# missing slot than a wrong one; author ``relaxed`` by hand if a rig needs it.
+VRM_EMOTION_MAP = {
+    "smile": (("happy", 1.0),),
+    "frown": (("sad", 1.0),),
+    "brow_lower": (("angry", 1.0),),
+    "brow_raise": (("surprised", 1.0),),
+}
+
 
 def _expression_channels(track: FaceTrack):
     """Channels whose names are VRM expression preset ids, in canonical order."""
@@ -90,7 +111,14 @@ def build_vrma(track: FaceTrack, *, head_node: bool = False,
     grid = _grid(track)
     times = grid.astype(np.float32)
 
-    expr_track = retarget(track, PRESETS[preset]) if preset is not None else track
+    if preset is not None:
+        # vowel preset + the emotion-AU overlay, so one retarget yields both the
+        # lip-sync vowels and the emotion expressions (#67).
+        mapping = dict(PRESETS[preset])
+        mapping.update(VRM_EMOTION_MAP)
+        expr_track = retarget(track, mapping)
+    else:
+        expr_track = track                       # already in VRM expression space
     exprs = _expression_channels(expr_track)
     if not exprs:
         raise ValueError(

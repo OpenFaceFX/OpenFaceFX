@@ -200,7 +200,8 @@ Or bake into a VTuber/game engine's own animation asset — a Live2D Cubism
 one blendshape value track per viseme, `--godot-node`/`--godot-naming`), or a
 **VRM Animation** (`.vrma`) expression clip a VRM 1.0 avatar will lip-sync to in
 UniVRM / three-vrm / VMagicMirror (`VRMC_vrm_animation`, the vowel expressions
-`aa/ih/ou/ee/oh`, `--vrma-head-node` for head pose):
+`aa/ih/ou/ee/oh`, `--vrma-head-node` for head pose; a track with a baked emotion
+layer also fills the `happy/angry/sad/surprised` expression slots):
 
 ```bash
 python -m openfacefx naive --text "..." --wav voice.wav -o mouth.motion3.json  # Live2D Cubism

@@ -60,7 +60,8 @@ from .export_live2d import (write_live2d_motion, write_live2d_expression,
                             build_expression, lipsync_param_ids)
 from .export_godot import write_godot_anim
 from .export_gltf import write_gltf, build_gltf
-from .export_vrma import write_vrma, build_vrma, VRM_EXPRESSION_PRESETS
+from .export_vrma import (write_vrma, build_vrma, VRM_EXPRESSION_PRESETS,
+                          VRM_EMOTION_MAP)
 from .export_vmd import write_vmd, vmd_bytes, DEFAULT_MORPH_MAP
 from .export_livelink import (write_livelink_csv, livelink_csv_string,
                               LIVELINK_COLUMNS)
@@ -147,7 +148,7 @@ __all__ = [
     "write_live2d_motion", "write_live2d_expression", "build_expression",
     "lipsync_param_ids", "write_godot_anim",
     "write_gltf", "build_gltf",
-    "write_vrma", "build_vrma", "VRM_EXPRESSION_PRESETS",
+    "write_vrma", "build_vrma", "VRM_EXPRESSION_PRESETS", "VRM_EMOTION_MAP",
     "write_vmd", "vmd_bytes", "DEFAULT_MORPH_MAP",
     "write_livelink_csv", "livelink_csv_string", "LIVELINK_COLUMNS",
     "write_a2f", "read_a2f", "a2f_dict", "parse_a2f",
