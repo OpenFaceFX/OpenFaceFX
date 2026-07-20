@@ -796,6 +796,22 @@ def _add_qa_options(p) -> None:
     p.add_argument("--max-cue", type=float, default=None, metavar="SECONDS",
                    help="flag phoneme cues longer than this in the QA summary's "
                         "cue_warnings (default 0.5; a too-long one sticks)")
+    p.add_argument("--min-confidence", type=float, default=None, metavar="SCORE",
+                   help="flag phonemes whose aligner confidence is below this in "
+                        "the QA summary's confidence_warnings (default 0.5; only "
+                        "populates when your aligner supplies per-phone confidence)")
+
+
+def _min_confidence(args) -> float:
+    """Validated low-confidence threshold in [0, 1]; --min-confidence overrides
+    qa's default, at this CLI boundary."""
+    from .qa import MIN_CONFIDENCE
+    v = getattr(args, "min_confidence", None)
+    if v is None:
+        return MIN_CONFIDENCE
+    if not math.isfinite(v) or not (0.0 <= v <= 1.0):
+        raise SystemExit(f"--min-confidence must be a number in [0, 1], got {v}")
+    return v
 
 
 def _want_summary(args) -> bool:
@@ -828,7 +844,8 @@ def _emit_summary(args, track, *, segments=None, oov_words=None,
     lo, hi = _cue_thresholds(args)
     doc = summarize(track, output=args.out, command=args.cmd, segments=segments,
                     oov_words=oov_words, substitutions=substitutions,
-                    warnings=args._warnings, min_cue=lo, max_cue=hi)
+                    warnings=args._warnings, min_cue=lo, max_cue=hi,
+                    min_confidence=_min_confidence(args))
     report = getattr(args, "report", None)
     if report:
         try:

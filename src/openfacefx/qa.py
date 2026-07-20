@@ -46,6 +46,10 @@ _NORMALIZE = [
 # --min-cue/--max-cue. Below/above these a phoneme cue is worth manual attention.
 MIN_CUE = 0.03
 MAX_CUE = 0.5
+# Default low-confidence threshold (issue #72): an aligner score below this is
+# worth a human glance. Only fires when segments carry a confidence — no built-in
+# aligner populates it, so it is inert unless a custom external adapter did.
+MIN_CONFIDENCE = 0.5
 
 
 def normalize_transcript(text: str):
@@ -90,10 +94,36 @@ def cue_flags(segments, min_dur: float = MIN_CUE,
     return out
 
 
+def confidence_flags(segments,
+                     min_confidence: float = MIN_CONFIDENCE) -> List[Dict]:
+    """Phoneme cues whose recognizer confidence is below ``min_confidence`` -- the
+    low-confidence spots FaceFX surfaces for a human to hand-check.
+
+    Only fires for segments that CARRY a confidence (``PhonemeSegment.confidence``
+    is not ``None``); no built-in aligner populates it (NaiveAligner, the MFA
+    TextGrid reader and the acoustic path all leave it ``None``), so this is empty
+    unless a custom external-aligner adapter supplied per-phone confidences.
+    Silence is ignored. Returns a time-sorted ``list[{"phoneme", "start",
+    "confidence"}]``."""
+    out: List[Dict] = []
+    for s in segments or []:
+        conf = getattr(s, "confidence", None)
+        if conf is None:
+            continue
+        if s.phoneme == SILENCE or strip_stress(s.phoneme).lower() == "sil":
+            continue
+        if conf < min_confidence:
+            out.append({"phoneme": s.phoneme, "start": round(s.start, 4),
+                        "confidence": round(float(conf), 4)})
+    out.sort(key=lambda c: (c["start"], c["phoneme"]))
+    return out
+
+
 def summarize(track=None, *, output: Optional[str] = None,
               command: Optional[str] = None, segments=None,
               oov_words=None, substitutions=None, warnings=None,
-              min_cue: float = MIN_CUE, max_cue: float = MAX_CUE) -> Dict:
+              min_cue: float = MIN_CUE, max_cue: float = MAX_CUE,
+              min_confidence: float = MIN_CONFIDENCE) -> Dict:
     """A deterministic, machine-readable QA summary of a generated track.
 
     The single source of truth behind the CLI ``--json`` / ``--report`` output,
@@ -140,5 +170,7 @@ def summarize(track=None, *, output: Optional[str] = None,
         "oov_words": oov,
         "substitutions": [dict(s) for s in (substitutions or [])],
         "cue_warnings": cue_flags(segments, min_cue, max_cue) if segments else [],
+        "confidence_warnings": (confidence_flags(segments, min_confidence)
+                                if segments else []),
         "warnings": warns,
     }

@@ -974,7 +974,9 @@ Every key is always present (lists empty rather than absent), so the schema is
 stable to assert on. `oov_words` are words that fell through to the crude G2P
 rule fallback — worth adding to a CMUdict; `cue_warnings` are phoneme cues below
 `--min-cue` (default 0.03 s) or above `--max-cue` (default 0.5 s), each with its
-clip, `start` and `duration`; `substitutions` reports the transcript
+clip, `start` and `duration`; `confidence_warnings` are phonemes whose aligner
+confidence is below `--min-confidence` (default 0.5) — populated only when your
+aligner supplies per-phone confidence; `substitutions` reports the transcript
 normalization pass (below). The process exit code is nonzero on a real error
 (`batch` returns nonzero if any file failed), so `set -e` scripts stop as
 expected.

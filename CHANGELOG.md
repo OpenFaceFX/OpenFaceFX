@@ -9,6 +9,15 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Low-confidence phoneme QA flagging** (#72) — a `confidence_flags(segments,
+  min_confidence)` helper (a sibling of `cue_flags`) and a `confidence_warnings`
+  key in `qa.summarize()`, plus a `--min-confidence` CLI flag alongside
+  `--min-cue`/`--max-cue`. Surfaces the low-confidence phonemes FaceFX flags for
+  hand-fixing — a time-sorted `[{phoneme, start, confidence}]`. It reads the
+  `PhonemeSegment.confidence` the track already carries; no built-in aligner
+  populates it, so it is **inert (empty) unless a custom external-aligner adapter
+  supplied per-phone confidences** — the QA schema gains the always-present key
+  without changing any existing output. Pure-stdlib, deterministic, additive.
 - **Fleming-Dobbs mouth-shape retarget preset** (#71) — a `fleming_dobbs` preset
   mapping the Oculus-15 visemes onto the Fleming & Dobbs phoneme-cluster shapes
   (`MBP`/`NLTDR`/`FV`/`TH`/`GK`/`SH`/`EHSZ`/`AA`/`IY`/`O`/`rest`), a sibling of the

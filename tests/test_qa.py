@@ -29,7 +29,7 @@ VOICE = os.path.join(ROOT, "examples", "voice.wav")
 # stable for a CI consumer regardless of input.
 QA_KEYS = {"format", "version", "command", "output", "fps", "duration",
            "channels", "keyframes", "gestures", "events", "oov_words",
-           "substitutions", "cue_warnings", "warnings"}
+           "substitutions", "cue_warnings", "confidence_warnings", "warnings"}
 
 TEXTGRID = '''File type = "ooTextFile"
 Object class = "TextGrid"

@@ -27,7 +27,7 @@ from .events import (Event, Alternative, VariantGroup, Variants, EVENT_TYPES,
                      resolve, choose, add_event, attach_events, read_events,
                      validate_events)
 from .io_export import to_dict, write_json, write_csv, from_dict, read_json
-from .qa import summarize, normalize_transcript, cue_flags
+from .qa import summarize, normalize_transcript, cue_flags, confidence_flags
 from .texttags import (parse_tagged_transcript, Tag, has_tags,
                        resolve_tagged_segments, curve_channels, tag_events,
                        build_curve_channel)
@@ -123,7 +123,7 @@ __all__ = [
     "resolve", "choose", "add_event", "attach_events", "read_events",
     "validate_events",
     "to_dict", "write_json", "write_csv", "from_dict", "read_json",
-    "summarize", "normalize_transcript", "cue_flags",
+    "summarize", "normalize_transcript", "cue_flags", "confidence_flags",
     "parse_tagged_transcript", "Tag", "has_tags", "resolve_tagged_segments",
     "curve_channels", "tag_events", "build_curve_channel",
     "parse_ssml", "looks_like_ssml", "EMPHASIS_STRENGTH", "BREAK_STRENGTH",
