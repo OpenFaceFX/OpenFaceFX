@@ -22,12 +22,27 @@ import base64
 import json
 import tempfile
 import os
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib import request as _urlrequest
 from urllib.error import HTTPError, URLError
 
 from . import __version__
+
+# --- SaaS backend (accounts / projects / vault) — lazily opened on first use - #
+_COOKIE = "offx_sess"
+_SESSION_TTL = 30 * 24 * 3600
+_STORE = None
+
+
+def _store():
+    """Open the SQLite-backed SaaS store on first use (accounts/projects/vault)."""
+    global _STORE
+    if _STORE is None:
+        from .studio_saas import Store
+        _STORE = Store()
+    return _STORE
 
 _CTYPE = {".html": "text/html; charset=utf-8", ".css": "text/css",
           ".js": "text/javascript", ".json": "application/json",
@@ -161,19 +176,41 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):  # quiet by default
         if os.environ.get("OFFX_STUDIO_VERBOSE"): super().log_message(*a)
 
-    def _send(self, code, body: bytes, ctype="application/json"):
+    def _send(self, code, body: bytes, ctype="application/json", extra=None):
         self.send_response(code); self.send_header("content-type", ctype)
         self.send_header("content-length", str(len(body)))
         self.send_header("cache-control", "no-store")
+        for k, v in (extra or []):
+            self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD": self.wfile.write(body)
 
-    def _json(self, obj, code=200):
-        self._send(code, json.dumps(obj).encode(), "application/json")
+    def _json(self, obj, code=200, extra=None):
+        self._send(code, json.dumps(obj).encode(), "application/json", extra)
 
     def _body(self):
         n = int(self.headers.get("content-length", 0) or 0)
         return json.loads(self.rfile.read(n) or b"{}")
+
+    # -- session cookie helpers ----------------------------------------- #
+    def _token(self):
+        raw = self.headers.get("Cookie")
+        if not raw:
+            return ""
+        try:
+            m = SimpleCookie(raw).get(_COOKIE)
+            return m.value if m else ""
+        except Exception:
+            return ""
+
+    def _set_cookie(self, token, ttl):
+        attrs = f"{_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={ttl}"
+        if os.environ.get("OFFX_STUDIO_SECURE_COOKIE"):
+            attrs += "; Secure"
+        return [("Set-Cookie", attrs)]
+
+    def _user(self):
+        return _store().user_for(self._token())
 
     def _asset(self, name):
         name = name.lstrip("/") or "index.html"
@@ -194,11 +231,29 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path == "/api/health":
-            return self._json({"ok": True, "version": __version__, "runtime": "native"})
+            return self._json({"ok": True, "version": __version__,
+                               "runtime": "native", "saas": True})
         if path == "/api/presets":
             return self._json(_presets())
         if path.startswith("/api/preset/"):
             return self._json(_preset(path.rsplit("/", 1)[-1]))
+        if path == "/api/auth/me":
+            return self._json({"user": self._user()})
+        if path == "/api/projects":
+            u = self._user()
+            if not u: return self._json({"error": "sign in required"}, 401)
+            return self._json({"projects": _store().list_projects(u["id"])})
+        if path.startswith("/api/projects/"):
+            u = self._user()
+            if not u: return self._json({"error": "sign in required"}, 401)
+            try: pid = int(path.rsplit("/", 1)[-1])
+            except ValueError: return self._json({"error": "bad id"}, 400)
+            proj = _store().get_project(u["id"], pid)
+            return self._json(proj) if proj else self._json({"error": "not found"}, 404)
+        if path == "/api/vault":
+            u = self._user()
+            if not u: return self._json({"error": "sign in required"}, 401)
+            return self._json(_store().get_vault(u["id"]) or {"data": None})
         return self._asset(path if path != "/" else "index.html")
 
     do_HEAD = do_GET
@@ -216,8 +271,48 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_export(path.rsplit("/", 1)[-1], body.get("track", {})))
             if path == "/api/llm":
                 return self._json(_llm(body))
+            if path in ("/api/auth/register", "/api/auth/login"):
+                from .studio_saas import AuthError
+                fn = _store().register if path.endswith("register") else _store().login
+                try:
+                    res = fn(body.get("email", ""), body.get("password", ""))
+                except AuthError as e:
+                    return self._json({"error": str(e)}, 400)
+                return self._json({"user": res["user"]}, 200,
+                                  self._set_cookie(res["token"], _SESSION_TTL))
+            if path == "/api/auth/logout":
+                _store().logout(self._token())
+                return self._json({"ok": True}, 200, self._set_cookie("", 0))
+            if path == "/api/projects":
+                u = self._user()
+                if not u: return self._json({"error": "sign in required"}, 401)
+                from .studio_saas import AuthError
+                try:
+                    return self._json(_store().save_project(
+                        u["id"], body.get("id"), body.get("name", "Untitled"),
+                        body.get("data", {})))
+                except AuthError as e:
+                    return self._json({"error": str(e)}, 400)
+            if path == "/api/vault":
+                u = self._user()
+                if not u: return self._json({"error": "sign in required"}, 401)
+                from .studio_saas import AuthError
+                try:
+                    return self._json(_store().set_vault(u["id"], body.get("data")))
+                except AuthError as e:
+                    return self._json({"error": str(e)}, 400)
         except Exception as e:
             return self._json({"error": str(e)}, 500)
+        return self._json({"error": "not found"}, 404)
+
+    def do_DELETE(self):
+        path = self.path.split("?", 1)[0]
+        if path.startswith("/api/projects/"):
+            u = self._user()
+            if not u: return self._json({"error": "sign in required"}, 401)
+            try: pid = int(path.rsplit("/", 1)[-1])
+            except ValueError: return self._json({"error": "bad id"}, 400)
+            return self._json({"ok": _store().delete_project(u["id"], pid)})
         return self._json({"error": "not found"}, 404)
 
 

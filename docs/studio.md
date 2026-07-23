@@ -63,12 +63,14 @@ that resolves to whichever runtime is present:
   zero-install "try it" surface and the SaaS client.
 - **(B) Standalone desktop** — `openfacefx studio` (module `openfacefx.studio`)
   serves the same SPA against the **native** pipeline over a tiny stdlib HTTP
-  API (`/api/health|generate|export|presets|preset|llm`). Faster, offline, no
-  Pyodide download. Wrap in [Tauri](https://tauri.app/)/Electron for a signed
-  desktop binary (the web root is already self-contained).
-- **(SaaS)** — the same server behind auth + project storage becomes the backend;
-  the zero-knowledge key vault syncs only ciphertext; `/api/llm` is the stateless
-  provider relay. See "Deploying as SaaS" below.
+  API (`/api/health|generate|export|presets|preset|llm`, plus
+  `/api/auth|projects|vault` for accounts & storage). Faster, offline, no Pyodide
+  download. Wrap in [Tauri](https://tauri.app/)/Electron for a signed desktop
+  binary (the web root is already self-contained).
+- **(SaaS)** — the same server **is** the multi-tenant backend: `studio_saas.py`
+  adds accounts, per-user project storage, and ciphertext-only vault sync (see
+  "Accounts, projects & multi-tenant SaaS" below); `/api/llm` is the stateless
+  provider relay.
 
 The SPA auto-detects: on load it probes `/api/health`; present → **native**,
 absent → **browser/Pyodide**. Same UI, same results.
@@ -150,38 +152,52 @@ openfacefx studio --port 9000 --no-open
 Static web host: serve `src/openfacefx/studio_web/` (the GitHub Pages build copies
 it to `/studio`). It runs fully client-side via Pyodide there.
 
-Container / self-host (a runnable single-tenant SaaS today):
+Container / self-host (a runnable SaaS today — accounts, projects, vault sync):
 
 ```bash
 docker build -t openfacefx-studio .
-docker run --rm -p 8080:8080 openfacefx-studio   # live at http://<host>:8080
+docker run --rm -p 8080:8080 -v offx-data:/data \
+  -e OFFX_STUDIO_DB=/data/studio.db -e OFFX_STUDIO_SECURE_COOKIE=1 \
+  openfacefx-studio                              # live at http://<host>:8080
 ```
 
-The image runs `openfacefx studio --host 0.0.0.0` — the native pipeline plus the
-stateless `/api/llm` relay; keys stay client-side.
+The image runs `openfacefx studio --host 0.0.0.0` — the native pipeline, accounts
++ project storage (`studio_saas.py`), and the stateless `/api/llm` relay. Sign in
+from the **Account** chip to save projects; provider keys stay client-side (only
+ciphertext ever reaches the server).
 
-## Scaling to a multi-tenant SaaS (roadmap shape)
+## Accounts, projects & multi-tenant SaaS
 
-The container above is the SaaS backend; multi-tenant adds three pieces, none of
-which change the frontend:
+The container above **is** the SaaS backend. Accounts, per-user project storage,
+and vault sync are implemented in `studio_saas.py` (stdlib `sqlite3` + `hashlib`
++ `secrets`), wired into the server in `studio.py`:
 
-1. **Auth + projects** — user accounts; store `.track.json` takes + audio per
-   project (the pipeline is already stateless request/response).
-2. **Key vault sync** — persist the client's encrypted vault blob (ciphertext
-   only) so keys follow the user across devices; the server never decrypts.
-3. **LLM relay** — `/api/llm` is already a stateless pass-through; put it behind
-   the user's session and rate limits.
+1. **Auth** — register / sign-in / sign-out. Passwords are salted +
+   PBKDF2-SHA256 hashed (200k rounds); the session is a random opaque token in an
+   **httpOnly, SameSite=Lax** cookie. Set `OFFX_STUDIO_SECURE_COOKIE=1` behind TLS.
+2. **Projects** — each account owns named projects (the whole actor/take
+   workspace: params + tracks). `GET`/`POST /api/projects`, `GET`/`DELETE
+   /api/projects/<id>`; strictly isolated per user. The SPA's **Account** menu
+   saves / opens / deletes them; with no backend it falls back to a browser-local
+   workspace (localStorage).
+3. **Key vault sync** — `GET`/`POST /api/vault` persists the client's encrypted
+   vault blob (**ciphertext only** — the server never decrypts; zero-knowledge).
+4. **LLM relay** — `/api/llm` is a stateless pass-through; put it behind the
+   session + rate limits for a hosted deploy.
+
+Storage is a single SQLite file (`~/.openfacefx/studio.db`, override with
+`OFFX_STUDIO_DB`); mount it as a volume for a container deploy.
 
 ## Roadmap
 
-Built today: Preview, Curves, Phonemes, Face Graph (read-only), full Export, the
-Assistant (BYO-key vault + clean/pronounce/emotion/direct actions), native +
-browser runtimes.
+Built today: Preview (3D head), Curves (**editable — drag keyframes**), Phonemes,
+Face Graph (**selectable nodes**), full Export, the Assistant (BYO-key vault +
+clean/pronounce/emotion/direct), **actors & takes**, **accounts + project
+save/load + vault sync** (native / SaaS backend), native + browser runtimes.
 
-Next: editable Face Graph (drag nodes, edit link functions live), curve editing
-(drag keyframes — the offset-curve model), project save/load, emotion **bake**
-from the LLM's valence/arousal into the `emotion` layer, a scripting console over
-the Python API, and the SaaS backend above.
+Next: editable Face Graph link functions, emotion **bake** from the LLM's
+valence/arousal into the `emotion` layer, a scripting console over the Python API,
+and multi-tenant hardening (email verification, OAuth, rate limits, billing).
 
 ---
 

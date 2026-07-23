@@ -31,11 +31,25 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 const DEFAULT_PARAMS={ text:"Hello world — this is OpenFaceFX Studio, running the real pipeline right in your browser.",
   engine:"naive", dur:"4.0", style:"", gestures:false, breath:false, fps:"60" };
 
-/* bridge for assistant.js (separate script) to read/write studio context */
+/* bridge for assistant.js + account.js (separate scripts) to read/write context */
 window.StudioBridge = {
   transcript:()=>$("#text").value,
   setTranscript:t=>{ $("#text").value=t; },
   track:()=>S.track, segments:()=>S.segments,
+  native:()=>S.native,
+  // serialise the whole workspace (actors → takes: params + track), JSON-safe
+  getWorkspace:()=>({ v:1, actorIdx:S.actorIdx, takeIdx:S.takeIdx,
+    actors:S.actors.map(a=>({ name:a.name, takes:a.takes.map(t=>({
+      name:t.name, params:t.params, wavName:t.wavName,
+      track:t.track, segments:t.segments, duration:t.duration })) })) }),
+  setWorkspace:w=>{ if(!w||!Array.isArray(w.actors)||!w.actors.length) return false;
+    S.actors=w.actors.map(a=>({ name:a.name||"Untitled", takes:(a.takes||[]).map(t=>({
+      name:t.name||"take_01", params:t.params||{...DEFAULT_PARAMS}, wavName:t.wavName||"no audio — timing from text",
+      wavBytes:null, wavPeaks:null, track:t.track||null, segments:t.segments||[], duration:t.duration||0 })) }));
+    S.actorIdx=Math.min(Math.max(0,w.actorIdx||0), S.actors.length-1);
+    const nt=curActor().takes.length;
+    S.takeIdx=(w.takeIdx!=null)?Math.min(Math.max(-1,w.takeIdx), nt-1):(nt?0:-1);
+    loadTake(); refreshIO(); return true; },
 };
 
 /* ===================================================================== *

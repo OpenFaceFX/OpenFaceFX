@@ -47,6 +47,7 @@
     <span class="dot" id="runtimeDot"></span>
     <span id="runtimeLabel">booting…</span>
   </div>
+  <button class="btn ghost acct-chip" id="acctChip" title="Account &amp; projects">◇ Local workspace</button>
   <button class="btn ghost" id="themeToggle" title="Toggle light / dark">◐</button>
 </header>
 
@@ -223,8 +224,20 @@
   </div>
 </div>
 
+<!-- ===== Account / Projects modal (the SaaS surface) ===================== -->
+<div class="modal" id="acctModal" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>Account &amp; projects</h3>
+      <button class="btn ghost" id="acctClose" title="Close">✕</button>
+    </div>
+    <div class="modal-body" id="acctBody"></div>
+  </div>
+</div>
+
 <script src="studio.js"></script>
 <script src="assistant.js"></script>
+<script src="account.js"></script>
 <script type="module" src="preview3d.js"></script>
 </body>
 </html>
