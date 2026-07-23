@@ -167,6 +167,25 @@ def _llm(p: dict) -> dict:
         return {"error": str(e)}
 
 
+def _normalize(p: dict) -> dict:
+    """Deterministic, keyless transcript normalization (qa.normalize_transcript)."""
+    from openfacefx import normalize_transcript
+    out, subs = normalize_transcript(p.get("text", "") or "")
+    return {"text": out, "subs": subs}
+
+
+def _bake_emotion(p: dict) -> dict:
+    """Bake an emotion envelope additively onto a take (emotion.bake_emotion)."""
+    from openfacefx import from_dict, to_dict, bake_emotion, EmotionEnvelope
+    try:
+        tk = from_dict(p.get("track") or {})
+        env = EmotionEnvelope.from_dict(p.get("envelope") or {})
+        baked = bake_emotion(tk, env, intensity=float(p.get("intensity", 1.0)))
+        return {"track": to_dict(baked)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # --------------------------------------------------------------------------- #
 # HTTP handler                                                                 #
 # --------------------------------------------------------------------------- #
@@ -271,6 +290,10 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_export(path.rsplit("/", 1)[-1], body.get("track", {})))
             if path == "/api/llm":
                 return self._json(_llm(body))
+            if path == "/api/normalize":
+                return self._json(_normalize(body))
+            if path == "/api/bake_emotion":
+                return self._json(_bake_emotion(body))
             if path in ("/api/auth/register", "/api/auth/login"):
                 from .studio_saas import AuthError
                 fn = _store().register if path.endswith("register") else _store().login

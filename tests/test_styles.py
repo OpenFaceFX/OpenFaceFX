@@ -77,6 +77,24 @@ def test_all_style_presets_load_render_and_partition():
         assert track.channels                       # a non-empty, valid track
 
 
+def test_studio_style_dropdown_options_are_real_presets():
+    # Regression: the Studio's Talking-style dropdown once offered broadcast/shout
+    # which were NOT in STYLE_PRESETS, so selecting them raised a swallowed KeyError
+    # and did nothing. Every non-empty option must resolve to a real preset.
+    import re, pathlib
+    html = (pathlib.Path(__file__).resolve().parent.parent
+            / "src" / "openfacefx" / "studio_web" / "index.html").read_text()
+    sel = re.search(r'<select id="style">(.*?)</select>', html, re.S)
+    assert sel, "no #style dropdown found in the Studio index.html"
+    values = re.findall(r'<option value="([^"]*)"', sel.group(1))
+    assert values, "no style options found"
+    for v in values:
+        if v == "":                       # "" == default (no style) — always valid
+            continue
+        assert v in STYLE_PRESETS, f"style option {v!r} is not a real preset"
+        assert isinstance(style_params(v), CoartParams)
+
+
 def test_neutral_style_is_default_and_byte_identical():
     # 'neutral' == the defaults, so rendering with it equals passing no params.
     assert style_params("neutral") == CoartParams()

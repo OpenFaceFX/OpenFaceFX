@@ -37,6 +37,26 @@ window.StudioBridge = {
   setTranscript:t=>{ $("#text").value=t; },
   track:()=>S.track, segments:()=>S.segments,
   native:()=>S.native,
+  // --- write surface: AI actions / controls mutate the current take through here ---
+  hasTake:()=>!!S.track,
+  regenerate:()=>runGenerate(),                       // rebuild the take from the form
+  setParams:(p)=>{ if(!p||typeof p!=="object") return false;
+    const STY=["","whisper","mumble","neutral","broadcast","tense","exaggerated","broad","shout"];
+    if(p.text!=null) $("#text").value=String(p.text);
+    if(p.engine!=null && ["naive","energy"].includes(p.engine)) $("#engine").value=p.engine;
+    if(p.dur!=null){ const d=parseFloat(p.dur); if(isFinite(d)&&d>0) $("#dur").value=String(Math.min(600,Math.max(0.3,d))); }
+    if(p.style!=null && STY.includes(p.style)) $("#style").value=p.style;
+    if(p.gestures!=null) $("#optGestures").checked=!!p.gestures;
+    if(p.breath!=null) $("#optBreath").checked=!!p.breath;
+    if(p.fps!=null){ const f=parseFloat(p.fps); if(isFinite(f)&&f>=1&&f<=120){ $("#fps").value=String(f); S.fps=f; } }
+    return true; },
+  selectChannel:(name)=>{ if(chan(name)){ selChannel(name); return true; } return false; },
+  // replace the current take's track wholesale (e.g. emotion bake) + refresh views
+  applyTrack:(trackDict)=>{ if(!trackDict||!Array.isArray(trackDict.channels)) return false;
+    const tk=curTake(); if(tk) tk.track=trackDict; S.track=trackDict;
+    ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); return true; },
+  bakeEmotion:(env,intensity)=>Pipe.bakeEmotion(env,intensity),   // -> baked track dict
+  normalize:(text)=>Pipe.normalize(text),                          // deterministic, keyless
   // serialise the whole workspace (actors → takes: params + track), JSON-safe
   getWorkspace:()=>({ v:1, actorIdx:S.actorIdx, takeIdx:S.takeIdx,
     actors:S.actors.map(a=>({ name:a.name, takes:a.takes.map(t=>({
@@ -70,7 +90,8 @@ const PY_BRIDGE = String.raw`
 import json, base64, os
 import openfacefx as offx
 from openfacefx import (naive_segments, generate_from_alignment, generate_naive,
-    GestureParams, add_gestures_to_track, to_dict, from_dict, retarget, PRESETS)
+    GestureParams, add_gestures_to_track, to_dict, from_dict, retarget, PRESETS,
+    normalize_transcript, bake_emotion, EmotionEnvelope)
 from openfacefx.alignment import dump_segments
 
 def _style_coart(style):
@@ -120,6 +141,21 @@ def studio_presets():
 def studio_preset_map(name):
     m = PRESETS.get(name, {})
     return json.dumps({v: [[t,round(float(w),3)] for (t,w) in tgts] for v,tgts in m.items()})
+
+def studio_normalize(text):
+    # deterministic, keyless Unicode->ASCII transcript folds (qa.normalize_transcript)
+    out, subs = normalize_transcript(text or "")
+    return json.dumps({"text": out, "subs": subs})
+
+def studio_bake_emotion(track_json, envelope_json, intensity):
+    # additive emotion bake onto the current take (emotion.bake_emotion)
+    try:
+        tk = from_dict(json.loads(track_json))
+        env = EmotionEnvelope.from_dict(json.loads(envelope_json))
+        baked = bake_emotion(tk, env, intensity=float(intensity))
+        return json.dumps({"track": to_dict(baked)})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 _EXPORTERS = {}
 def _reg(fmt, fn): _EXPORTERS[fmt]=fn
@@ -187,6 +223,14 @@ const Pipe = {
   async presetMap(name){
     if(S.native) return fetch(`/api/preset/${name}`).then(r=>r.json());
     const a=S.pyodide.globals.get("studio_preset_map"); const r=JSON.parse(a(name)); a.destroy(); return r;
+  },
+  async normalize(text){
+    if(S.native) return fetch("/api/normalize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text})}).then(r=>r.json());
+    const fn=S.pyodide.globals.get("studio_normalize"); const r=JSON.parse(fn(text||"")); fn.destroy(); return r;
+  },
+  async bakeEmotion(env,intensity){
+    if(S.native) return fetch("/api/bake_emotion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,envelope:env,intensity})}).then(r=>r.json());
+    const fn=S.pyodide.globals.get("studio_bake_emotion"); const r=JSON.parse(fn(JSON.stringify(S.track),JSON.stringify(env),intensity)); fn.destroy(); return r;
   }
 };
 
@@ -218,7 +262,7 @@ $("#wav").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
   }catch(err){ $("#wavName").textContent="couldn't decode audio"; }
 };
 
-$("#run").onclick=async ()=>{
+async function runGenerate(){
   const btn=$("#run"); btn.disabled=true; btn.textContent="Generating…";
   try{
     S.fps=parseFloat($("#fps").value)||60;
@@ -238,10 +282,10 @@ $("#run").onclick=async ()=>{
     S.track=res.track; S.segments=res.segments||[]; S.duration=res.duration; S.t=0;
     ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub();
     $("#tpDur").textContent="/ "+fmt(S.duration); refreshIO();
-    btn.textContent="Generate take";
-  }catch(err){ btn.textContent="Generate — failed"; console.error(err); alert("Generate failed: "+err.message); }
-  btn.disabled=false;
-};
+    btn.textContent="Generate take"; btn.disabled=false; return true;
+  }catch(err){ btn.textContent="Generate — failed"; console.error(err); alert("Generate failed: "+err.message); btn.disabled=false; return false; }
+}
+$("#run").onclick=runGenerate;
 
 function ingestChannels(){
   S.chan={}; S.track.channels.forEach((c,i)=>{ S.chan[c.name]={color:CURVE_COLORS[i%CURVE_COLORS.length],visible:true,idx:i}; });
@@ -475,6 +519,16 @@ function drive3D(p3d){
   // meet in the neutral pose (mouthClose deforms the lower lip on this mesh)
   const quiet=Math.max(sampleName("sil"), 1-Math.min(1,visSum));
   if(quiet>0.05) arkit.jawOpen=(arkit.jawOpen||0)*(1-quiet*0.85);
+  // emotion channels (from bake_emotion) -> ARKit expression morphs, so baked
+  // emotion shows on the head, not only in the Curves tab
+  const addE=(k,v)=>{ if(v>0.001) arkit[k]=Math.min(1,(arkit[k]||0)+v); };
+  const sm=sampleName("smile"), fr=sampleName("frown"), br=sampleName("brow_raise"),
+        bl=sampleName("brow_lower"), ck=sampleName("cheek_raise");
+  addE("mouthSmileLeft",sm); addE("mouthSmileRight",sm);
+  addE("mouthFrownLeft",fr); addE("mouthFrownRight",fr);
+  addE("browInnerUp",br); addE("browOuterUpLeft",br); addE("browOuterUpRight",br);
+  addE("browDownLeft",bl); addE("browDownRight",bl);
+  addE("cheekSquintLeft",ck); addE("cheekSquintRight",ck);
   const g={ blink_L:sampleName("blink_L"), blink_R:sampleName("blink_R"), blink:sampleName("blink"),
     browUp:sampleName("browUp"), browInnerUp:sampleName("browInnerUp"), browOuterUp:sampleName("browOuterUp") };
   const rad=d=>(d||0)*Math.PI/180;

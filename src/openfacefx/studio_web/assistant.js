@@ -108,15 +108,25 @@ const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,+v||0));
 const B = () => window.StudioBridge || {};
 const ACTIONS = {
   clean: {
-    label:"Clean transcript", hint:"Normalize casing, punctuation, numbers & abbreviations for TTS/G2P.",
+    label:"Clean transcript", hint:"Normalize punctuation, numbers & abbreviations, then regenerate the take.",
     async run(entry){
       const t = B().transcript?.() || "";
-      const out = await callLLM(entry, { json:true,
-        system:"You normalize text for text-to-speech and lip-sync. Expand numbers and abbreviations to spoken words, fix casing and punctuation, keep every word. Reply as JSON {\"normalized\": string}.",
-        user:t });
-      const j = extractJSON(out); if(j.normalized){ B().setTranscript?.(j.normalized);
-        return "Transcript normalized and applied.\n\n"+j.normalized; }
-      return out;
+      // 1) deterministic, keyless Unicode→ASCII folds (works with no API key)
+      let text=t, folds=[];
+      try{ const n=await B().normalize?.(t); if(n&&n.text!=null){ text=n.text; folds=n.subs||[]; } }catch(_){}
+      // 2) LLM expands numbers/abbreviations + fixes casing (must keep every word)
+      let via="deterministic folds";
+      try{
+        const out=await callLLM(entry,{ json:true,
+          system:"You normalize text for text-to-speech and lip-sync. Expand numbers and abbreviations to spoken words and fix casing/obvious punctuation. KEEP every word — never summarize or drop content. Reply JSON {\"normalized\": string}.",
+          user:text });
+        const j=extractJSON(out); const wc=s=>s.trim().split(/\s+/).filter(Boolean).length;
+        if(j.normalized && j.normalized.trim() && wc(j.normalized)>=wc(text)*0.6){ text=j.normalized; via="normalized + expanded"; }
+      }catch(err){ via="deterministic folds (LLM step skipped: "+err.message+")"; }
+      B().setTranscript?.(text);
+      let msg="Applied ("+via+")"+(folds.length?" · folds: "+folds.map(f=>`${f.count}× ${JSON.stringify(f.from)}→${JSON.stringify(f.to)}`).join(", "):"");
+      if(B().regenerate){ await B().regenerate(); msg+=" · regenerated ✓"; }
+      return msg+"\n\n"+text;
     }
   },
   pronounce: {
@@ -133,27 +143,40 @@ const ACTIONS = {
     }
   },
   emotion: {
-    label:"Direct emotion", hint:"Valence/arousal per line — drives brow, eye & mouth-corner expression.",
+    label:"Direct emotion", hint:"Valence/arousal → baked onto the take (brow, cheeks, mouth corners).",
     async run(entry){
+      if(!B().hasTake?.()) return "Generate a take first, then apply emotion.";
       const t = B().transcript?.() || "";
       const out = await callLLM(entry, { json:true,
-        system:"You are a performance director. For the line(s), return JSON {\"lines\":[{\"text\":str,\"valence\":-1..1,\"arousal\":-1..1,\"emotion\":str,\"intensity\":0..1}]}. valence: unpleasant..pleasant; arousal: calm..excited.",
+        system:"You are a performance director. For the line, return JSON {\"valence\":-1..1,\"arousal\":-1..1,\"emotion\":str,\"intensity\":0..1}. valence: unpleasant..pleasant; arousal: calm..excited.",
         user:t });
-      const j = extractJSON(out); const rows=(j.lines||[]).map(r=>({
-        text:r.text, valence:clamp(r.valence,-1,1), arousal:clamp(r.arousal,-1,1),
-        emotion:r.emotion, intensity:clamp(r.intensity,0,1) }));
-      window.__offxEmotion = rows;   // available for a future emotion-bake step
-      return rows.map(r=>`“${(r.text||"").slice(0,42)}” → ${r.emotion} (v ${r.valence.toFixed(2)}, a ${r.arousal.toFixed(2)}, ${Math.round(r.intensity*100)}%)`).join("\n");
+      const j = extractJSON(out);
+      const v=clamp(j.valence,-1,1), a=clamp(j.arousal,-1,1), inten=clamp(j.intensity==null?0.8:j.intensity,0,1);
+      // v1: one emotion held across the take — a constant valence/arousal envelope
+      // (bake_emotion resamples it onto the base curve's own time range)
+      const env={ format:"openfacefx.emotion", version:1, mode:"valence_arousal", fps:60,
+        va:{ valence:[[0,v],[600,v]], arousal:[[0,a],[600,a]] } };
+      const res=await B().bakeEmotion(env, inten);
+      if(res.error) throw new Error(res.error);
+      if(res.track) B().applyTrack(res.track);
+      return `Baked ${j.emotion||"emotion"} — valence ${v.toFixed(2)}, arousal ${a.toFixed(2)}, ${Math.round(inten*100)}% — onto the take ✓ (see it on the head + the smile/brow/cheek curves)`;
     }
   },
   direct: {
-    label:"Direct the performance", hint:"Free-form notes → suggested pipeline settings.",
+    label:"Direct the performance", hint:"Free-form notes → talking style + gestures, then regenerate.",
     async run(entry, note){
-      const ctx = { transcript: B().transcript?.(), channels: (B().track?.()?.channels||[]).map(c=>c.name) };
-      const out = await callLLM(entry, {
-        system:"You are a facial-animation director for the OpenFaceFX pipeline. The user gives a performance note. Suggest concrete settings: talking style (mumble/neutral/broadcast/shout), whether to enable gestures/breathing, and any emphasis. Be concise and practical.",
-        user:"NOTE: "+(note||"")+"\n\nCONTEXT: "+JSON.stringify(ctx) });
-      return out;
+      const chans = (B().track?.()?.channels||[]).map(c=>c.name);
+      const out = await callLLM(entry, { json:true,
+        system:"You are a facial-animation director for OpenFaceFX. Turn the note into pipeline settings. Reply JSON {\"style\":one of [neutral,whisper,mumble,broadcast,tense,exaggerated,broad,shout],\"gestures\":bool,\"breath\":bool,\"note\":short rationale}. gestures=true for lively/expressive delivery; breath=true for calm/idle pauses.",
+        user:"NOTE: "+(note||"")+"\n\nCurrent channels: "+JSON.stringify(chans) });
+      const j = extractJSON(out);
+      const STY=["neutral","whisper","mumble","broadcast","tense","exaggerated","broad","shout"];
+      const p = { style: STY.includes(j.style)?j.style:"", gestures: !!j.gestures, breath: !!j.breath };
+      if(!B().setParams?.(p)) return out;
+      let msg=`Applied → style: ${p.style||"default"}, gestures: ${p.gestures?"on":"off"}, breath: ${p.breath?"on":"off"}`;
+      if(j.note) msg+=`\n(${j.note})`;
+      if(B().regenerate){ await B().regenerate(); msg+="\nRegenerated ✓"; }
+      return msg;
     }
   },
 };

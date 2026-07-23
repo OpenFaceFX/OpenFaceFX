@@ -453,6 +453,14 @@ STYLE_PRESETS: Dict[str, Dict[str, object]] = {
                     "gains": {"jaw": 1.3, "lips": 1.2, "tongue": 1.15}},
     "broad": {"intensity": 1.55,
               "gains": {"jaw": 1.5, "lips": 1.28, "tongue": 1.1}},
+    # Clear, projected newsreader delivery — crisper than neutral, not as
+    # extreme as "broad". (Offered in the Studio's style dropdown + suggested by
+    # the AI director; previously a silent no-op because it was undefined.)
+    "broadcast": {"intensity": 1.15,
+                  "gains": {"jaw": 1.1, "lips": 1.18, "tongue": 1.12}},
+    # Loud, forceful delivery — wide jaw, strong lips.
+    "shout": {"intensity": 1.6,
+              "gains": {"jaw": 1.55, "lips": 1.3, "tongue": 1.05}},
 }
 
 
