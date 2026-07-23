@@ -423,8 +423,10 @@ function drawPreview(){
  * shape at full activation; coarticulation blends them over time.
  * ------------------------------------------------------------------------- */
 const PREVIEW_VISEME = {
-  // B/M/P — bilabial plosive/nasal: lips fully sealed, no teeth
-  PP: [["mouthClose",1.0],["mouthRollLower",0.2],["mouthRollUpper",0.2]],
+  // B/M/P — bilabial plosive/nasal: lips pressed together, no teeth. (mouthClose
+  // deforms the lower lip on this model + fights an open neighbour's jaw, so seal
+  // with mouthPress + a light roll instead; the jaw is closed for P below.)
+  PP: [["mouthPressLeft",0.5],["mouthPressRight",0.5],["mouthRollLower",0.22],["mouthRollUpper",0.22]],
   // F/V — labiodental fricative: lower lip tucks up to the upper teeth
   FF: [["mouthRollLower",1.0],["mouthUpperUpLeft",0.5],["mouthUpperUpRight",0.5],["mouthShrugUpper",0.35],["jawOpen",0.05]],
   // TH/DH — dental fricative: tongue tip between the teeth
@@ -463,6 +465,10 @@ function drive3D(p3d){
     for(const [t,w] of tgts) arkit[t]=(arkit[t]||0)+ve*w;
   }
   for(const k in arkit) arkit[k]=Math.min(1,arkit[k]);
+  // bilabial P/B/M: close the jaw so the pressed lips meet cleanly — an additive
+  // blend with an open neighbouring vowel would otherwise stretch the lower lip up
+  const ppe=Math.min(1, sampleName("PP")*1.4);
+  if(ppe>0.02) arkit.jawOpen=(arkit.jawOpen||0)*(1-ppe*0.9);
   // close the mouth on silence / low speech activity so starts & stops read
   const quiet=Math.max(sampleName("sil"), 1-Math.min(1,visSum));
   if(quiet>0.05) arkit.mouthClose=Math.max(arkit.mouthClose||0, quiet*0.7);
