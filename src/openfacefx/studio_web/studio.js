@@ -29,7 +29,7 @@ const S = {
   undo:[], redo:[],                                               // curve-edit history
   events:[],                                                      // derived event layer (Events tab)
   phonMap:null, mapCustom:false,                                  // Mapping tab: editable phoneme→viseme map
-  fgCustom:false, customOuts:[], fgConst:{},                      // Face Graph: cloned outputs + their manual constant values
+  fgCustom:false, customOuts:[], fgConst:{}, fgLink:{},           // Face Graph: cloned outputs, manual constants, response (link) functions
 };
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const DEFAULT_PARAMS={ text:"Hello world — this is OpenFaceFX Studio, running the real pipeline right in your browser.",
@@ -66,6 +66,7 @@ window.StudioBridge = {
   getWorkspace:()=>({ v:1, actorIdx:S.actorIdx, takeIdx:S.takeIdx,
     fgPreset:S.presetSel, fgMap:(S.fgCustom&&S.presetMap)?S.presetMap:undefined,   // custom Face Graph outputs
     customOuts:(S.customOuts&&S.customOuts.length)?S.customOuts:undefined, fgConst:Object.keys(S.fgConst||{}).length?S.fgConst:undefined,
+    fgLink:Object.keys(S.fgLink||{}).length?S.fgLink:undefined,
     actors:S.actors.map(a=>({ name:a.name, takes:a.takes.map(t=>({
       name:t.name, params:t.params, wavName:t.wavName, colors:t.colors||undefined, cmudict:t.cmudict||undefined,
       track:t.track, segments:t.segments, words:t.words||undefined, duration:t.duration,
@@ -84,6 +85,7 @@ window.StudioBridge = {
     if(w.fgPreset){ S.presetSel=w.fgPreset; const sel=$("#fgPreset"); if(sel) sel.value=w.fgPreset; }
     if(w.fgMap){ S.presetMap=w.fgMap; S.fgCustom=true; } else { S.presetMap=null; S.fgCustom=false; }  // restore custom outputs
     S.customOuts=Array.isArray(w.customOuts)?w.customOuts:[]; S.fgConst=(w.fgConst&&typeof w.fgConst==="object")?w.fgConst:{};
+    S.fgLink=(w.fgLink&&typeof w.fgLink==="object")?w.fgLink:{};
     loadTake(); refreshIO(); return true; },
 };
 
@@ -269,11 +271,25 @@ def _apply_const(rt, fgconst):
         else: rt.channels.append(Channel(name, flat))
     return rt
 
+def _apply_links(rt, fglink):
+    # shape a custom output's response with a link function (quadratic/cubic/sqrt), per keyframe
+    if not fglink: return rt
+    from openfacefx.links import apply_link, normalize_link
+    from openfacefx.curves import Keyframe
+    by = {c.name: c for c in rt.channels}
+    for name, fn in fglink.items():
+        c = by.get(name)
+        if not c or not fn or fn == 'linear': continue
+        try: nm, params = normalize_link({'function': fn})
+        except Exception: continue
+        c.keys = [Keyframe(k.time, max(0.0, min(1.0, float(apply_link(k.value, nm, params))))) for k in c.keys]
+    return rt
+
 def _arkit(tk):
     try: return retarget(tk, PRESETS['arkit'])
     except Exception: return tk
 
-def studio_export(fmt, track_json, fps, fgmap_json='', fgconst_json=''):
+def studio_export(fmt, track_json, fps, fgmap_json='', fgconst_json='', fglink_json=''):
     tk = from_dict(json.loads(track_json))
     p = '/tmp/out_'+fmt
     # optional custom viseme→rig preset from the Face Graph (edited/cloned outputs);
@@ -286,8 +302,12 @@ def studio_export(fmt, track_json, fps, fgmap_json='', fgconst_json=''):
     if fgconst_json:
         try: fgconst = {k: float(v) for k, v in json.loads(fgconst_json).items()}
         except Exception: fgconst = {}
+    fglink = {}
+    if fglink_json:
+        try: fglink = {k: str(v) for k, v in json.loads(fglink_json).items()}
+        except Exception: fglink = {}
     def ark(t):
-        try: return _apply_const(retarget(t, custom if custom else PRESETS['arkit']), fgconst)
+        try: return _apply_const(_apply_links(retarget(t, custom if custom else PRESETS['arkit']), fglink), fgconst)
         except Exception: return t
     def W(fn, path):
         fn();
@@ -337,9 +357,10 @@ const Pipe = {
     // custom Face Graph outputs feed the retargeted formats (livelink/a2f), which are arkit-based
     const custom=(S.fgCustom && S.presetSel==="arkit");
     const fgconst=(custom&&Object.keys(S.fgConst).length)?S.fgConst:null;
-    if(S.native) return fetch(`/api/export/${fmt}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,fgmap:custom?S.presetMap:null,fgconst})}).then(r=>r.json());
+    const fglink=(custom&&Object.keys(S.fgLink).length)?S.fgLink:null;
+    if(S.native) return fetch(`/api/export/${fmt}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,fgmap:custom?S.presetMap:null,fgconst,fglink})}).then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_export");
-    const out=await fn(fmt,JSON.stringify(S.track),S.fps,custom?JSON.stringify(S.presetMap):"",fgconst?JSON.stringify(fgconst):""); fn.destroy(); return JSON.parse(out);
+    const out=await fn(fmt,JSON.stringify(S.track),S.fps,custom?JSON.stringify(S.presetMap):"",fgconst?JSON.stringify(fgconst):"",fglink?JSON.stringify(fglink):""); fn.destroy(); return JSON.parse(out);
   },
   async presets(){
     if(S.native) return fetch("/api/presets").then(r=>r.json());
@@ -611,9 +632,16 @@ function renderOutputInspector(box,target){
         <input class="fg-val" type="number" min="0" max="1" step="0.05" value="${fgOutVal(target).toFixed(2)}">
         <button class="fg-val-clr" title="${hasConst?'Back to viseme-driven':'viseme-driven'}" ${hasConst?'':'disabled'}>↺</button></div>`
     : `<div class="insp-row"><label>Value</label><span class="mono">live ${fgOutVal(target).toFixed(2)} <span class="dim">(driven)</span></span></div>`;
+  // custom, viseme-driven outputs get a RESPONSE (link) function shaping sum → output
+  const curLink=S.fgLink[target]||"linear";
+  const respRow = (custom && !hasConst)
+    ? `<div class="insp-row"><label>Response</label>
+        <select class="fg-link">${["linear","quadratic","cubic","sqrt"].map(f=>`<option ${f===curLink?"selected":""}>${f}</option>`).join("")}</select>
+        <canvas class="fg-link-prev" width="46" height="30" title="input → output response"></canvas></div>`
+    : "";
   box.innerHTML=`<div class="insp-head">Rig output${custom?' · <span class="ins-edit">custom</span>':''}</div>
     <div class="insp-row"><label>Name</label><input class="fg-name mono" type="text" value="${esc(target)}" spellcheck="false" ${custom?'':'readonly'}></div>
-    ${valRow}
+    ${valRow}${respRow}
     <div class="insp-row"><label>Driven by</label><span class="mono">${incoming.length} viseme(s)${hasConst?' <span class="dim">· overridden</span>':''}</span></div>
     <div class="fg-edges">${rows||'<p class="insp-tip dim">No visemes drive this output yet.</p>'}</div>
     ${(missing.length&&!hasConst)?`<div class="insp-row"><label>Add viseme</label><select class="fg-add"><option value="">＋ add…</option>${missing.map(v=>`<option>${esc(v)}</option>`).join("")}</select></div>`:''}
@@ -633,6 +661,9 @@ function renderOutputInspector(box,target){
   const val=box.querySelector(".fg-val"); if(val) val.onchange=()=>{ const v=Math.max(0,Math.min(1,parseFloat(val.value)||0));
     S.fgConst[target]=v; fgMark(); fgReselect(target); };
   const clr=box.querySelector(".fg-val-clr"); if(clr) clr.onclick=()=>{ delete S.fgConst[target]; fgMark(); fgReselect(target); };
+  const lk=box.querySelector(".fg-link");
+  if(lk){ lk.onchange=()=>{ if(lk.value==="linear")delete S.fgLink[target]; else S.fgLink[target]=lk.value; fgMark(); fgReselect(target); };
+    drawLinkPrev(box.querySelector(".fg-link-prev"), lk.value); }
   box.querySelector("#fgClone").onclick=()=>fgReselect(fgClone(target));
   const del=box.querySelector("#fgDel"); if(del) del.onclick=()=>{ fgDelete(target); S.node=null; S.inspectKind=null; buildInspector(); drawFaceGraph(); };
 }
@@ -640,10 +671,19 @@ function isCustomOut(name){ return (S.customOuts||[]).includes(name); }
 /* --- Face Graph edit helpers (mutate the working preset S.presetMap) --- */
 function fgIncoming(target){ return Object.entries(S.presetMap||{})
   .filter(([,tg])=>tg.some(p=>p[0]===target)).map(([v,tg])=>[v,tg.find(p=>p[0]===target)[1]]); }
+/* response (link) functions on a custom output — shape how the summed visemes map to output (#68) */
+const FG_LINK={ linear:x=>x, quadratic:x=>x*x, cubic:x=>x*x*x, sqrt:x=>Math.sqrt(Math.max(0,x)) };
+function fgApplyLink(target,sum){ const fn=S.fgLink[target];
+  if(!fn||fn==="linear"||!FG_LINK[fn]) return Math.max(0,Math.min(1,sum));
+  return Math.max(0,Math.min(1,FG_LINK[fn](Math.max(0,Math.min(1,sum))))); }
+function drawLinkPrev(cv,fn){ if(!cv)return; const x=cv.getContext("2d"), w=cv.width, h=cv.height;
+  x.clearRect(0,0,w,h); x.strokeStyle=css("--line-2"); x.lineWidth=1; x.strokeRect(.5,.5,w-1,h-1);
+  const f=FG_LINK[fn]||FG_LINK.linear; x.strokeStyle=css("--accent"); x.lineWidth=1.5; x.beginPath();
+  for(let i=0;i<=w;i++){ const xv=i/w, yv=Math.max(0,Math.min(1,f(xv))); i?x.lineTo(i,h-yv*(h-3)-1.5):x.moveTo(i,h-yv*(h-3)-1.5); } x.stroke(); }
 function fgOutVal(target){ if(target in S.fgConst) return Math.max(0,Math.min(1,S.fgConst[target]));  // manual constant overrides the sum
   if(!S.track)return 0; let s=0;
   for(const [v,tg] of Object.entries(S.presetMap||{})){ const e=tg.find(p=>p[0]===target); if(!e)continue;
-    const c=chan(v); if(c)s+=Math.max(0,Math.min(1,sample(c.keys,S.t)))*e[1]; } return Math.min(1,s); }
+    const c=chan(v); if(c)s+=Math.max(0,Math.min(1,sample(c.keys,S.t)))*e[1]; } return fgApplyLink(target,s); }
 function nodeLiveIn(v){ if(!S.track)return 0; const c=chan(v); return c?Math.max(0,Math.min(1,sample(c.keys,S.t))):0; }
 function fgMark(){ S.fgCustom=true; if(S.view==="facegraph")drawFaceGraph(); }
 function fgSetEdge(v,target,w){ const list=S.presetMap[v]; if(!list)return;
@@ -652,14 +692,15 @@ function fgRemoveEdge(v,target){ const list=S.presetMap[v]; if(!list)return;
   const i=list.findIndex(p=>p[0]===target); if(i>=0)list.splice(i,1); fgMark(); }
 function fgRename(oldN,newN){ for(const v in S.presetMap) for(const p of S.presetMap[v]) if(p[0]===oldN)p[0]=newN;
   const i=S.customOuts.indexOf(oldN); if(i>=0)S.customOuts[i]=newN;
-  if(oldN in S.fgConst){ S.fgConst[newN]=S.fgConst[oldN]; delete S.fgConst[oldN]; } fgMark(); }
+  if(oldN in S.fgConst){ S.fgConst[newN]=S.fgConst[oldN]; delete S.fgConst[oldN]; }
+  if(oldN in S.fgLink){ S.fgLink[newN]=S.fgLink[oldN]; delete S.fgLink[oldN]; } fgMark(); }
 function fgClone(target){ const outs=new Set(Object.values(S.presetMap).flat().map(p=>p[0]));
   let nn=target+"_copy",k=2; while(outs.has(nn))nn=target+"_copy"+(k++);
   for(const v in S.presetMap){ const e=S.presetMap[v].find(p=>p[0]===target); if(e)S.presetMap[v].push([nn,e[1]]); }
   S.customOuts.push(nn);                                   // a clone is a custom output → its Value is directly editable
   fgMark(); return nn; }
 function fgDelete(target){ for(const v in S.presetMap){ const i=S.presetMap[v].findIndex(p=>p[0]===target); if(i>=0)S.presetMap[v].splice(i,1); }
-  S.customOuts=S.customOuts.filter(n=>n!==target); delete S.fgConst[target]; fgMark(); }
+  S.customOuts=S.customOuts.filter(n=>n!==target); delete S.fgConst[target]; delete S.fgLink[target]; fgMark(); }
 function fgReselect(target){ S.node={label:target,kind:"out"}; S.inspectKind="node"; buildInspector(); drawFaceGraph(); }
 function updateInspVal(){ if(S.inspectKind!=="channel"||!S.sel)return; const el=$("#inspVal"); if(!el)return;
   const c=chan(S.sel); if(c) el.textContent=sample(c.keys,S.t).toFixed(3); }
@@ -906,7 +947,7 @@ function drawStrip(){
 /* ---- Face Graph (input visemes -> preset targets via link fns) ------ */
 function initFaceGraphPresets(){
   const sel=$("#fgPreset"); sel.innerHTML=S.presets.map(p=>`<option ${p==="arkit"?"selected":""}>${p}</option>`).join("");
-  sel.onchange=async()=>{ S.presetSel=sel.value; S.fgCustom=false; S.customOuts=[]; S.fgConst={};   // a fresh rig starts un-edited
+  sel.onchange=async()=>{ S.presetSel=sel.value; S.fgCustom=false; S.customOuts=[]; S.fgConst={}; S.fgLink={};   // a fresh rig starts un-edited
     S.node=null; S.inspectKind=null;                                    // clear any stale node from the old preset
     try{ S.presetMap=await Pipe.presetMap(sel.value); }catch(e){ console.error("preset load failed",e); }
     buildInspector(); if(S.view==="facegraph")drawFaceGraph(); };
@@ -925,7 +966,7 @@ async function drawFaceGraph(){
   if(live){
     for(const v of inputs){ const c=chan(v); inVal[v]=c?Math.max(0,Math.min(1,sample(c.keys,S.t))):0; }
     for(const [inp,tgts] of Object.entries(S.presetMap)) for(const [t,wt] of tgts) outVal[t]=(outVal[t]||0)+(inVal[inp]||0)*wt;
-    for(const t in outVal) outVal[t]=Math.max(0,Math.min(1,outVal[t]));
+    for(const t in outVal) outVal[t]=fgApplyLink(t,outVal[t]);   // response (link) shaping
   }
   for(const t in S.fgConst) outVal[t]=Math.max(0,Math.min(1,S.fgConst[t]));   // manual constant on a custom output
   const acc=css("--accent");

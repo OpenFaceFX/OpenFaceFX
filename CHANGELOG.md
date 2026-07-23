@@ -34,7 +34,11 @@ its `version` field.
   direct **manual Value** — a built-in output's value is driven (read-only), but a
   clone's is editable: type any constant and it overrides the viseme sum, greys the
   now-inert incoming edges, and exports as a flat channel at that value (`fgconst`);
-  a ↺ reverts it to viseme-driven.
+  a ↺ reverts it to viseme-driven. A viseme-driven custom output also takes a
+  **Response** (link) function — `linear` / `quadratic` / `cubic` / `sqrt` (the
+  `links.py` #68 shapes) with a live curve preview — that shapes how its summed
+  viseme input maps to output, live in the graph and exported via `fglink`
+  (per-keyframe, post-retarget). This completes the editable Face Graph.
 - **Studio Face Graph — live signal flow** — the Face Graph now animates: press
   play and each input viseme's activation at the playhead propagates through the
   weights, glowing its node and brightening/pulsing its links to the rig targets

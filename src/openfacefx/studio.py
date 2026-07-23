@@ -115,7 +115,8 @@ def _generate(p: dict) -> dict:
         if wav_path and os.path.exists(wav_path): os.remove(wav_path)
 
 
-def _export(fmt: str, track: dict, fgmap: dict = None, fgconst: dict = None) -> dict:
+def _export(fmt: str, track: dict, fgmap: dict = None, fgconst: dict = None,
+            fglink: dict = None) -> dict:
     import openfacefx as offx
     from openfacefx import from_dict, retarget, PRESETS
     from openfacefx.curves import Channel, Keyframe
@@ -129,6 +130,24 @@ def _export(fmt: str, track: dict, fgmap: dict = None, fgconst: dict = None) -> 
             custom = {v: [(t, float(w)) for t, w in tgts] for v, tgts in fgmap.items()}
         except (TypeError, ValueError):
             custom = None
+
+    def apply_links(rt):
+        # shape a custom output's response with a link function, per keyframe
+        if not fglink:
+            return rt
+        from openfacefx.links import apply_link, normalize_link
+        by = {c.name: c for c in rt.channels}
+        for name, fn in fglink.items():
+            c = by.get(name)
+            if not c or not fn or fn == "linear":
+                continue
+            try:
+                nm, params = normalize_link({"function": fn})
+            except (ValueError, TypeError):
+                continue
+            c.keys = [Keyframe(k.time, max(0.0, min(1.0, float(apply_link(k.value, nm, params)))))
+                      for k in c.keys]
+        return rt
 
     def apply_const(rt):
         if not fgconst:
@@ -153,7 +172,7 @@ def _export(fmt: str, track: dict, fgmap: dict = None, fgconst: dict = None) -> 
         return {"filename": name, "b64": base64.b64encode(data).decode()}
 
     def ark():
-        try: return apply_const(retarget(tk, custom if custom else PRESETS["arkit"]))
+        try: return apply_const(apply_links(retarget(tk, custom if custom else PRESETS["arkit"])))
         except Exception: return tk
     try:
         if fmt == "json":
@@ -412,7 +431,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_generate(body))
             if path.startswith("/api/export/"):
                 return self._json(_export(path.rsplit("/", 1)[-1], body.get("track", {}),
-                                          body.get("fgmap") or None, body.get("fgconst") or None))
+                                          body.get("fgmap") or None, body.get("fgconst") or None,
+                                          body.get("fglink") or None))
             if path == "/api/llm":
                 return self._json(_llm(body))
             if path == "/api/normalize":
