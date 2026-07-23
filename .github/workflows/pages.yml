@@ -83,6 +83,15 @@ jobs:
             sed -i "s/const OFFX_VERSION = \"[0-9][0-9A-Za-z.-]*\"/const OFFX_VERSION = \"$OFFX_PUB\"/" site/studio/studio.js
             echo "Pinned Studio to openfacefx $OFFX_PUB"
           fi
+          # Cache-bust the Studio's own JS/CSS so a fresh deploy is never served
+          # stale from the browser cache (GitHub Pages sets max-age=600 on assets;
+          # the scripts have no natural version in their URL, so a changed studio.js
+          # can be served from cache for up to 10 min — or longer if a client
+          # over-caches). Stamping the commit SHA onto the asset URLs makes each
+          # build unique, so loading the (short-lived) HTML always pulls fresh code.
+          CB="${GITHUB_SHA:0:8}"
+          sed -i -E "s#href=\"studio\.css\"#href=\"studio.css?v=$CB\"#; s#src=\"(studio|assistant|account|preview3d)\.js\"#src=\"\1.js?v=$CB\"#g" site/studio/index.html
+          echo "Cache-busted Studio assets with $CB"
           # Landing page — the full marketing site (examples/landing.html): animated
           # hero, view cards, runtimes, AI/vault, exporters. Its CTAs point at the
           # sub-pages built above (studio/ demo/ try-it.html acoustic.html docs/).
