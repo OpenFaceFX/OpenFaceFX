@@ -40,6 +40,22 @@ git clone https://github.com/OpenFaceFX/OpenFaceFX && cd OpenFaceFX
 pip install -e .
 ```
 
+## Studio — the visual workspace
+
+Prefer a GUI? **OpenFaceFX Studio** is a web-based facial-animation studio (the
+[FaceFX Studio](https://facefx.github.io/documentation/) workflow, open) with
+Preview, a phoneme timeline, a curve editor, a Face Graph retarget view, every
+exporter, and an AI assistant (bring-your-own-key LLMs, encrypted client-side):
+
+```bash
+openfacefx studio            # serves it locally against the native pipeline, opens your browser
+```
+
+It's one dependency-free web app that runs three ways from the same code: **in the
+browser** via Pyodide (zero-install, pipeline runs client-side), **standalone on a
+PC** (`openfacefx studio`, Tauri/Electron-wrappable), and as the basis for a
+**SaaS**. See [`docs/studio.md`](docs/studio.md).
+
 ## Quick start
 
 No models, no downloads — approximate lip-sync from text + a WAV's duration:
