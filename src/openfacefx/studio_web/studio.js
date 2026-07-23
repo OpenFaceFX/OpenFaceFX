@@ -409,7 +409,7 @@ async function bootstrap(){
     if(!S.native){ if(typeof WebAssembly==="undefined") throw new Error("WebAssembly unavailable"); await bootPyodide(); }
     S.presets=await Pipe.presets(); initFaceGraphPresets();
     try{ S.arkitMap=await Pipe.presetMap("arkit"); }catch(_){ S.arkitMap=null; }  // for 3D preview
-    buildExportGrid(); $("#run").disabled=false; $("#run").textContent="Generate take";
+    buildExportGrid(); $("#run").disabled=false; $("#run").textContent="Generate take"; updateBatchBtn();
     boot.done();
   }catch(err){ setRuntime("error","runtime failed"); boot.set("Couldn't start: "+err.message,1);
     boot.fill.style.background="var(--crit)"; }
@@ -467,6 +467,26 @@ $("#run").onclick=()=>{ const tk=curTake();
   if(tk&&tk.edited&&S.track&&!confirm("Generate replaces the whole take, discarding your hand edits.\n\nUse “Reanalyze — keep my edits” to rebuild but preserve edited channels.\n\nReplace anyway?")) return;
   return runGenerate(false); };
 $("#reanalyze")&&($("#reanalyze").onclick=()=>runGenerate(true));
+/* Batch: one take per non-empty line of the transcript (#20). Each line becomes
+ * its own take under the current actor; new takes only, so nothing is overwritten. */
+function batchLines(){ return $("#text").value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean); }
+function updateBatchBtn(){ const b=$("#batch"); if(b) b.hidden=$("#run").disabled||batchLines().length<2; }
+async function batchGenerate(){
+  const lines=batchLines(); if(lines.length<2) return runGenerate(false);
+  const b=$("#batch"); if(b){ b.disabled=true; }
+  let made=0;
+  for(let i=0;i<lines.length;i++){
+    $("#text").value=lines[i];
+    if(i>0 || (curTake()&&curTake().track)) newTakeSlot();   // reuse an empty first slot, else a fresh take each
+    if(b) b.textContent=`Batching ${i+1}/${lines.length}…`;
+    if(await runGenerate(false)) made++;
+  }
+  if(b){ b.textContent="⁝ Batch — a take per line"; b.disabled=false; }
+  refreshIO();
+  alert(`Batched ${made} take${made===1?"":"s"} from ${lines.length} lines — switch between them in the Take menu.`);
+}
+$("#batch")&&($("#batch").onclick=batchGenerate);
+$("#text")&&$("#text").addEventListener("input",updateBatchBtn);
 function updateReanalyze(){ const b=$("#reanalyze"); if(b) b.hidden=!(curTake()&&curTake().owned&&Object.keys(curTake().owned).length); }
 
 function ingestChannels(){
@@ -506,8 +526,8 @@ function clearResultOnly(){ S.track=null; S.segments=[]; S.words=[]; S.duration=
   const list=$("#channelList"); if(list) list.innerHTML='<li class="empty">Generate this take to see its animation channels.</li>';
   $("#chCount").textContent="0"; $("#tpDur").textContent="/ 00:00.000"; buildInspector(); setScrub(); drawAll(); renderEventList(); }
 function loadTake(){ const t=curTake();
-  if(!t){ applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; $("#wavName").textContent="no audio — timing from text"; clearResultOnly(); return; }
-  applyParams(t.params); S.wavBytes=t.wavBytes||null; S.wavPeaks=t.wavPeaks||null;
+  if(!t){ applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; $("#wavName").textContent="no audio — timing from text"; clearResultOnly(); updateBatchBtn(); return; }
+  applyParams(t.params); S.wavBytes=t.wavBytes||null; S.wavPeaks=t.wavPeaks||null; updateBatchBtn();
   $("#wavName").textContent=t.wavName||"no audio — timing from text";
   if(t.track){ S.track=t.track; S.segments=t.segments||[]; S.words=t.words||[]; S.duration=t.duration; S.t=0; S.sel=null; S.solo=null;
     S.inspectKind=null; S.node=null; S.events=(t.track.events)||[]; ingestChannels(); buildChannelList(); buildInspector();

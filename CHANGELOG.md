@@ -20,6 +20,11 @@ its `version` field.
   The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
 
 ### Added
+- **Studio batch generate** — a **Batch** button (shown when the transcript has
+  more than one line) turns each non-empty line into its own take under the
+  current actor, generating them in sequence with the same source settings — the
+  Studio's take on FaceFX batch analysis. New takes only (an empty first slot is
+  reused; nothing is overwritten), then switch between them in the Take menu.
 - **Studio pose library** — the Preview pose panel gains named **expression
   presets**: six built-ins (Neutral / Happy / Sad / Surprised / Content / Worried)
   plus your own — set the expression sliders, name it, **save**. **Apply** writes
