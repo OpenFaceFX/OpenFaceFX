@@ -671,7 +671,7 @@ function renderOutputInspector(box,target){
     ${(missing.length&&!hasConst)?`<div class="insp-row"><label>Add viseme</label><select class="fg-add"><option value="">＋ add…</option>${missing.map(v=>`<option>${esc(v)}</option>`).join("")}</select></div>`:''}
     <div class="insp-actions">
       <button class="btn sm" id="fgClone">⎘ Clone output</button>
-      ${custom?'<button class="btn sm danger" id="fgDel">🗑 Delete</button>':''}
+      ${custom?'<button class="btn sm danger" id="fgDel">🗑 Delete</button>':'<button class="btn sm" id="fgResetOut" title="Restore this output’s default visemes">↺ Default</button>'}
     </div>
     <p class="insp-tip dim">${custom
       ? 'This is a <b>custom output</b>. Type any <b>Value</b> to set a constant (overrides the visemes), or edit the weights to drive it. It exports to Live&nbsp;Link / A2F when the rig is <b>arkit</b>.'
@@ -690,6 +690,7 @@ function renderOutputInspector(box,target){
     drawLinkPrev(box.querySelector(".fg-link-prev"), lk.value); }
   box.querySelector("#fgClone").onclick=()=>fgReselect(fgClone(target));
   const del=box.querySelector("#fgDel"); if(del) del.onclick=()=>{ fgDelete(target); S.node=null; S.inspectKind=null; buildInspector(); drawFaceGraph(); };
+  const rst=box.querySelector("#fgResetOut"); if(rst) rst.onclick=()=>fgResetOutput(target);
 }
 function isCustomOut(name){ return (S.customOuts||[]).includes(name); }
 /* --- Face Graph edit helpers (mutate the working preset S.presetMap) --- */
@@ -978,10 +979,26 @@ function drawStrip(){
 /* ---- Face Graph (input visemes -> preset targets via link fns) ------ */
 function initFaceGraphPresets(){
   const sel=$("#fgPreset"); sel.innerHTML=S.presets.map(p=>`<option ${p==="arkit"?"selected":""}>${p}</option>`).join("");
-  sel.onchange=async()=>{ S.presetSel=sel.value; S.fgCustom=false; S.customOuts=[]; S.fgConst={}; S.fgLink={};   // a fresh rig starts un-edited
-    S.node=null; S.inspectKind=null;                                    // clear any stale node from the old preset
-    try{ S.presetMap=await Pipe.presetMap(sel.value); }catch(e){ console.error("preset load failed",e); }
-    buildInspector(); if(S.view==="facegraph")drawFaceGraph(); };
+  sel.onchange=()=>fgLoadPreset(sel.value);
+  $("#fgResetAll")&&($("#fgResetAll").onclick=()=>fgLoadPreset(S.presetSel));   // reload this rig's defaults, discarding all edits
+}
+/* (re)load a rig preset fresh from the engine, discarding every Face Graph edit */
+async function fgLoadPreset(name){
+  S.presetSel=name; S.fgCustom=false; S.customOuts=[]; S.fgConst={}; S.fgLink={};   // a fresh rig starts un-edited
+  S.node=null; S.inspectKind=null;                                    // clear any stale node from the old preset
+  try{ S.presetMap=await Pipe.presetMap(name); }catch(e){ console.error("preset load failed",e); }
+  buildInspector(); if(S.view==="facegraph")drawFaceGraph();
+}
+/* restore ONE built-in output's viseme edges from the preset default (keeps other edits) */
+async function fgResetOutput(target){
+  let pristine; try{ pristine=await Pipe.presetMap(S.presetSel); }catch(_){ return; }
+  const pin=Object.entries(pristine).filter(([,tg])=>tg.some(p=>p[0]===target)).map(([v,tg])=>[v,tg.find(p=>p[0]===target)[1]]);
+  if(!pin.length) return;                                             // not a preset output (a clone) — nothing to restore to
+  for(const v in S.presetMap){ const i=S.presetMap[v].findIndex(p=>p[0]===target); if(i>=0)S.presetMap[v].splice(i,1); }
+  for(const [v,w] of pin){ if(S.presetMap[v]) S.presetMap[v].push([target,w]); else S.presetMap[v]=[[target,w]]; }
+  delete S.fgConst[target]; delete S.fgLink[target];
+  S.fgCustom=(S.customOuts.length||Object.keys(S.fgConst).length||Object.keys(S.fgLink).length)?true:false;
+  fgReselect(target);
 }
 async function drawFaceGraph(){
   const cv=$("#facegraph"); const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h); x.fillStyle=css("--panel-2"); x.fillRect(0,0,w,h);

@@ -40,7 +40,9 @@ its `version` field.
 - **Studio Face Graph — editable, cloneable rig outputs** — select a rig-output
   node and the inspector becomes an editor: tune the weight of each viseme driving
   it, add or remove a viseme, rename it, **clone** the output to tune a variant, or
-  delete it — the graph updates live as you edit. **Custom outputs export**: an
+  delete it — the graph updates live as you edit. Edits are reversible: a per-output
+  **↺ Default** restores that output's preset visemes, and a header **↺ Reset**
+  reloads the whole rig's defaults (discarding all Face Graph edits). **Custom outputs export**: an
   edited/cloned arkit graph feeds the retargeted formats (Live Link CSV / Audio2Face)
   through an opt-in `fgmap` threaded into `studio_export`/`_export`, and the custom
   preset persists in the saved workspace. Default (unedited) export stays
