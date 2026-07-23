@@ -115,11 +115,19 @@ def _generate(p: dict) -> dict:
         if wav_path and os.path.exists(wav_path): os.remove(wav_path)
 
 
-def _export(fmt: str, track: dict) -> dict:
+def _export(fmt: str, track: dict, fgmap: dict = None) -> dict:
     import openfacefx as offx
     from openfacefx import from_dict, retarget, PRESETS
     tk = from_dict(track)
     tmp = tempfile.mkdtemp(); p = os.path.join(tmp, "out")
+    # optional custom viseme→rig preset from the Face Graph (edited/cloned outputs);
+    # falls back to the built-in arkit preset when absent → byte-identical default.
+    custom = None
+    if fgmap:
+        try:
+            custom = {v: [(t, float(w)) for t, w in tgts] for v, tgts in fgmap.items()}
+        except (TypeError, ValueError):
+            custom = None
 
     def dump(fn, path, name):
         fn();
@@ -127,7 +135,7 @@ def _export(fmt: str, track: dict) -> dict:
         return {"filename": name, "b64": base64.b64encode(data).decode()}
 
     def ark():
-        try: return retarget(tk, PRESETS["arkit"])
+        try: return retarget(tk, custom if custom else PRESETS["arkit"])
         except Exception: return tk
     try:
         if fmt == "json":
@@ -385,7 +393,8 @@ class _Handler(BaseHTTPRequestHandler):
             if path == "/api/generate":
                 return self._json(_generate(body))
             if path.startswith("/api/export/"):
-                return self._json(_export(path.rsplit("/", 1)[-1], body.get("track", {})))
+                return self._json(_export(path.rsplit("/", 1)[-1], body.get("track", {}),
+                                          body.get("fgmap") or None))
             if path == "/api/llm":
                 return self._json(_llm(body))
             if path == "/api/normalize":

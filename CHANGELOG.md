@@ -20,6 +20,17 @@ its `version` field.
   The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
 
 ### Added
+- **Studio Face Graph — editable, cloneable rig outputs** — select a rig-output
+  node and the inspector becomes an editor: tune the weight of each viseme driving
+  it, add or remove a viseme, rename it, **clone** the output to tune a variant, or
+  delete it — the graph updates live as you edit. **Custom outputs export**: an
+  edited/cloned arkit graph feeds the retargeted formats (Live Link CSV / Audio2Face)
+  through an opt-in `fgmap` threaded into `studio_export`/`_export`, and the custom
+  preset persists in the saved workspace. Default (unedited) export stays
+  byte-identical — verified the cloned output reaches the A2F `facsNames` while the
+  default export is unchanged. Also **hardened the rig-preset dropdown** (clears the
+  stale selected node, guards the async preset fetch, always rebuilds the inspector +
+  redraws) so switching rigs always refreshes.
 - **Studio Face Graph — live signal flow** — the Face Graph now animates: press
   play and each input viseme's activation at the playhead propagates through the
   weights, glowing its node and brightening/pulsing its links to the rig targets

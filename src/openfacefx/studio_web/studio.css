@@ -200,6 +200,23 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .map-add { background:var(--elev); border:1px dashed var(--line); border-radius:100px; color:var(--fg-dim);
   cursor:pointer; font-size:12px; padding:2px 9px; }
 .map-add:hover { border-color:var(--accent); color:var(--fg); }
+/* Face Graph — editable rig-output inspector (#22-24) */
+.ins-edit { color:var(--accent); font-size:10px; text-transform:uppercase; letter-spacing:.05em; }
+.fg-edges { display:flex; flex-direction:column; gap:3px; margin:4px 0; max-height:200px; overflow:auto; }
+.insp-row.edge { display:flex; align-items:center; gap:6px; padding:2px 0; }
+.fg-w { width:46px; background:var(--panel-2); color:var(--accent-2); border:1px solid var(--line);
+  border-radius:var(--r-sm); font-family:var(--font-mono); font-size:11.5px; text-align:right; padding:2px 4px; -moz-appearance:textfield; }
+.fg-w::-webkit-outer-spin-button, .fg-w::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+.fg-vis { flex:1; color:var(--fg); }
+.fg-x { background:none; border:none; color:var(--fg-mute); cursor:pointer; font-size:11px; padding:0 2px; }
+.fg-x:hover { color:var(--crit); }
+.fg-name { flex:1; background:var(--panel-2); color:var(--fg); border:1px solid var(--line);
+  border-radius:var(--r-sm); font-family:var(--font-mono); font-size:12px; padding:2px 6px; }
+.fg-name:focus { outline:none; border-color:var(--accent); }
+.fg-add { background:var(--panel-2); color:var(--fg); border:1px solid var(--line); border-radius:var(--r-sm);
+  font-size:11.5px; padding:2px 4px; }
+.insp-actions { display:flex; gap:6px; margin-top:8px; }
+.insp-actions .btn { flex:1; }
 .mini, .m011 { background:var(--panel-2); color:var(--fg); border:1px solid var(--line);
   border-radius:var(--r-sm); padding:5px 8px; font-size:12.5px; }
 
