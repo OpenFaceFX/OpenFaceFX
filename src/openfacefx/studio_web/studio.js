@@ -413,30 +413,56 @@ function drawPreview(){
  * targets (dimple/press) while the jaw barely opens (~0.5) — the mouth "presses"
  * instead of speaking. Boost the primary vowel/rounding articulators, damp the
  * corners, and close the lips on silence so the motion tracks the words. */
-const PREVIEW_GAIN={ jawOpen:1.75, mouthFunnel:1.2, mouthPucker:1.25, jawForward:1.1,
-  mouthShrugUpper:0.7, mouthRollUpper:0.8, mouthRollLower:0.8,
-  mouthDimpleLeft:0.5, mouthDimpleRight:0.5, mouthPressLeft:0.6, mouthPressRight:0.6,
-  mouthStretchLeft:0.55, mouthStretchRight:0.55, mouthUpperUpLeft:0.85, mouthUpperUpRight:0.85,
-  mouthLowerDownLeft:0.85, mouthLowerDownRight:0.85 };
-/* Preview-only viseme shape overrides (DISPLAY ONLY — the arkit preset that
- * feeds the exporters is untouched). Some presets read as generic on the head:
- * FF (F/V) is a labiodental — the lower lip tucks up to the upper teeth — but the
- * preset rounds the lips (mouthPucker), which reads as "oo". Drive the correct
- * shape here: roll the lower lip in + reveal the upper teeth, no pucker. */
-const PREVIEW_VISEME={
-  FF: [["mouthRollLower",1.0],["mouthUpperUpLeft",0.5],["mouthUpperUpRight",0.5],
-       ["mouthShrugUpper",0.35],["jawOpen",0.05]],
+/* ---------------------------------------------------------------------------
+ * Preview viseme → ARKit shapes — DISPLAY ONLY. The `arkit` retarget preset that
+ * feeds the exporters is tuned for retarget weight math and is left UNTOUCHED
+ * (exports stay byte-identical); it does not always read as a distinct mouth
+ * shape on a real face. This is a purpose-built, phonetically-correct table for
+ * the 3D head, one entry per viseme, keyed to the phonemes each covers. Target
+ * names use the Left/Right suffix (preview3d.js maps → _L/_R). Values are the
+ * shape at full activation; coarticulation blends them over time.
+ * ------------------------------------------------------------------------- */
+const PREVIEW_VISEME = {
+  // B/M/P — bilabial plosive/nasal: lips fully sealed, no teeth
+  PP: [["mouthClose",1.0],["mouthRollLower",0.2],["mouthRollUpper",0.2]],
+  // F/V — labiodental fricative: lower lip tucks up to the upper teeth
+  FF: [["mouthRollLower",1.0],["mouthUpperUpLeft",0.5],["mouthUpperUpRight",0.5],["mouthShrugUpper",0.35],["jawOpen",0.05]],
+  // TH/DH — dental fricative: tongue tip between the teeth
+  TH: [["tongueOut",0.5],["jawOpen",0.16],["mouthUpperUpLeft",0.22],["mouthUpperUpRight",0.22],["mouthLowerDownLeft",0.16],["mouthLowerDownRight",0.16]],
+  // D/T/L — alveolar: tongue tip up behind the teeth, neutral lips, slightly open
+  DD: [["jawOpen",0.24],["tongueOut",0.28],["mouthUpperUpLeft",0.12],["mouthUpperUpRight",0.12]],
+  // K/G/HH — velar/glottal: moderate neutral opening (shape follows the vowel)
+  kk: [["jawOpen",0.32],["mouthLowerDownLeft",0.12],["mouthLowerDownRight",0.12]],
+  // CH/JH/SH/ZH — postalveolar: lips protrude, slightly rounded ("sh")
+  CH: [["mouthFunnel",0.6],["mouthPucker",0.4],["jawOpen",0.16]],
+  // S/Z — sibilant: teeth close together & bared, corners slightly spread
+  SS: [["jawOpen",0.09],["mouthStretchLeft",0.3],["mouthStretchRight",0.3],["mouthUpperUpLeft",0.28],["mouthUpperUpRight",0.28],["mouthLowerDownLeft",0.28],["mouthLowerDownRight",0.28]],
+  // N/NG — nasal: tongue up, neutral lips, slightly open
+  nn: [["jawOpen",0.2],["tongueOut",0.22],["mouthLowerDownLeft",0.1],["mouthLowerDownRight",0.1]],
+  // ER/R — rhotic: slight lip rounding / protrusion
+  RR: [["mouthPucker",0.45],["mouthFunnel",0.3],["jawOpen",0.18]],
+  // AA/AE/AH/AY — open vowels: jaw wide open
+  aa: [["jawOpen",0.9],["mouthLowerDownLeft",0.12],["mouthLowerDownRight",0.12]],
+  // EH/EY/IH — mid-front vowels: open + spread corners
+  E:  [["jawOpen",0.42],["mouthStretchLeft",0.32],["mouthStretchRight",0.32],["mouthDimpleLeft",0.22],["mouthDimpleRight",0.22]],
+  // IY/Y — high-front "ee": wide spread smile, teeth showing, narrow vertical
+  I:  [["jawOpen",0.16],["mouthStretchLeft",0.5],["mouthStretchRight",0.5],["mouthSmileLeft",0.32],["mouthSmileRight",0.32],["mouthUpperUpLeft",0.2],["mouthUpperUpRight",0.2]],
+  // AO/AW/OW/OY — rounded open "oh"
+  O:  [["mouthFunnel",0.7],["mouthPucker",0.42],["jawOpen",0.42]],
+  // UH/UW/W — tight rounded "oo"
+  U:  [["mouthPucker",0.85],["mouthFunnel",0.5],["jawOpen",0.12]],
 };
-/* drive the 3D head: retarget visemes -> ARKit in JS, + gestures + head pose */
+/* drive the 3D head: viseme → ARKit (preview table), + gestures + head pose */
 function drive3D(p3d){
   const arkit={}; let visSum=0;
-  if(S.arkitMap) for(const [vis,tgts0] of Object.entries(S.arkitMap)){
+  if(S.arkitMap) for(const vis of Object.keys(S.arkitMap)){
     const c=chan(vis); if(!c) continue; const v=Math.max(0,sample(c.keys,S.t)); if(v<1e-4) continue;
     visSum+=v;
-    const tgts = PREVIEW_VISEME[vis] || tgts0;      // labiodental fix for FF, etc.
-    for(const [t,w] of tgts) arkit[t]=(arkit[t]||0)+v*w;
+    const tgts = PREVIEW_VISEME[vis] || S.arkitMap[vis];
+    const ve = Math.min(1, v*1.4);                  // coarticulation peaks ~0.8; lift the dominant shape
+    for(const [t,w] of tgts) arkit[t]=(arkit[t]||0)+ve*w;
   }
-  for(const k in arkit) arkit[k]=Math.min(1, arkit[k]*(PREVIEW_GAIN[k]||1));
+  for(const k in arkit) arkit[k]=Math.min(1,arkit[k]);
   // close the mouth on silence / low speech activity so starts & stops read
   const quiet=Math.max(sampleName("sil"), 1-Math.min(1,visSum));
   if(quiet>0.05) arkit.mouthClose=Math.max(arkit.mouthClose||0, quiet*0.7);
