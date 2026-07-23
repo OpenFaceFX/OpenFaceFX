@@ -40,8 +40,11 @@ async function init() {
     const rim = new THREE.DirectionalLight(0x88b6ff, 0.8); rim.position.set(-1.2, 0.4, -0.8); P.scene.add(rim);
 
     P.controls = new OrbitControls(P.camera, canvas);
-    P.controls.enablePan = false; P.controls.enableZoom = true;
-    P.controls.rotateSpeed = 0.5; P.controls.minDistance = 0.15; P.controls.maxDistance = 2;
+    P.controls.enablePan = true; P.controls.enableZoom = true;
+    P.controls.enableDamping = true; P.controls.dampingFactor = 0.08;
+    P.controls.rotateSpeed = 0.6;
+    // real zoom range is set model-relative in frame(); these are placeholders
+    P.controls.minDistance = 0.05; P.controls.maxDistance = 100;
 
     const ktx2 = new KTX2Loader().setTranscoderPath(CDN_BASIS).detectSupport(P.renderer);
     const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
@@ -63,22 +66,32 @@ async function init() {
 }
 
 function frame() {
+  resize();                                          // set aspect from the live canvas first
   const box = new THREE.Box3().setFromObject(P.head);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z) || 0.3;
-  // aim at the eye/nose region; back off enough that the whole head sits in
-  // frame with margin (so aim isn't hypersensitive). Front is +Z.
-  const faceY = box.min.y + size.y * 0.55;
-  const dist = maxDim * 4.5;
-  P.camera.near = maxDim * 0.05; P.camera.far = maxDim * 100; P.camera.updateProjectionMatrix();
+  // Fit the WHOLE head in the (now full-stage) canvas with a little margin, and
+  // frame it front-on centred slightly above middle (eyes/nose). Front is +Z.
+  // Distance derived from the vertical FOV so the head fills the frame instead
+  // of floating mid-screen, and never gets cut off.
+  const vfov = P.camera.fov * Math.PI / 180;
+  const fitH = (size.y * 1.25) / (2 * Math.tan(vfov / 2));        // fit height + 25% margin
+  const fitW = (size.x * 1.25) / (2 * Math.tan(vfov / 2) * Math.max(0.75, P.camera.aspect || 1));
+  const dist = Math.max(fitH, fitW, maxDim * 1.6);
+  const faceY = center.y + size.y * 0.04;                         // a touch above centre
+  P.camera.near = Math.max(0.001, maxDim * 0.01);
+  P.camera.far = maxDim * 200; P.camera.updateProjectionMatrix();
   P.camera.position.set(center.x, faceY, center.z + dist);
   P.controls.target.set(center.x, faceY, center.z);
-  P.controls.minDistance = maxDim * 1.2;    // zoom range scaled to the model
-  P.controls.maxDistance = maxDim * 30;
+  P.controls.minDistance = maxDim * 0.35;   // zoom right in to the lips…
+  P.controls.maxDistance = maxDim * 60;      // …or way out — no early clamp
+  P.home = { pos: P.camera.position.clone(), target: P.controls.target.clone() };
   P.controls.update();
   resize();
 }
+// public reset so the UI can recentre the head
+function reframe() { if (P.head) frame(); }
 
 function resize() {
   if (!P.renderer) return;
@@ -126,5 +139,5 @@ function update(arkit, gestures, pose) {
 
 function setActive(on) { P.active = on; if (on) resize(); }
 
-window.Preview3D = { get ready() { return P.ready; }, update, setActive, resize };
+window.Preview3D = { get ready() { return P.ready; }, update, setActive, resize, reframe };
 init();

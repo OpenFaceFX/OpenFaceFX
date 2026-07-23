@@ -22,7 +22,7 @@ const S = {
   chan:{},               // name -> {color, visible, idx}
   sel:null,              // selected channel name
   view:"preview",
-  t:0, playing:false, lastTs:0,
+  t:0, playing:false, lastTs:0, playClock:0,
   presets:[], presetSel:"arkit", presetMap:null,
 };
 
@@ -283,13 +283,29 @@ function drawPreview(){
   if(S.track){ $("#tcRead").textContent=fmt(S.t); $("#tpTime").textContent=fmt(S.t); }
 }
 
+/* Preview articulation shaping — DISPLAY ONLY. The pipeline and every exporter
+ * stay byte-identical; this only shapes how the on-screen head reads. Under
+ * coarticulation several visemes overlap, so a raw sum over-drives shared corner
+ * targets (dimple/press) while the jaw barely opens (~0.5) — the mouth "presses"
+ * instead of speaking. Boost the primary vowel/rounding articulators, damp the
+ * corners, and close the lips on silence so the motion tracks the words. */
+const PREVIEW_GAIN={ jawOpen:1.75, mouthFunnel:1.2, mouthPucker:1.25, jawForward:1.1,
+  mouthShrugUpper:0.7, mouthRollUpper:0.8, mouthRollLower:0.8,
+  mouthDimpleLeft:0.5, mouthDimpleRight:0.5, mouthPressLeft:0.6, mouthPressRight:0.6,
+  mouthStretchLeft:0.55, mouthStretchRight:0.55, mouthUpperUpLeft:0.85, mouthUpperUpRight:0.85,
+  mouthLowerDownLeft:0.85, mouthLowerDownRight:0.85 };
 /* drive the 3D head: retarget visemes -> ARKit in JS, + gestures + head pose */
 function drive3D(p3d){
-  const arkit={};
+  const arkit={}; let visSum=0;
   if(S.arkitMap) for(const [vis,tgts] of Object.entries(S.arkitMap)){
     const c=chan(vis); if(!c) continue; const v=Math.max(0,sample(c.keys,S.t)); if(v<1e-4) continue;
-    for(const [t,w] of tgts) arkit[t]=Math.min(1,(arkit[t]||0)+v*w);
+    visSum+=v;
+    for(const [t,w] of tgts) arkit[t]=(arkit[t]||0)+v*w;
   }
+  for(const k in arkit) arkit[k]=Math.min(1, arkit[k]*(PREVIEW_GAIN[k]||1));
+  // close the mouth on silence / low speech activity so starts & stops read
+  const quiet=Math.max(sampleName("sil"), 1-Math.min(1,visSum));
+  if(quiet>0.05) arkit.mouthClose=Math.max(arkit.mouthClose||0, quiet*0.7);
   const g={ blink_L:sampleName("blink_L"), blink_R:sampleName("blink_R"), blink:sampleName("blink"),
     browUp:sampleName("browUp"), browInnerUp:sampleName("browInnerUp"), browOuterUp:sampleName("browOuterUp") };
   const rad=d=>(d||0)*Math.PI/180;
@@ -453,9 +469,29 @@ $("#tpStart").onclick=()=>{S.t=0;setScrub();drawAll();};
 $("#tpEnd").onclick=()=>{S.t=S.duration;setScrub();drawAll();};
 $("#tpPlay").onclick=togglePlay; $("#tpPlay").textContent="▶";
 function togglePlay(){ if(!S.track)return; S.playing=!S.playing; $("#tpPlay").textContent=S.playing?"⏸":"▶";
-  if(S.playing){ S.lastTs=0; requestAnimationFrame(loop); } }
-function loop(ts){ if(!S.playing)return; if(S.lastTs)S.t+=(ts-S.lastTs)/1000; S.lastTs=ts;
-  if(S.t>=S.duration){S.t=0;} setScrub(); drawAll(); requestAnimationFrame(loop); }
+  if(S.playing){ S.lastTs=0; S.playClock=S.t; requestAnimationFrame(loop); } else showFps(null); }
+// spacebar toggles playback (ignored while typing in a field)
+addEventListener("keydown",e=>{ if(e.code!=="Space")return;
+  const t=e.target.tagName; if(t==="INPUT"||t==="TEXTAREA"||t==="SELECT")return;
+  e.preventDefault(); togglePlay(); });
+
+/* ---- FPS: a real playback frame rate + a measured live meter ---------- */
+const fpsMeter={ el:()=>$("#fpsMeter"), n:0, acc:0 };
+function showFps(measured){ const el=fpsMeter.el(); if(!el)return;
+  if(measured==null){ el.classList.remove("live"); el.textContent=(S.fps||60)+" fps"; }
+  else { el.classList.add("live"); el.textContent=Math.round(measured)+" fps"; } }
+$("#fps").oninput=()=>{ S.fps=parseFloat($("#fps").value)||60; if(!S.playing) showFps(null); };
+showFps(null);
+
+function loop(ts){ if(!S.playing)return;
+  if(S.lastTs){ const dt=(ts-S.lastTs)/1000; S.playClock+=dt;
+    fpsMeter.acc+=dt; fpsMeter.n++;
+    if(fpsMeter.acc>=0.4){ showFps(fpsMeter.n/fpsMeter.acc); fpsMeter.acc=0; fpsMeter.n=0; } }
+  S.lastTs=ts;
+  if(S.playClock>=S.duration) S.playClock=0;
+  const fps=Math.max(1,S.fps||60);
+  S.t=Math.round(S.playClock*fps)/fps;    // quantise the playhead → the fps is real
+  setScrub(); drawAll(); requestAnimationFrame(loop); }
 
 /* ===================================================================== *
  *  WAV encode (Float32 -> 16-bit mono, for the stdlib wave reader)
@@ -480,8 +516,9 @@ let rt; addEventListener("resize",()=>{ clearTimeout(rt); rt=setTimeout(()=>{ dr
 /* the 3D head finished loading → swap the schematic SVG for the WebGL canvas */
 addEventListener("preview3d-ready",()=>{
   const c=$("#face3d"), s=$("#face"); if(c){ c.hidden=false; } if(s){ s.style.display="none"; }
+  const rb=$("#reframeBtn"); if(rb){ rb.hidden=false; rb.onclick=()=>window.Preview3D.reframe&&window.Preview3D.reframe(); }
   const cap=document.querySelector(".preview-readout .dim");
-  if(cap) cap.textContent="ARKit-blendshape 3D head, driven by the take — drag to orbit, scroll to zoom";
+  if(cap) cap.textContent="ARKit-blendshape 3D head, driven by the take — drag to orbit · scroll to zoom · ⟳ recenter";
   window.Preview3D.setActive(true); window.Preview3D.resize(); drawPreview();
 });
 

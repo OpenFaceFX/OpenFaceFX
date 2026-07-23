@@ -132,6 +132,7 @@
             <span class="mono" id="tcRead">00:00.000</span>
             <span class="dim">the schematic face blends visemes in real time — a rig-neutral preview</span>
           </div>
+          <button class="stage-btn" id="reframeBtn" title="Recenter the head" hidden>⟳ recenter</button>
         </div>
       </section>
 
@@ -197,7 +198,8 @@
   <div class="scrub"><input type="range" id="scrub" min="0" max="1000" value="0"></div>
   <span class="mono time" id="tpTime">00:00.000</span>
   <span class="mono dim" id="tpDur">/ 00:00.000</span>
-  <label class="field small"><span>fps</span><input type="number" id="fps" value="60" min="1" max="120"></label>
+  <span class="mono fpsread" id="fpsMeter" title="Live preview frame rate">—</span>
+  <label class="field small" title="Playback &amp; sampling frame rate — applies live to playback, and to keyframe density on the next take"><span>fps</span><input type="number" id="fps" value="60" min="1" max="120"></label>
 </footer>
 
 <!-- ===== Boot overlay ==================================================== -->
