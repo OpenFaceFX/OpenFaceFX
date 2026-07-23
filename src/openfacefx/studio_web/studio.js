@@ -30,6 +30,7 @@ const S = {
   events:[],                                                      // derived event layer (Events tab)
   phonMap:null, mapCustom:false,                                  // Mapping tab: editable phoneme→viseme map
   fgCustom:false, customOuts:[], fgConst:{}, fgLink:{},           // Face Graph: cloned outputs, manual constants, response (link) functions
+  poses:[],                                                       // saved expression presets (pose library)
 };
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const DEFAULT_PARAMS={ text:"Hello world — this is OpenFaceFX Studio, running the real pipeline right in your browser.",
@@ -67,6 +68,7 @@ window.StudioBridge = {
     fgPreset:S.presetSel, fgMap:(S.fgCustom&&S.presetMap)?S.presetMap:undefined,   // custom Face Graph outputs
     customOuts:(S.customOuts&&S.customOuts.length)?S.customOuts:undefined, fgConst:Object.keys(S.fgConst||{}).length?S.fgConst:undefined,
     fgLink:Object.keys(S.fgLink||{}).length?S.fgLink:undefined,
+    poses:(S.poses&&S.poses.length)?S.poses:undefined,               // saved expression presets
     actors:S.actors.map(a=>({ name:a.name, takes:a.takes.map(t=>({
       name:t.name, params:t.params, wavName:t.wavName, colors:t.colors||undefined, cmudict:t.cmudict||undefined,
       track:t.track, segments:t.segments, words:t.words||undefined, duration:t.duration,
@@ -86,6 +88,7 @@ window.StudioBridge = {
     if(w.fgMap){ S.presetMap=w.fgMap; S.fgCustom=true; } else { S.presetMap=null; S.fgCustom=false; }  // restore custom outputs
     S.customOuts=Array.isArray(w.customOuts)?w.customOuts:[]; S.fgConst=(w.fgConst&&typeof w.fgConst==="object")?w.fgConst:{};
     S.fgLink=(w.fgLink&&typeof w.fgLink==="object")?w.fgLink:{};
+    S.poses=Array.isArray(w.poses)?w.poses:[]; refreshPoseSelect();
     loadTake(); refreshIO(); return true; },
 };
 
@@ -1161,6 +1164,13 @@ function wireCanvases(){
  *  Write a key at the playhead through setChannelAt; drive3D applies head pose
  *  (signed degrees) + the emotion/gesture channels live. (backlog #12/#17)
  * ===================================================================== */
+/* Expression presets (pose library). Values on the pose-panel channels; unlisted
+ * channels apply as 0, so a preset is a complete expression state. Starting
+ * points — tweak the sliders then Save your own. */
+const POSE_CH=["blink","browUp","smile","frown","brow_raise","cheek_raise"];
+const POSES={ Neutral:{}, Happy:{smile:0.8,cheek_raise:0.55}, Sad:{frown:0.55,brow_raise:0.4},
+  Surprised:{browUp:0.85,smile:0.1}, Content:{smile:0.35,cheek_raise:0.2}, Worried:{brow_raise:0.55,frown:0.2} };
+let refreshPoseSelect=()=>{};   // assigned by wirePosePanel; called after a workspace load
 function wirePosePanel(){
   const panel=$("#posePanel"), pad=$("#posePad"), dot=$("#poseDot"), tog=$("#poseToggle"); if(!panel||!pad||!tog) return;
   const EXPR=[...panel.querySelectorAll('input[data-ch]')], roll=$("#poseRoll"), RANGE=25;   // degrees
@@ -1188,6 +1198,28 @@ function wirePosePanel(){
   $("#poseReset")&&($("#poseReset").onclick=()=>{ if(!need())return; snapshotUndo();
     ["headYaw","headPitch","headRoll"].forEach(n=>setChannelAt(n,0,S.t));
     EXPR.forEach(inp=>setChannelAt(inp.dataset.ch,0,S.t)); sync(); afterEdit(); });
+  // --- pose library: named expression presets (built-in + user-saved) ---
+  const sel=$("#poseSelect"), applyBtn=$("#poseApply"), nameInp=$("#poseName"), saveBtn=$("#poseSave"), delBtn=$("#poseDel");
+  function poses(){ return S.poses||(S.poses=[]); }
+  refreshPoseSelect=function(){ if(!sel)return; const cur=sel.value;
+    const built=Object.keys(POSES).map(n=>`<option value="b:${esc(n)}">${esc(n)}</option>`).join("");
+    const usr=poses().map((p,i)=>`<option value="u:${i}">${esc(p.name)}</option>`).join("");
+    sel.innerHTML=built+(usr?`<optgroup label="saved">${usr}</optgroup>`:"");
+    if(cur&&sel.querySelector(`option[value="${cur}"]`)) sel.value=cur;
+    if(delBtn) delBtn.disabled=!(sel.value||"").startsWith("u:"); };
+  function applyPose(vals){ if(!need())return; snapshotUndo();
+    POSE_CH.forEach(ch=>setChannelAt(ch,+vals[ch]||0,S.t)); sync(); afterEdit(); }
+  refreshPoseSelect();
+  if(sel) sel.onchange=()=>{ if(delBtn) delBtn.disabled=!(sel.value||"").startsWith("u:"); };
+  if(applyBtn) applyBtn.onclick=()=>{ const v=sel.value||""; if(!v)return;
+    if(v.startsWith("b:")) applyPose(POSES[v.slice(2)]||{});
+    else { const p=poses()[+v.slice(2)]; if(p) applyPose(p.vals); } };
+  if(saveBtn) saveBtn.onclick=()=>{ if(!need())return; const nm=(nameInp.value||"").trim(); if(!nm)return;
+    const vals={}; POSE_CH.forEach(ch=>{ const c=chan(ch); const val=c?sample(c.keys,S.t):0; if(val>0.001)vals[ch]=+val.toFixed(3); });
+    const ex=poses().findIndex(p=>p.name===nm); if(ex>=0)poses()[ex].vals=vals; else poses().push({name:nm,vals});
+    nameInp.value=""; refreshPoseSelect(); if(sel){ sel.value="u:"+poses().findIndex(p=>p.name===nm); sel.dispatchEvent(new Event("change")); } };
+  if(delBtn) delBtn.onclick=()=>{ const v=sel.value||""; if(!v.startsWith("u:"))return;
+    poses().splice(+v.slice(2),1); refreshPoseSelect(); };
 }
 
 /* ===================================================================== *

@@ -276,6 +276,13 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .pose-row input[type=range] { flex:1; accent-color:var(--accent); min-width:0; }
 .pose-sub { font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--fg-mute); margin-top:4px; }
 .pose-note { font-size:10.5px; color:var(--fg-mute); margin:4px 0 0; line-height:1.4; }
+.pose-lib { display:flex; align-items:center; gap:5px; margin-top:4px; }
+.pose-lib .btn.ghost { font-size:11px; padding:3px 7px; border:1px solid var(--line); }
+.pose-select { flex:1; min-width:0; background:var(--panel-2); color:var(--fg); border:1px solid var(--line);
+  border-radius:var(--r-sm); font-size:11.5px; padding:3px 4px; }
+.pose-name { flex:1; min-width:0; background:var(--panel-2); color:var(--fg); border:1px solid var(--line);
+  border-radius:var(--r-sm); font-size:11.5px; padding:3px 6px; }
+.pose-name:focus { outline:none; border-color:var(--accent); }
 
 /* ---- Export grid ----------------------------------------------------- */
 .export-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }

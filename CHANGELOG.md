@@ -20,6 +20,12 @@ its `version` field.
   The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
 
 ### Added
+- **Studio pose library** — the Preview pose panel gains named **expression
+  presets**: six built-ins (Neutral / Happy / Sad / Surprised / Content / Worried)
+  plus your own — set the expression sliders, name it, **save**. **Apply** writes
+  the preset's channel values as keys at the playhead (unlisted channels reset to
+  0, so a preset is a complete expression state) and syncs the sliders + 3D head.
+  Saved presets persist in the workspace. Display-only; the pipeline is untouched.
 - **Studio Face Graph — editable, cloneable rig outputs** — select a rig-output
   node and the inspector becomes an editor: tune the weight of each viseme driving
   it, add or remove a viseme, rename it, **clone** the output to tune a variant, or

@@ -165,6 +165,16 @@
             <label class="pose-row"><span>frown</span><input type="range" data-ch="frown" min="0" max="1" step="0.02" value="0"></label>
             <label class="pose-row"><span>brow raise</span><input type="range" data-ch="brow_raise" min="0" max="1" step="0.02" value="0"></label>
             <label class="pose-row"><span>cheeks</span><input type="range" data-ch="cheek_raise" min="0" max="1" step="0.02" value="0"></label>
+            <div class="pose-sub">expression presets</div>
+            <div class="pose-lib">
+              <select id="poseSelect" class="pose-select" title="Expression presets"></select>
+              <button class="btn ghost sm" id="poseApply" title="Apply this preset at the playhead">apply</button>
+              <button class="btn ghost sm" id="poseDel" title="Delete the saved preset" disabled>🗑</button>
+            </div>
+            <div class="pose-lib">
+              <input id="poseName" class="pose-name" type="text" placeholder="save current as…" spellcheck="false">
+              <button class="btn ghost sm" id="poseSave" title="Save the current expression as a preset">＋ save</button>
+            </div>
             <p class="pose-note">Writes a key at the playhead on the take. Undo with Ctrl+Z.</p>
           </div>
         </div>
