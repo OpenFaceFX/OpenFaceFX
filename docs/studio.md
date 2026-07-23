@@ -31,7 +31,7 @@ Each FaceFX view maps onto code that already exists:
 | Phoneme editor (waveform + phoneme/word bar) | **Phonemes** — waveform + aligned phoneme strip | `alignment`, `pipeline`, `energy` |
 | Curve editor (offset curves) | **Curves** — coarticulated viseme & gesture curves | `coarticulation`, `curves` |
 | Face Graph (nodes + link functions) | **Face Graph** — viseme inputs → rig outputs via links | `mapping`, `retarget`, `links` (#68) |
-| Mapping (phoneme→weighted targets, Basic/Tongue/Jaw) | Face Graph presets | `mapping` articulator classes |
+| Mapping (phoneme→weighted targets, Basic/Tongue/Jaw) | **Mapping** — editable phoneme→viseme weight table; apply-on-Generate + download a canonical `openfacefx.mapping` | `mapping` (`Mapping.default`/`from_json`/`to_json`) |
 | Events / curve-attached notifies | **Events** — auto-authored emphasis/phrase event layer on a timeline; rides in the track JSON → exports as engine notifies | `events`, `pipeline.derive_events` |
 | Analysis Actor (blinks, brows, head) | Generate options (gestures, breath) | `gestures`, `prosody` |
 | Export / Publish | **Export** — every engine/DCC target | `export_*`, `importers_*` |
@@ -48,7 +48,7 @@ that resolves to whichever runtime is present:
 
 ```
                      ┌────────────────────────── studio_web/ (one SPA) ──────────────────────────┐
-                     │  Preview · Phonemes · Curves · Events · Face Graph · Export · Assistant    │
+                     │  Preview · Phonemes · Curves · Events · Face Graph · Mapping · Export · Assistant │
                      └───────────────┬───────────────────────────────────────────┬───────────────┘
                                      │  Pipe.generate / export / presets           │  callLLM
              ┌───────────────────────┴───────────────┐                 ┌───────────┴───────────┐

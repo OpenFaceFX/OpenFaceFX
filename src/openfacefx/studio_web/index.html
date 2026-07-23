@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
 <title>OpenFaceFX Studio</title>
 <meta name="description" content="A web-based facial-animation & lip-sync studio — the open FaceFX Studio, powered by the OpenFaceFX pipeline running in your browser.">
 <link rel="stylesheet" href="studio.css">
@@ -120,6 +121,7 @@
       <button class="tab" data-view="curves" role="tab">Curves</button>
       <button class="tab" data-view="events" role="tab">Events</button>
       <button class="tab" data-view="facegraph" role="tab">Face&nbsp;Graph</button>
+      <button class="tab" data-view="mapping" role="tab">Mapping</button>
       <button class="tab" data-view="export" role="tab">Export</button>
       <button class="tab" data-view="assistant" role="tab">Assistant</button>
     </nav>
@@ -220,6 +222,20 @@
         </div>
         <canvas id="facegraph" class="lane tall"></canvas>
         <p class="view-note dim">The retarget network: viseme &amp; emotion inputs drive rig outputs through <b>link functions</b> (linear · quadratic · cubic · sqrt · clamped). Pick a target rig preset above.</p>
+      </section>
+
+      <!-- Mapping -->
+      <section class="view" data-view="mapping">
+        <div class="lane-head">
+          <h3>Mapping <span class="dim" id="mapPresetLabel"></span></h3>
+          <div class="lane-tools">
+            <label class="opt inline" title="Use this mapping the next time you Generate"><input type="checkbox" id="mapApply"> apply on Generate</label>
+            <button class="btn sm" id="mapReset" title="Restore the built-in mapping">↺ Reset</button>
+            <button class="btn sm" id="mapDownload" title="Download as an openfacefx.mapping JSON">⤓ Mapping JSON</button>
+          </div>
+        </div>
+        <div id="mappingTable" class="mapping-table"></div>
+        <p class="view-note dim">The <b>phoneme → viseme</b> weight table — the mapping the solver applies before coarticulation (the built-in Oculus-15 table). Edit a weight, rename a target, or add/remove one. Turn on <b>apply on Generate</b> and your edits drive the next take (curves &amp; preview change). <b>Download</b> a canonical <code>openfacefx.mapping</code> JSON to reuse from the CLI/API (<code>--mapping</code>). This is a different layer from the <b>Face&nbsp;Graph</b> (viseme → rig targets).</p>
       </section>
 
       <!-- Export -->

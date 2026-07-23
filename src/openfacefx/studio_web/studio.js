@@ -28,6 +28,7 @@ const S = {
   inspectKind:null, node:null, fgNodes:[], solo:null,             // inspector + graph hit-testing
   undo:[], redo:[],                                               // curve-edit history
   events:[],                                                      // derived event layer (Events tab)
+  phonMap:null, mapCustom:false,                                  // Mapping tab: editable phoneme→viseme map
 };
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const DEFAULT_PARAMS={ text:"Hello world — this is OpenFaceFX Studio, running the real pipeline right in your browser.",
@@ -110,7 +111,7 @@ def _style_coart(style):
     except Exception:
         return None
 
-def studio_generate(text, engine, dur, style, gestures, breath, has_wav, fps, cmudict=''):
+def studio_generate(text, engine, dur, style, gestures, breath, has_wav, fps, cmudict='', mapping_json=''):
     fps = float(fps) or 60.0
     if has_wav:
         try: dur = offx.wav_duration('/tmp/in.wav')
@@ -123,8 +124,18 @@ def studio_generate(text, engine, dur, style, gestures, breath, has_wav, fps, cm
             from openfacefx.g2p import G2P
             g2p = G2P(); g2p.load_cmudict('/tmp/cmu.dict')
         except Exception: g2p = None
+    mapping = None
+    if mapping_json:
+        try:
+            with open('/tmp/map.json','w') as f: f.write(mapping_json)
+            from openfacefx.mapping import Mapping
+            mapping = Mapping.from_json('/tmp/map.json')
+        except Exception: mapping = None
     segs = naive_segments(text, dur, g2p=g2p)
     coart = _style_coart(style)
+    gkw = {'fps': fps}
+    if coart is not None: gkw['coart'] = coart
+    if mapping is not None: gkw['mapping'] = mapping
     if has_wav and engine == 'energy':
         try: track = generate_naive(text, dur, wav='/tmp/in.wav', fps=fps, g2p=g2p)
         except TypeError:
@@ -132,8 +143,7 @@ def studio_generate(text, engine, dur, style, gestures, breath, has_wav, fps, cm
             except TypeError: track = generate_naive(text, dur, wav='/tmp/in.wav')
     else:
         try:
-            track = generate_from_alignment(segs, fps=fps, coart=coart) if coart is not None \
-                    else generate_from_alignment(segs, fps=fps)
+            track = generate_from_alignment(segs, **gkw)
         except TypeError:
             track = generate_from_alignment(segs, fps=fps)
     if gestures or breath:
@@ -208,6 +218,34 @@ def studio_events(segments_json, emphasis=True, phrase=True):
     evs = derive_events(segments=segs, emphasis=bool(emphasis), phrase=bool(phrase))
     return json.dumps({"events": [event_to_dict(e) for e in evs]})
 
+def studio_mapping_default():
+    # the built-in phoneme->viseme mapping as {phoneme:[[viseme,weight]...]}
+    from openfacefx.mapping import Mapping
+    m = Mapping.default()
+    return json.dumps({ph: [[t, round(float(w),3)] for t,w in row.items()]
+                       for ph,row in m.rows.items()})
+
+def studio_mapping_json(edit_json, base_preset):
+    # serialise the edited {phoneme:[[viseme,weight]...]} to a canonical
+    # openfacefx.mapping file (Mapping.to_json). Targets carry only their name
+    # (default class/min/max), which round-trips through retarget --mapping.
+    import tempfile
+    from openfacefx.mapping import Mapping, Target
+    edit = json.loads(edit_json or '{}')
+    rows, used, seen = {}, [], set()
+    for vis, tgts in edit.items():
+        r = {}
+        for tw in tgts:
+            t = tw[0] if tw else None
+            if not t: continue
+            try: r[t] = float(tw[1])
+            except (TypeError, ValueError, IndexError): continue
+            if t not in seen: seen.add(t); used.append(t)
+        if r: rows[vis] = r
+    targets = [Target(n) for n in used] or [Target("_none")]
+    p = os.path.join(tempfile.mkdtemp(), 'm.json'); Mapping(targets, rows).to_json(p)
+    with open(p) as f: return json.dumps({"json": f.read()})
+
 _EXPORTERS = {}
 def _reg(fmt, fn): _EXPORTERS[fmt]=fn
 
@@ -259,7 +297,7 @@ const Pipe = {
   async generate(args){
     if(S.native) return fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(args)}).then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_generate");
-    const out=await fn(args.text,args.engine,args.dur,args.style,args.gestures,args.breath,args.has_wav,args.fps,args.cmudict||"");
+    const out=await fn(args.text,args.engine,args.dur,args.style,args.gestures,args.breath,args.has_wav,args.fps,args.cmudict||"",args.mapping_json||"");
     fn.destroy(); return JSON.parse(out);
   },
   async export(fmt){
@@ -291,6 +329,14 @@ const Pipe = {
   async events(emphasis,phrase){
     if(S.native) return fetch("/api/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({segments:S.segments,emphasis,phrase})}).then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_events"); const r=JSON.parse(fn(JSON.stringify(S.segments||[]),!!emphasis,!!phrase)); fn.destroy(); return r;
+  },
+  async mappingJson(edit,preset){
+    if(S.native) return fetch("/api/mapping_json",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({edit,preset})}).then(r=>r.json());
+    const fn=S.pyodide.globals.get("studio_mapping_json"); const r=JSON.parse(fn(JSON.stringify(edit),preset)); fn.destroy(); return r;
+  },
+  async mappingDefault(){
+    if(S.native) return fetch("/api/mapping_default").then(r=>r.json());
+    const fn=S.pyodide.globals.get("studio_mapping_default"); const r=JSON.parse(fn()); fn.destroy(); return r;
   }
 };
 
@@ -329,11 +375,12 @@ async function runGenerate(preserve){
     const hasWav=!!S.wavBytes && $("#engine").value==="energy";
     let wav_b64;
     if(hasWav){ if(S.native) wav_b64=toB64(S.wavBytes); else S.pyodide.FS.writeFile("/tmp/in.wav",S.wavBytes); }
+    const mapping_json=($("#mapApply")&&$("#mapApply").checked)?await customMappingJson():"";  // custom phoneme→viseme mapping (#15)
     const res=await Pipe.generate({
       text:$("#text").value.trim()||"hello", engine:$("#engine").value,
       dur:parseFloat($("#dur").value)||4, style:$("#style").value,
       gestures:$("#optGestures").checked, breath:$("#optBreath").checked,
-      has_wav:hasWav, wav_b64, fps:S.fps, cmudict:(curTake()&&curTake().cmudict)||"" });
+      has_wav:hasWav, wav_b64, fps:S.fps, cmudict:(curTake()&&curTake().cmudict)||"", mapping_json });
     if(res.error) throw new Error(res.error);
     if(!curTake()) newTakeSlot();          // first Generate creates take_01
     const tk=curTake();
@@ -522,6 +569,7 @@ $$("#tabs .tab").forEach(t=>t.onclick=()=>{
   $$(".view").forEach(v=>v.classList.remove("active"));
   S.view=t.dataset.view; $(`.view[data-view="${S.view}"]`).classList.add("active"); drawAll();
   if(S.view==="events") renderEventList();
+  if(S.view==="mapping") renderMapping();
   if(S.view==="preview" && window.Preview3D&&window.Preview3D.ready) window.Preview3D.resize();
 });
 function drawAll(){ drawPreview(); if(S.view==="curves"){drawCurves(); drawCurveStrip();} if(S.view==="phonemes")drawPhonemes(); if(S.view==="facegraph")drawFaceGraph(); if(S.view==="events"){drawEvents(); drawEventStrip();} updateInspVal(); }
@@ -755,7 +803,8 @@ function drawStrip(){
 /* ---- Face Graph (input visemes -> preset targets via link fns) ------ */
 function initFaceGraphPresets(){
   const sel=$("#fgPreset"); sel.innerHTML=S.presets.map(p=>`<option ${p==="arkit"?"selected":""}>${p}</option>`).join("");
-  sel.onchange=async()=>{ S.presetSel=sel.value; S.presetMap=await Pipe.presetMap(sel.value); if(S.view==="facegraph")drawFaceGraph(); };
+  sel.onchange=async()=>{ S.presetSel=sel.value; S.presetMap=await Pipe.presetMap(sel.value);
+    if(S.view==="facegraph")drawFaceGraph(); };
 }
 async function drawFaceGraph(){
   const cv=$("#facegraph"); const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h); x.fillStyle=css("--panel-2"); x.fillRect(0,0,w,h);
@@ -786,6 +835,52 @@ async function drawFaceGraph(){
   x.fillText("inputs — visemes", colL-60, 16); x.fillText("outputs — "+S.presetSel+" rig", colR-60, 16);
 }
 function roundRect(x,a,b,w,h,r){ x.beginPath(); x.moveTo(a+r,b); x.arcTo(a+w,b,a+w,b+h,r); x.arcTo(a+w,b+h,a,b+h,r); x.arcTo(a,b+h,a,b,r); x.arcTo(a,b,a+w,b,r); x.closePath(); }
+
+/* ---- Mapping (editable phoneme→viseme table, the real --mapping layer, #15) --
+ * This is the openfacefx.mapping / `retarget --mapping` layer (phoneme →
+ * weighted visemes), NOT the Face Graph (which is the viseme→rig retarget preset,
+ * chosen by name, not file-customisable). Edits export as a canonical mapping
+ * file AND, when "apply" is on, drive the next Generate. */
+function mapPresetLabel(){ const l=$("#mapPresetLabel"); if(l) l.textContent=
+  "· phoneme → viseme"+(S.phonMap?" · "+Object.keys(S.phonMap).length+" phonemes":"")+(S.mapCustom?" · edited":""); }
+async function loadPhonMap(){ if(S.phonMap) return; try{ S.phonMap=await Pipe.mappingDefault(); }catch(_){ S.phonMap={}; } }
+async function renderMapping(){
+  const host=$("#mappingTable"); if(!host)return;
+  await loadPhonMap(); mapPresetLabel();
+  const phons=Object.keys(S.phonMap||{});
+  if(!phons.length){ host.innerHTML='<p class="dim">Mapping unavailable.</p>'; return; }
+  host.innerHTML=phons.map(ph=>{
+    const rows=S.phonMap[ph]||[];
+    const cells=rows.map((tw,i)=>
+      `<span class="map-cell"><input class="map-w" type="number" min="0" max="1" step="0.05" value="${(+tw[1]).toFixed(2)}" data-p="${esc(ph)}" data-i="${i}">`+
+      `<input class="map-t" type="text" value="${esc(tw[0])}" data-p="${esc(ph)}" data-i="${i}" spellcheck="false">`+
+      `<button class="map-del" data-p="${esc(ph)}" data-i="${i}" title="Remove target">✕</button></span>`).join("");
+    return `<div class="map-row"><span class="map-vis">${esc(ph)}</span><div class="map-cells">${cells}`+
+      `<button class="map-add" data-p="${esc(ph)}" title="Add a viseme target">＋</button></div></div>`;
+  }).join("");
+  host.querySelectorAll(".map-w").forEach(inp=>inp.onchange=()=>{
+    let w=parseFloat(inp.value); if(!isFinite(w))w=0; w=Math.max(0,Math.min(1,w)); inp.value=w.toFixed(2);
+    S.phonMap[inp.dataset.p][+inp.dataset.i][1]=w; mapEdited(); });
+  host.querySelectorAll(".map-t").forEach(inp=>inp.onchange=()=>{
+    S.phonMap[inp.dataset.p][+inp.dataset.i][0]=inp.value.trim(); mapEdited(); });
+  host.querySelectorAll(".map-del").forEach(b=>b.onclick=()=>{
+    S.phonMap[b.dataset.p].splice(+b.dataset.i,1); mapEdited(); renderMapping(); });
+  host.querySelectorAll(".map-add").forEach(b=>b.onclick=()=>{
+    S.phonMap[b.dataset.p].push(["aa",1.0]); mapEdited(); renderMapping(); });
+}
+function mapEdited(){ S.mapCustom=true; mapPresetLabel(); updateReanalyze&&updateReanalyze(); }
+async function resetMapping(){ try{ S.phonMap=await Pipe.mappingDefault(); }catch(_){}
+  S.mapCustom=false; renderMapping(); }
+/* the edited mapping as a canonical openfacefx.mapping JSON (or "" if unusable) */
+async function customMappingJson(){ if(!(S.mapCustom&&S.phonMap)) return "";
+  try{ const r=await Pipe.mappingJson(S.phonMap,"arkit"); return r&&r.json?r.json:""; }catch(_){ return ""; } }
+async function downloadMapping(){
+  try{ const r=await Pipe.mappingJson(S.phonMap||{},"arkit");
+    if(r.error){ alert("Mapping export failed: "+r.error); return; }
+    const blob=new Blob([r.json],{type:"application/json"}); const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download="phoneme.mapping.json"; a.click(); URL.revokeObjectURL(url);
+  }catch(err){ alert("Mapping export failed: "+err.message); }
+}
 
 /* ===================================================================== *
  *  Canvas interactions — seek, select a curve, drag keyframes, inspect nodes
@@ -876,6 +971,8 @@ function wireCanvases(){
   $("#evRun")&&($("#evRun").onclick=runEvents);
   // re-derive live when a toggle changes, but only once events already exist
   ["#evEmphasis","#evPhrase"].forEach(id=>{ const c=$(id); if(c) c.onchange=()=>{ if(S.events&&S.events.length) runEvents(); }; });
+  $("#mapReset")&&($("#mapReset").onclick=resetMapping);
+  $("#mapDownload")&&($("#mapDownload").onclick=downloadMapping);
   refreshUndoButtons(); wirePosePanel();
   addEventListener("keydown",e=>{ if(!(e.ctrlKey||e.metaKey))return; const t=e.target.tagName;
     if(t==="INPUT"||t==="TEXTAREA"||t==="SELECT")return;

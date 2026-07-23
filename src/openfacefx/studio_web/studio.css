@@ -179,6 +179,27 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .ev-type { color:var(--fg); text-transform:uppercase; letter-spacing:.04em; font-size:11px; min-width:66px; }
 .ev-name { color:var(--fg); }
 .ev-pay { margin-left:auto; font-size:11px; }
+/* Mapping tab — editable viseme→target weight table (#15) */
+.mapping-table { display:flex; flex-direction:column; gap:4px; max-height:60vh; overflow:auto;
+  font-family:var(--font-mono); font-size:12px; padding-right:4px; }
+.map-row { display:flex; align-items:flex-start; gap:10px; padding:5px 6px; border-radius:var(--r-sm);
+  background:var(--panel-2); border:1px solid var(--line); }
+.map-vis { min-width:42px; color:var(--accent); font-weight:600; padding-top:4px; flex:none; }
+.map-cells { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.map-cell { display:inline-flex; align-items:center; gap:3px; background:var(--elev);
+  border:1px solid var(--line); border-radius:100px; padding:2px 4px 2px 6px; }
+.map-w { width:44px; background:transparent; color:var(--accent-2); border:none; font-family:var(--font-mono);
+  font-size:11.5px; text-align:right; -moz-appearance:textfield; }
+.map-w::-webkit-outer-spin-button, .map-w::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+.map-t { width:120px; background:transparent; color:var(--fg); border:none; border-bottom:1px dashed var(--line);
+  font-family:var(--font-mono); font-size:11.5px; }
+.map-w:focus, .map-t:focus { outline:none; color:var(--fg); }
+.map-t:focus { border-bottom-color:var(--accent); }
+.map-del { background:none; border:none; color:var(--fg-mute); cursor:pointer; font-size:11px; padding:0 2px; }
+.map-del:hover { color:var(--crit); }
+.map-add { background:var(--elev); border:1px dashed var(--line); border-radius:100px; color:var(--fg-dim);
+  cursor:pointer; font-size:12px; padding:2px 9px; }
+.map-add:hover { border-color:var(--accent); color:var(--fg); }
 .mini, .m011 { background:var(--panel-2); color:var(--fg); border:1px solid var(--line);
   border-radius:var(--r-sm); padding:5px 8px; font-size:12.5px; }
 

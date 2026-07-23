@@ -20,6 +20,24 @@ its `version` field.
   The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
 
 ### Added
+- **Studio Mapping tab** (#15) — a new **Mapping** view that edits the
+  **phoneme → viseme** weight table (the `openfacefx.mapping` / `retarget
+  --mapping` layer the solver applies before coarticulation — distinct from the
+  Face Graph's viseme→rig retarget preset). Adjust a weight, rename a viseme
+  target, add/remove one per phoneme; **Reset** restores the built-in Oculus-15
+  table. Turn on **apply on Generate** and the edited mapping drives the next take
+  — the generated curves and preview change (verified: remapping every phoneme to
+  one viseme collapses the output to that channel). **Download** emits a canonical
+  `openfacefx.mapping` JSON that `Mapping.from_json` / `--mapping` accept. Wired in
+  both runtimes (`studio_mapping_default`/`studio_mapping_json` Pyodide bridges +
+  native `/api/mapping_default` and `/api/mapping_json`, and an opt-in `mapping_json`
+  threaded through `studio_generate`/`_generate`). Default (no custom mapping) stays
+  byte-identical.
+- **Site favicon** — every page now carries the OpenFaceFX logo as its favicon
+  (`docs/logo.svg`): the Studio (previously none), the try-it and talking-face
+  demos, and the generated track-preview pages, alongside the landing page that
+  already had it. The logo ships inside `studio_web/` so it resolves in all three
+  Studio runtimes (native, static, deployed).
 - **Studio Events tab** (#14) — a new **Events** view in OpenFaceFX Studio that
   auto-authors a typed event layer from the take's own speech
   (`pipeline.derive_events`): **emphasis** beats on stressed syllables and

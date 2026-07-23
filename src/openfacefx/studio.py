@@ -76,6 +76,15 @@ def _generate(p: dict) -> dict:
             g2p = G2P(); g2p.load_cmudict(cmu); os.remove(cmu)
         except Exception:
             g2p = None
+    mapping = None
+    if p.get("mapping_json"):
+        try:
+            from openfacefx.mapping import Mapping
+            fd3, mp = tempfile.mkstemp(suffix=".json"); os.close(fd3)
+            with open(mp, "w") as f: f.write(p["mapping_json"])
+            mapping = Mapping.from_json(mp); os.remove(mp)
+        except Exception:
+            mapping = None
     try:
         segs = naive_segments(text, dur, g2p=g2p)
         if wav_path and engine == "energy":
@@ -84,7 +93,9 @@ def _generate(p: dict) -> dict:
                 try: track = generate_naive(text, dur, wav=wav_path, g2p=g2p)
                 except TypeError: track = generate_naive(text, dur, wav=wav_path)
         else:
-            track = generate_from_alignment(segs, fps=fps)
+            gkw = {"fps": fps}
+            if mapping is not None: gkw["mapping"] = mapping
+            track = generate_from_alignment(segs, **gkw)
         if p.get("gestures") or p.get("breath"):
             gp = GestureParams(seed=1, breath_enable=bool(p.get("breath")))
             if p.get("breath") and not p.get("gestures"):
@@ -234,6 +245,43 @@ def _events(p: dict) -> dict:
     return {"events": [event_to_dict(e) for e in evs]}
 
 
+def _mapping_default() -> dict:
+    """The built-in phoneme→viseme mapping as {phoneme: [[viseme, weight]...]}."""
+    from openfacefx.mapping import Mapping
+    m = Mapping.default()
+    return {ph: [[t, round(float(w), 3)] for t, w in row.items()]
+            for ph, row in m.rows.items()}
+
+
+def _mapping_json(p: dict) -> dict:
+    """Serialise the Studio's edited phoneme→viseme weight table to a canonical
+    openfacefx.mapping JSON (Mapping.to_json) that ``retarget --mapping`` /
+    ``Mapping.from_json`` accept. Targets carry only their name (default
+    class/min/max)."""
+    from openfacefx.mapping import Mapping, Target
+    rows, used, seen = {}, [], set()
+    for vis, tgts in (p.get("edit") or {}).items():
+        r = {}
+        for tw in tgts:
+            t = tw[0] if tw else None
+            if not t:
+                continue
+            try:
+                r[t] = float(tw[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if t not in seen:
+                seen.add(t)
+                used.append(t)
+        if r:
+            rows[vis] = r
+    targets = [Target(n) for n in used] or [Target("_none")]
+    tmp = os.path.join(tempfile.mkdtemp(), "m.json")
+    Mapping(targets, rows).to_json(tmp)
+    with open(tmp) as f:
+        return {"json": f.read()}
+
+
 # --------------------------------------------------------------------------- #
 # HTTP handler                                                                 #
 # --------------------------------------------------------------------------- #
@@ -304,6 +352,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json(_presets())
         if path.startswith("/api/preset/"):
             return self._json(_preset(path.rsplit("/", 1)[-1]))
+        if path == "/api/mapping_default":
+            return self._json(_mapping_default())
         if path == "/api/auth/me":
             return self._json({"user": self._user()})
         if path == "/api/projects":
@@ -346,6 +396,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_qa(body))
             if path == "/api/events":
                 return self._json(_events(body))
+            if path == "/api/mapping_json":
+                return self._json(_mapping_json(body))
             if path in ("/api/auth/register", "/api/auth/login"):
                 from .studio_saas import AuthError
                 fn = _store().register if path.endswith("register") else _store().login
