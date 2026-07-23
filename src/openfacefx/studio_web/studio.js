@@ -31,6 +31,7 @@ const S = {
   phonMap:null, mapCustom:false,                                  // Mapping tab: editable phoneme→viseme map
   fgCustom:false, customOuts:[], fgConst:{}, fgLink:{},           // Face Graph: cloned outputs, manual constants, response (link) functions
   poses:[],                                                       // saved expression presets (pose library)
+  selKeys:[],                                                     // box-selected keyframes of S.sel (by reference)
 };
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const DEFAULT_PARAMS={ text:"Hello world — this is OpenFaceFX Studio, running the real pipeline right in your browser.",
@@ -457,7 +458,7 @@ async function runGenerate(preserve){
     if(!preserve){ tk.edited=false; tk.owned={}; }    // full Generate drops ownership; Reanalyze keeps it
     if(!preserve){ S.events=[]; } else if(S.events&&S.events.length){ newTrack.events=S.events; }  // event layer: reset on full gen, carried on Reanalyze
     S.track=newTrack; S.segments=res.segments||[]; S.words=res.words||[]; S.duration=res.duration; S.t=0;
-    S.undo.length=0; S.redo.length=0;                 // rebuild clears undo history
+    S.undo.length=0; S.redo.length=0; S.selKeys=[];   // rebuild clears undo history + box-selection
     ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons(); updateReanalyze();
     $("#tpDur").textContent="/ "+fmt(S.duration); refreshIO();
     btn.textContent="Generate take"; btn.disabled=false; return true;
@@ -521,7 +522,7 @@ function syncFormToTake(){ const t=curTake(); if(!t)return;
 function newTakeSlot(){ const a=curActor(); a.takes.push({ name:nextTakeName(a), params:captureParams(),
   wavBytes:S.wavBytes, wavPeaks:S.wavPeaks, wavName:$("#wavName").textContent, track:null, segments:[], duration:0 });
   S.takeIdx=a.takes.length-1; return curTake(); }
-function clearResultOnly(){ S.track=null; S.segments=[]; S.words=[]; S.duration=0; S.t=0; S.sel=null; S.solo=null; S.chan={};
+function clearResultOnly(){ S.track=null; S.segments=[]; S.words=[]; S.duration=0; S.t=0; S.sel=null; S.solo=null; S.chan={}; S.selKeys=[];
   S.inspectKind=null; S.node=null; S.events=[];
   const list=$("#channelList"); if(list) list.innerHTML='<li class="empty">Generate this take to see its animation channels.</li>';
   $("#chCount").textContent="0"; $("#tpDur").textContent="/ 00:00.000"; buildInspector(); setScrub(); drawAll(); renderEventList(); }
@@ -529,7 +530,7 @@ function loadTake(){ const t=curTake();
   if(!t){ applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; $("#wavName").textContent="no audio — timing from text"; clearResultOnly(); updateBatchBtn(); return; }
   applyParams(t.params); S.wavBytes=t.wavBytes||null; S.wavPeaks=t.wavPeaks||null; updateBatchBtn();
   $("#wavName").textContent=t.wavName||"no audio — timing from text";
-  if(t.track){ S.track=t.track; S.segments=t.segments||[]; S.words=t.words||[]; S.duration=t.duration; S.t=0; S.sel=null; S.solo=null;
+  if(t.track){ S.track=t.track; S.segments=t.segments||[]; S.words=t.words||[]; S.duration=t.duration; S.t=0; S.sel=null; S.solo=null; S.selKeys=[];
     S.inspectKind=null; S.node=null; S.events=(t.track.events)||[]; ingestChannels(); buildChannelList(); buildInspector();
     $("#tpDur").textContent="/ "+fmt(S.duration); setScrub(); drawAll(); renderEventList(); }
   else clearResultOnly(); }
@@ -605,7 +606,7 @@ function buildChannelList(){
     list.appendChild(li);
   }
 }
-function selChannel(name){ S.sel=name; S.inspectKind="channel"; S.node=null; buildChannelList(); buildInspector();
+function selChannel(name){ if(name!==S.sel) S.selKeys=[]; S.sel=name; S.inspectKind="channel"; S.node=null; buildChannelList(); buildInspector();
   if(S.view==="curves")drawCurves(); }
 
 function buildInspector(){
@@ -912,9 +913,16 @@ function drawCurves(){
       x.stroke(); }
   }
   x.globalAlpha=1;
-  // draggable keyframe dots for the selected channel
-  if(S.sel){ const c=chan(S.sel); if(c){ x.fillStyle=S.chan[S.sel].color; x.strokeStyle=css("--bg"); x.lineWidth=1;
-    for(const [t,v] of c.keys){ x.beginPath(); x.arc(X(t),Y(v),3.4,0,7); x.fill(); x.stroke(); } } }
+  // draggable keyframe dots for the selected channel (box-selected ones highlighted)
+  if(S.sel){ const c=chan(S.sel); if(c){ const sset=new Set(S.selKeys); const base=S.chan[S.sel].color;
+    for(const k of c.keys){ const on=sset.has(k); x.fillStyle=on?css("--accent"):base; x.strokeStyle=css("--bg"); x.lineWidth=1;
+      x.beginPath(); x.arc(X(k[0]),Y(k[1]),on?4.6:3.4,0,7); x.fill(); x.stroke();
+      if(on){ x.strokeStyle=css("--accent"); x.lineWidth=1.4; x.beginPath(); x.arc(X(k[0]),Y(k[1]),7,0,7); x.stroke(); } } } }
+  // marquee (box-select) rectangle
+  if(marquee&&marquee.moved){ const rx=Math.min(marquee.x0,marquee.x1), ry=Math.min(marquee.y0,marquee.y1),
+    rw=Math.abs(marquee.x1-marquee.x0), rh=Math.abs(marquee.y1-marquee.y0);
+    x.fillStyle="color-mix(in srgb,"+css("--accent")+" 12%,transparent)"; x.fillRect(rx,ry,rw,rh);
+    x.strokeStyle=css("--accent"); x.lineWidth=1; x.setLineDash([4,3]); x.strokeRect(rx,ry,rw,rh); x.setLineDash([]); }
   // playhead
   const hx=X(S.t); x.strokeStyle=css("--accent"); x.lineWidth=1.5;
   x.beginPath();x.moveTo(hx,padT);x.lineTo(hx,padT+gh);x.stroke();
@@ -1122,23 +1130,44 @@ function addKeyAtPlayhead(){ if(!S.track||!S.sel){ return; } const c=chan(S.sel)
 function delKeyAtPlayhead(){ if(!S.track||!S.sel)return; const c=chan(S.sel); if(!c||c.keys.length<=1)return;
   snapshotUndo(); let bi=0,bd=1e9; for(let i=0;i<c.keys.length;i++){ const d=Math.abs(c.keys[i][0]-S.t); if(d<bd){bd=d;bi=i;} }
   c.keys.splice(bi,1); markChannelOwned(S.sel); afterEdit(); }
-let curveDrag=null;
+/* box-select: keep the selected channel's keys inside the marquee rectangle */
+function finishMarquee(){ const c=chan(S.sel); if(!c||!marquee){ S.selKeys=[]; drawCurves(); return; }
+  const g=marquee.g, T=marquee.T, x0=Math.min(marquee.x0,marquee.x1), x1=Math.max(marquee.x0,marquee.x1),
+    y0=Math.min(marquee.y0,marquee.y1), y1=Math.max(marquee.y0,marquee.y1);
+  S.selKeys=c.keys.filter(k=>{ const px=g.padL+g.gw*(k[0]/T), py=yAtVal(k[1],g); return px>=x0&&px<=x1&&py>=y0&&py<=y1; });
+  drawCurves(); }
+function deleteSelKeys(){ const c=chan(S.sel); if(!c||!S.selKeys.length)return; snapshotUndo();
+  const del=new Set(S.selKeys); let keys=c.keys.filter(k=>!del.has(k)); if(!keys.length) keys=[c.keys[0]];   // a channel keeps ≥1 key
+  c.keys=keys; S.selKeys=[]; markChannelOwned(c.name); afterEdit(); }
+let curveDrag=null, marquee=null;   // marquee = a box-select drag on empty canvas
+const clampV=(name,v)=>SIGNED_CH.test(name)?Math.max(-90,Math.min(90,v)):Math.max(0,Math.min(1,v));
 function wireCanvases(){
   const cv=$("#curves");
   if(cv){ cv.style.cursor="crosshair";
     cv.addEventListener("pointerdown",e=>{ if(!S.track)return; const {x,y,w,h}=canvasMetrics(cv,e); const g=curveGeom(w,h); const T=Math.max(.001,S.duration);
       if(S.sel){ const c=chan(S.sel); const ki=hitKeyframe(c,g,T,x,y);
-        if(ki>=0){
-          if(e.altKey||e.button===2){ if(c.keys.length>1){ snapshotUndo(); c.keys.splice(ki,1); markChannelOwned(c.name); afterEdit(); } return; }  // alt/right-click deletes
-          snapshotUndo(); curveDrag={ki,c,g,T}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; return; } }
-      const near=nearestChannel(g,T,x,y); if(near) selChannel(near);
-      seekAtX(x,g.gw,g.padL,T); });
-    cv.addEventListener("pointermove",e=>{ if(!curveDrag)return; const {x,y}=canvasMetrics(cv,e); const {ki,c,g,T}=curveDrag;
-      const k=c.keys[ki]; const nv=valAtY(y,g); k[1]=SIGNED_CH.test(c.name)?Math.max(-90,Math.min(90,nv)):Math.max(0,Math.min(1,nv));
+        if(ki>=0){ const k=c.keys[ki];
+          if(e.altKey||e.button===2){    // alt/right-click deletes — the selection if this key is in it, else just this key
+            if(S.selKeys.length>1 && S.selKeys.includes(k)) deleteSelKeys(); else if(c.keys.length>1){ snapshotUndo(); c.keys.splice(ki,1); S.selKeys=[]; markChannelOwned(c.name); afterEdit(); } return; }
+          if(S.selKeys.length>1 && S.selKeys.includes(k)){   // grab the whole selection
+            snapshotUndo(); curveDrag={multi:true,c,g,T,ox:x,oy:y,orig:S.selKeys.map(kk=>({k:kk,t:kk[0],v:kk[1]}))}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; return; }
+          S.selKeys=[]; snapshotUndo(); curveDrag={ki,c,g,T}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; return; } }
+      // empty canvas: start a marquee (resolves to a plain seek if the pointer doesn't move)
+      marquee={x0:x,y0:y,x1:x,y1:y,g,T,moved:false}; try{cv.setPointerCapture(e.pointerId);}catch(_){} });
+    cv.addEventListener("pointermove",e=>{ const {x,y}=canvasMetrics(cv,e);
+      if(marquee){ marquee.x1=x; marquee.y1=y; if(!marquee.moved && Math.hypot(x-marquee.x0,y-marquee.y0)>4) marquee.moved=true; if(marquee.moved) drawCurves(); return; }
+      if(!curveDrag)return; const {c,g,T}=curveDrag;
+      if(curveDrag.multi){ const dt=(x-curveDrag.ox)/g.gw*T, dv=valAtY(y,g)-valAtY(curveDrag.oy,g);
+        for(const o of curveDrag.orig){ o.k[0]=Math.max(0,Math.min(T,o.t+dt)); o.k[1]=clampV(c.name,o.v+dv); }
+        c.keys.sort((a,b)=>a[0]-b[0]); markEdited(); markChannelOwned(c.name); drawCurves(); drawPreview(); updateInspVal(); return; }
+      const ki=curveDrag.ki, k=c.keys[ki]; k[1]=clampV(c.name,valAtY(y,g));
       const lo=ki>0?c.keys[ki-1][0]:0, hi=ki<c.keys.length-1?c.keys[ki+1][0]:T;
       k[0]=Math.min(hi,Math.max(lo,(x-g.padL)/g.gw*T));
       markEdited(); markChannelOwned(c.name); drawCurves(); drawPreview(); updateInspVal(); });
-    const end=e=>{ if(curveDrag){ try{cv.releasePointerCapture(e.pointerId);}catch(_){}} curveDrag=null; cv.style.cursor="crosshair"; };
+    const end=e=>{
+      if(marquee){ if(marquee.moved) finishMarquee(); else { const near=nearestChannel(marquee.g,marquee.T,marquee.x0,marquee.y0); if(near)selChannel(near); seekAtX(marquee.x0,marquee.g.gw,marquee.g.padL,marquee.T); }
+        try{cv.releasePointerCapture(e.pointerId);}catch(_){} marquee=null; return; }
+      if(curveDrag){ try{cv.releasePointerCapture(e.pointerId);}catch(_){}} curveDrag=null; cv.style.cursor="crosshair"; };
     cv.addEventListener("pointerup",end); cv.addEventListener("pointercancel",end);
     cv.addEventListener("contextmenu",e=>e.preventDefault());   // right-click is used to delete a key
     cv.addEventListener("dblclick",e=>{ if(!S.track)return; const {x,y,w,h}=canvasMetrics(cv,e); const g=curveGeom(w,h); const T=Math.max(.001,S.duration);
@@ -1172,11 +1201,14 @@ function wireCanvases(){
   $("#mapReset")&&($("#mapReset").onclick=resetMapping);
   $("#mapDownload")&&($("#mapDownload").onclick=downloadMapping);
   refreshUndoButtons(); wirePosePanel();
-  addEventListener("keydown",e=>{ if(!(e.ctrlKey||e.metaKey))return; const t=e.target.tagName;
+  addEventListener("keydown",e=>{ const t=e.target.tagName;
     if(t==="INPUT"||t==="TEXTAREA"||t==="SELECT")return;
-    const k=e.key.toLowerCase();
-    if(k==="z"){ e.preventDefault(); e.shiftKey?redoEdit():undoEdit(); }
-    else if(k==="y"){ e.preventDefault(); redoEdit(); } });
+    if(e.ctrlKey||e.metaKey){ const k=e.key.toLowerCase();
+      if(k==="z"){ e.preventDefault(); e.shiftKey?redoEdit():undoEdit(); }
+      else if(k==="y"){ e.preventDefault(); redoEdit(); }
+      return; }
+    if(S.view==="curves" && (e.key==="Delete"||e.key==="Backspace") && S.selKeys.length){ e.preventDefault(); deleteSelKeys(); }
+    else if(e.key==="Escape" && S.selKeys.length){ S.selKeys=[]; drawCurves(); } });
 }
 
 /* ===================================================================== *

@@ -20,6 +20,12 @@ its `version` field.
   The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
 
 ### Added
+- **Studio Curves — box-select multi-keyframe editing** — drag a marquee over
+  empty space in the Curves editor to select multiple keyframes of the current
+  channel; drag any selected key to **move the whole group** together (re-sorted
+  as they cross), or press **Delete/Backspace** to remove them (a channel keeps at
+  least one key). Escape or clicking clears the selection; a plain click still
+  seeks. Selected keys are highlighted. Frontend-only, pipeline untouched.
 - **Studio batch generate** — a **Batch** button (shown when the transcript has
   more than one line) turns each non-empty line into its own take under the
   current actor, generating them in sequence with the same source settings — the
