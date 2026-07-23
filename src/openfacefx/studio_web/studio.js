@@ -418,12 +418,22 @@ const PREVIEW_GAIN={ jawOpen:1.75, mouthFunnel:1.2, mouthPucker:1.25, jawForward
   mouthDimpleLeft:0.5, mouthDimpleRight:0.5, mouthPressLeft:0.6, mouthPressRight:0.6,
   mouthStretchLeft:0.55, mouthStretchRight:0.55, mouthUpperUpLeft:0.85, mouthUpperUpRight:0.85,
   mouthLowerDownLeft:0.85, mouthLowerDownRight:0.85 };
+/* Preview-only viseme shape overrides (DISPLAY ONLY — the arkit preset that
+ * feeds the exporters is untouched). Some presets read as generic on the head:
+ * FF (F/V) is a labiodental — the lower lip tucks up to the upper teeth — but the
+ * preset rounds the lips (mouthPucker), which reads as "oo". Drive the correct
+ * shape here: roll the lower lip in + reveal the upper teeth, no pucker. */
+const PREVIEW_VISEME={
+  FF: [["mouthRollLower",1.0],["mouthUpperUpLeft",0.5],["mouthUpperUpRight",0.5],
+       ["mouthShrugUpper",0.35],["jawOpen",0.05]],
+};
 /* drive the 3D head: retarget visemes -> ARKit in JS, + gestures + head pose */
 function drive3D(p3d){
   const arkit={}; let visSum=0;
-  if(S.arkitMap) for(const [vis,tgts] of Object.entries(S.arkitMap)){
+  if(S.arkitMap) for(const [vis,tgts0] of Object.entries(S.arkitMap)){
     const c=chan(vis); if(!c) continue; const v=Math.max(0,sample(c.keys,S.t)); if(v<1e-4) continue;
     visSum+=v;
+    const tgts = PREVIEW_VISEME[vis] || tgts0;      // labiodental fix for FF, etc.
     for(const [t,w] of tgts) arkit[t]=(arkit[t]||0)+v*w;
   }
   for(const k in arkit) arkit[k]=Math.min(1, arkit[k]*(PREVIEW_GAIN[k]||1));
