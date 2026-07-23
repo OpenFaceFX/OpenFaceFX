@@ -814,27 +814,55 @@ async function drawFaceGraph(){
   const inPos={}, outPos={};
   inputs.forEach((n,i)=>inPos[n]=[colL,iy*(i+1)]); outs.forEach((n,i)=>outPos[n]=[colR,oy*(i+1)]);
   const selLabel=(S.inspectKind==="node"&&S.node)?S.node.label:null;
-  // links (highlight the ones touching the selected node)
+  // --- live signal at the playhead: input viseme activation propagates through the
+  //     weights to output values (display-only; the pipeline/exports are untouched) ---
+  const live=!!S.track; const inVal={}, outVal={};
+  if(live){
+    for(const v of inputs){ const c=chan(v); inVal[v]=c?Math.max(0,Math.min(1,sample(c.keys,S.t))):0; }
+    for(const [inp,tgts] of Object.entries(S.presetMap)) for(const [t,wt] of tgts) outVal[t]=(outVal[t]||0)+(inVal[inp]||0)*wt;
+    for(const t in outVal) outVal[t]=Math.max(0,Math.min(1,outVal[t]));
+  }
+  const acc=css("--accent");
+  // links: dim static base, then a bright live overlay + travelling pulse on active edges
   for(const [inp,tgts] of Object.entries(S.presetMap)) for(const [t,wt] of tgts){
     const a=inPos[inp], b=outPos[t]; if(!a||!b)continue;
+    const c1x=(a[0]+b[0])/2, c2x=(a[0]+b[0])/2, x0=a[0]+6, x3=b[0]-6;
+    const path=()=>{ x.beginPath(); x.moveTo(x0,a[1]); x.bezierCurveTo(c1x,a[1],c2x,b[1],x3,b[1]); x.stroke(); };
     const on=selLabel&&(inp===selLabel||t===selLabel);
-    x.strokeStyle=on?css("--accent"):css("--line-2"); x.globalAlpha=on?.9:(.32+wt*.5); x.lineWidth=(on?1.4:.6)+wt*2.2;
-    x.beginPath(); x.moveTo(a[0]+6,a[1]); x.bezierCurveTo((a[0]+b[0])/2,a[1],(a[0]+b[0])/2,b[1],b[0]-6,b[1]); x.stroke(); }
+    x.strokeStyle=on?acc:css("--line-2"); x.globalAlpha=on?.9:(.2+wt*.35); x.lineWidth=(on?1.4:.6)+wt*1.7; path();
+    const sig=live?(inVal[inp]||0)*wt:0;
+    if(sig>0.02){
+      x.strokeStyle=acc; x.globalAlpha=Math.min(1,.32+sig*.68); x.lineWidth=1+sig*4;
+      x.shadowColor=acc; x.shadowBlur=7*sig; path(); x.shadowBlur=0;
+      const u=((S.t*0.7)%1+1)%1, p=bezierPt(x0,a[1],c1x,a[1],c2x,b[1],x3,b[1],u);
+      x.globalAlpha=Math.min(1,sig+.25); x.fillStyle=acc;
+      x.beginPath(); x.arc(p[0],p[1],1.5+sig*2.4,0,7); x.fill();
+    }
+  }
   x.globalAlpha=1;
   S.fgNodes=[]; x.font="12px "+css("--font-mono");
-  const node=(px,py,label,fill,kind,data)=>{ const tw=x.measureText(label).width, bw=Math.max(46,tw+18);
-    const sel=label===selLabel; x.fillStyle=fill; x.strokeStyle=sel?css("--accent"):css("--line-2"); x.lineWidth=sel?2:1;
-    roundRect(x,px-bw/2,py-11,bw,22,6); x.fill(); x.stroke();
-    x.fillStyle=css("--fg"); x.textAlign="center"; x.textBaseline="middle"; x.fillText(label,px,py);
+  const node=(px,py,label,fill,kind,data,glow)=>{ const tw=x.measureText(label).width, bw=Math.max(46,tw+18);
+    const sel=label===selLabel, hot=glow>0.03;
+    if(hot){ x.shadowColor=acc; x.shadowBlur=4+glow*13; }
+    x.fillStyle=hot?"color-mix(in srgb,"+acc+" "+Math.round(18+glow*62)+"%,"+fill+")":fill;
+    x.strokeStyle=sel?acc:(hot?acc:css("--line-2")); x.lineWidth=sel?2:(hot?1.4:1);
+    roundRect(x,px-bw/2,py-11,bw,22,6); x.fill(); x.shadowBlur=0; x.stroke();
+    x.fillStyle=hot?css("--fg"):css("--fg"); x.textAlign="center"; x.textBaseline="middle"; x.fillText(label,px,py);
+    if(glow>0.06){ x.fillStyle=acc; x.font="9px "+css("--font-mono"); x.textAlign=kind==="in"?"right":"left";
+      x.fillText(glow.toFixed(2), kind==="in"?px-bw/2-5:px+bw/2+5, py); x.font="12px "+css("--font-mono"); x.textAlign="center"; }
     S.fgNodes.push({x:px,y:py,w:bw,h:22,label,kind,data}); };
-  for(const [n,[px,py]] of Object.entries(inPos)) node(px,py,n,css("--elev"),"in",S.presetMap[n]);
+  for(const [n,[px,py]] of Object.entries(inPos)) node(px,py,n,css("--elev"),"in",S.presetMap[n],inVal[n]||0);
   for(const [n,[px,py]] of Object.entries(outPos)){
     const incoming=Object.entries(S.presetMap).filter(([,tg])=>tg.some(p=>p[0]===n)).map(([inp,tg])=>[inp,tg.find(p=>p[0]===n)[1]]);
-    node(px,py,n,"color-mix(in srgb,"+css("--accent")+" 18%, "+css("--elev")+")","out",incoming); }
+    node(px,py,n,"color-mix(in srgb,"+acc+" 18%, "+css("--elev")+")","out",incoming,outVal[n]||0); }
   x.textAlign="left"; x.fillStyle=css("--fg-dim"); x.font="11px "+css("--font-ui");
   x.fillText("inputs — visemes", colL-60, 16); x.fillText("outputs — "+S.presetSel+" rig", colR-60, 16);
+  if(live){ x.textAlign="center"; x.fillStyle=css("--accent"); x.fillText((S.playing?"▶ live · ":"◦ ")+fmt(S.t), w/2, 16); }
 }
 function roundRect(x,a,b,w,h,r){ x.beginPath(); x.moveTo(a+r,b); x.arcTo(a+w,b,a+w,b+h,r); x.arcTo(a+w,b+h,a,b+h,r); x.arcTo(a,b+h,a,b,r); x.arcTo(a,b,a+w,b,r); x.closePath(); }
+/* point on a cubic bezier at parameter u∈[0,1] — for the travelling signal pulse */
+function bezierPt(x0,y0,x1,y1,x2,y2,x3,y3,u){ const m=1-u, a=m*m*m, b=3*m*m*u, c=3*m*u*u, d=u*u*u;
+  return [a*x0+b*x1+c*x2+d*x3, a*y0+b*y1+c*y2+d*y3]; }
 
 /* ---- Mapping (editable phoneme→viseme table, the real --mapping layer, #15) --
  * This is the openfacefx.mapping / `retarget --mapping` layer (phoneme →

@@ -20,6 +20,14 @@ its `version` field.
   The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
 
 ### Added
+- **Studio Face Graph — live signal flow** — the Face Graph now animates: press
+  play and each input viseme's activation at the playhead propagates through the
+  weights, glowing its node and brightening/pulsing its links to the rig targets
+  it drives (with live value labels and a travelling pulse along active edges).
+  Turns a static diagram into a real-time diagnostic (e.g. watch `FF` light up
+  `mouthShrugLower`/`mouthUpperUp`). Display-only — reads the take at the playhead;
+  the pipeline and every exporter are untouched. (Editable link functions are the
+  next step.)
 - **Studio Mapping tab** (#15) — a new **Mapping** view that edits the
   **phoneme → viseme** weight table (the `openfacefx.mapping` / `retarget
   --mapping` layer the solver applies before coarticulation — distinct from the
