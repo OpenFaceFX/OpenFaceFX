@@ -1,0 +1,11 @@
+# keep the build context (and image) small — never copy local envs / scratch
+venv/
+venv39/
+.venv/
+work/
+dist/
+build/
+.git/
+.pytest_cache/
+**/__pycache__/
+*.pyc

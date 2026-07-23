@@ -150,10 +150,20 @@ openfacefx studio --port 9000 --no-open
 Static web host: serve `src/openfacefx/studio_web/` (the GitHub Pages build copies
 it to `/studio`). It runs fully client-side via Pyodide there.
 
-## Deploying as SaaS (roadmap shape)
+Container / self-host (a runnable single-tenant SaaS today):
 
-The standalone server is the SaaS backend with three additions, none of which
-change the frontend:
+```bash
+docker build -t openfacefx-studio .
+docker run --rm -p 8080:8080 openfacefx-studio   # live at http://<host>:8080
+```
+
+The image runs `openfacefx studio --host 0.0.0.0` — the native pipeline plus the
+stateless `/api/llm` relay; keys stay client-side.
+
+## Scaling to a multi-tenant SaaS (roadmap shape)
+
+The container above is the SaaS backend; multi-tenant adds three pieces, none of
+which change the frontend:
 
 1. **Auth + projects** — user accounts; store `.track.json` takes + audio per
    project (the pipeline is already stateless request/response).
