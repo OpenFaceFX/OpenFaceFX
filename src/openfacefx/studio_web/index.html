@@ -145,9 +145,23 @@
             <span class="dim">the schematic face blends visemes in real time — a rig-neutral preview</span>
           </div>
           <div class="stage-tools" id="stageTools" hidden>
+            <button class="stage-btn" id="poseToggle" title="Pose controls (head + expression)">⊹</button>
             <button class="stage-btn" id="zoomInBtn" title="Zoom in">＋</button>
             <button class="stage-btn" id="zoomOutBtn" title="Zoom out">−</button>
             <button class="stage-btn" id="reframeBtn" title="Recenter the head">⟳</button>
+          </div>
+          <div class="pose-panel" id="posePanel" hidden>
+            <div class="pose-head"><span>Pose</span><button class="btn ghost sm" id="poseReset" title="Reset to neutral at the playhead">reset</button></div>
+            <div class="pose-pad" id="posePad" title="Drag — head pitch (↕) &amp; yaw (↔)"><div class="pose-dot" id="poseDot"></div></div>
+            <label class="pose-row"><span>roll</span><input type="range" id="poseRoll" min="-30" max="30" step="1" value="0"></label>
+            <div class="pose-sub">expression</div>
+            <label class="pose-row"><span>blink</span><input type="range" data-ch="blink" min="0" max="1" step="0.02" value="0"></label>
+            <label class="pose-row"><span>brow up</span><input type="range" data-ch="browUp" min="0" max="1" step="0.02" value="0"></label>
+            <label class="pose-row"><span>smile</span><input type="range" data-ch="smile" min="0" max="1" step="0.02" value="0"></label>
+            <label class="pose-row"><span>frown</span><input type="range" data-ch="frown" min="0" max="1" step="0.02" value="0"></label>
+            <label class="pose-row"><span>brow raise</span><input type="range" data-ch="brow_raise" min="0" max="1" step="0.02" value="0"></label>
+            <label class="pose-row"><span>cheeks</span><input type="range" data-ch="cheek_raise" min="0" max="1" step="0.02" value="0"></label>
+            <p class="pose-note">Writes a key at the playhead on the take. Undo with Ctrl+Z.</p>
           </div>
         </div>
       </section>

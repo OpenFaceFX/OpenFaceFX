@@ -778,12 +778,46 @@ function wireCanvases(){
   $("#cvAddKey")&&($("#cvAddKey").onclick=addKeyAtPlayhead);
   $("#cvDelKey")&&($("#cvDelKey").onclick=delKeyAtPlayhead);
   $("#qaRun")&&($("#qaRun").onclick=runQA);
-  refreshUndoButtons();
+  refreshUndoButtons(); wirePosePanel();
   addEventListener("keydown",e=>{ if(!(e.ctrlKey||e.metaKey))return; const t=e.target.tagName;
     if(t==="INPUT"||t==="TEXTAREA"||t==="SELECT")return;
     const k=e.key.toLowerCase();
     if(k==="z"){ e.preventDefault(); e.shiftKey?redoEdit():undoEdit(); }
     else if(k==="y"){ e.preventDefault(); redoEdit(); } });
+}
+
+/* ===================================================================== *
+ *  On-face pose controls — head XY pad + expression/gesture sliders
+ *  Write a key at the playhead through setChannelAt; drive3D applies head pose
+ *  (signed degrees) + the emotion/gesture channels live. (backlog #12/#17)
+ * ===================================================================== */
+function wirePosePanel(){
+  const panel=$("#posePanel"), pad=$("#posePad"), dot=$("#poseDot"), tog=$("#poseToggle"); if(!panel||!pad||!tog) return;
+  const EXPR=[...panel.querySelectorAll('input[data-ch]')], roll=$("#poseRoll"), RANGE=25;   // degrees
+  const gval=n=>{ const c=chan(n); return c?sample(c.keys,S.t):0; };
+  const setDot=(nx,ny)=>{ dot.style.left=((nx+1)/2*100)+"%"; dot.style.top=((ny+1)/2*100)+"%"; };
+  function sync(){ const yaw=gval("headYaw"), pitch=gval("headPitch");
+    setDot(Math.max(-1,Math.min(1,yaw/RANGE)), Math.max(-1,Math.min(1,pitch/RANGE)));
+    roll.value=gval("headRoll"); EXPR.forEach(inp=>{ inp.value=gval(inp.dataset.ch); }); }
+  function need(){ if(!S.track){ alert("Generate a take first — pose controls write keys onto the take."); return false; } return true; }
+  tog.onclick=()=>{ panel.hidden=!panel.hidden; if(!panel.hidden) sync(); };
+  let padDrag=false;
+  const padTo=e=>{ const r=pad.getBoundingClientRect();
+    const nx=Math.max(-1,Math.min(1,(e.clientX-r.left)/r.width*2-1)), ny=Math.max(-1,Math.min(1,(e.clientY-r.top)/r.height*2-1));
+    setDot(nx,ny); setChannelAt("headYaw",nx*RANGE,S.t); setChannelAt("headPitch",ny*RANGE,S.t); markEdited(); drawPreview(); };
+  pad.addEventListener("pointerdown",e=>{ if(!need())return; snapshotUndo(); padDrag=true; try{pad.setPointerCapture(e.pointerId);}catch(_){} padTo(e); });
+  pad.addEventListener("pointermove",e=>{ if(padDrag) padTo(e); });
+  const padEnd=e=>{ padDrag=false; try{pad.releasePointerCapture(e.pointerId);}catch(_){} };
+  pad.addEventListener("pointerup",padEnd); pad.addEventListener("pointercancel",padEnd);
+  pad.addEventListener("contextmenu",e=>{ e.preventDefault(); if(!need())return; snapshotUndo();
+    setChannelAt("headYaw",0,S.t); setChannelAt("headPitch",0,S.t); setDot(0,0); markEdited(); drawPreview(); });
+  roll.addEventListener("pointerdown",()=>{ if(need()) snapshotUndo(); });
+  roll.addEventListener("input",()=>{ if(!S.track)return; setChannelAt("headRoll",parseFloat(roll.value)||0,S.t); markEdited(); drawPreview(); });
+  EXPR.forEach(inp=>{ inp.addEventListener("pointerdown",()=>{ if(need()) snapshotUndo(); });
+    inp.addEventListener("input",()=>{ if(!S.track)return; setChannelAt(inp.dataset.ch,parseFloat(inp.value)||0,S.t); markEdited(); drawPreview(); }); });
+  $("#poseReset")&&($("#poseReset").onclick=()=>{ if(!need())return; snapshotUndo();
+    ["headYaw","headPitch","headRoll"].forEach(n=>setChannelAt(n,0,S.t));
+    EXPR.forEach(inp=>setChannelAt(inp.dataset.ch,0,S.t)); sync(); afterEdit(); });
 }
 
 /* ===================================================================== *
