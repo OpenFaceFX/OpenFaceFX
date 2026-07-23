@@ -640,30 +640,49 @@ function fitCanvas(cv){ const r=cv.getBoundingClientRect(); const dpr=devicePixe
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 /* ---- Curves --------------------------------------------------------- */
+/* value range over visible channels — [0,1] by default, expands to fit SIGNED
+ * pose channels (headYaw/Pitch/Roll…) so they don't render clamped-flat (#25) */
+let CURVE_VR=[0,1];
+function curveValueRange(){
+  let lo=0, hi=1, ext=false;
+  if(S.track) for(const c of S.track.channels){ const m=S.chan[c.name]; if(!m||!m.visible)continue;
+    for(const k of c.keys){ if(k[1]<lo){lo=k[1];ext=true;} if(k[1]>hi){hi=k[1];ext=true;} } }
+  if(!ext) return [0,1];                       // pure [0,1] view → unchanged
+  const pad=(hi-lo)*0.06||0.1; return [lo-pad,hi+pad];
+}
+function valAtY(y,g){ const v0=CURVE_VR[0],v1=CURVE_VR[1]; return v0+(1-(y-g.padT)/g.gh)*(v1-v0); }
+function yAtVal(v,g){ const v0=CURVE_VR[0],v1=CURVE_VR[1]; return g.padT+g.gh*(1-(v-v0)/((v1-v0)||1)); }
+function strokeSmooth(x,pts){ if(pts.length<2)return; x.beginPath(); x.moveTo(pts[0][0],pts[0][1]);   // Catmull-Rom (#28)
+  for(let i=0;i<pts.length-1;i++){ const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+    x.bezierCurveTo(p1[0]+(p2[0]-p0[0])/6,p1[1]+(p2[1]-p0[1])/6,p2[0]-(p3[0]-p1[0])/6,p2[1]-(p3[1]-p1[1])/6,p2[0],p2[1]); }
+  x.stroke(); }
 function drawCurves(){
   const cv=$("#curves"); if(!S.track)return; const {x,w,h}=fitCanvas(cv);
-  x.clearRect(0,0,w,h); const padL=8,padR=8,padT=8,padB=18, gw=w-padL-padR, gh=h-padT-padB;
+  x.clearRect(0,0,w,h); const padL=8,padR=8,padT=8,padB=18, gw=w-padL-padR, gh=h-padT-padB, g={padL,padT,gw,gh};
   const T=Math.max(0.001,S.duration);
-  // grid
+  CURVE_VR=curveValueRange(); const v0=CURVE_VR[0], v1=CURVE_VR[1];
+  const X=t=>padL+gw*(t/T), Y=v=>yAtVal(v,g);
+  // grid + value-axis labels
   x.strokeStyle=css("--line"); x.lineWidth=1; x.fillStyle=css("--fg-mute"); x.font="10px "+css("--font-mono");
   for(let i=0;i<=8;i++){ const gx=padL+gw*i/8; x.globalAlpha=.5; x.beginPath();x.moveTo(gx,padT);x.lineTo(gx,padT+gh);x.stroke(); x.globalAlpha=1; x.fillText((T*i/8).toFixed(1),gx+2,h-6); }
-  for(let j=0;j<=4;j++){ const gy=padT+gh*j/4; x.globalAlpha=.4; x.beginPath();x.moveTo(padL,gy);x.lineTo(padL+gw,gy);x.stroke(); x.globalAlpha=1; }
+  const dp=(v1-v0>3)?0:2;
+  for(let j=0;j<=4;j++){ const val=v1-(v1-v0)*j/4, gy=Y(val); x.globalAlpha=.4; x.beginPath();x.moveTo(padL,gy);x.lineTo(padL+gw,gy);x.stroke(); x.globalAlpha=.75; x.fillText(val.toFixed(dp),padL+2,gy-2); x.globalAlpha=1; }
+  if(v0<0&&v1>0){ x.strokeStyle=css("--line-2"); x.globalAlpha=.9; x.beginPath();x.moveTo(padL,Y(0));x.lineTo(padL+gw,Y(0));x.stroke(); x.globalAlpha=1; }
   // curves
   const smooth=$("#curvesSmooth").checked;
   for(const c of S.track.channels){ const m=S.chan[c.name]; if(!m.visible)continue;
     x.strokeStyle=m.color; x.lineWidth=(c.name===S.sel)?2.4:1.5; x.globalAlpha=(S.sel&&c.name!==S.sel)?.5:1;
-    x.beginPath(); const N=Math.max(2,Math.floor(gw));
-    for(let i=0;i<=N;i++){ const tt=T*i/N; const v=Math.min(1,Math.max(0,sample(c.keys,tt)));
-      const px=padL+gw*i/N, py=padT+gh*(1-v); i?x.lineTo(px,py):x.moveTo(px,py); }
-    x.stroke();
+    if(smooth && c.keys.length>=2) strokeSmooth(x, c.keys.map(k=>[X(k[0]),Y(k[1])]));
+    else { x.beginPath(); const N=Math.max(2,Math.floor(gw));
+      for(let i=0;i<=N;i++){ const tt=T*i/N, px=padL+gw*i/N, py=Y(sample(c.keys,tt)); i?x.lineTo(px,py):x.moveTo(px,py); }
+      x.stroke(); }
   }
   x.globalAlpha=1;
   // draggable keyframe dots for the selected channel
   if(S.sel){ const c=chan(S.sel); if(c){ x.fillStyle=S.chan[S.sel].color; x.strokeStyle=css("--bg"); x.lineWidth=1;
-    for(const [t,v] of c.keys){ const px=padL+gw*(t/T), py=padT+gh*(1-Math.min(1,Math.max(0,v)));
-      x.beginPath(); x.arc(px,py,3.4,0,7); x.fill(); x.stroke(); } } }
+    for(const [t,v] of c.keys){ x.beginPath(); x.arc(X(t),Y(v),3.4,0,7); x.fill(); x.stroke(); } } }
   // playhead
-  const hx=padL+gw*(S.t/T); x.strokeStyle=css("--accent"); x.lineWidth=1.5;
+  const hx=X(S.t); x.strokeStyle=css("--accent"); x.lineWidth=1.5;
   x.beginPath();x.moveTo(hx,padT);x.lineTo(hx,padT+gh);x.stroke();
 }
 /* geometry shared by drawCurves + the curve interaction handlers */
@@ -754,11 +773,11 @@ function roundRect(x,a,b,w,h,r){ x.beginPath(); x.moveTo(a+r,b); x.arcTo(a+w,b,a
 function canvasMetrics(cv,e){ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top,w:r.width,h:r.height}; }
 function seekAtX(x,gw,padL,T){ S.t=Math.min(T,Math.max(0,(x-padL)/gw*T)); S.playClock=S.t; setScrub(); drawAll(); }
 function hitKeyframe(c,g,T,x,y){ if(!c)return -1;
-  for(let i=0;i<c.keys.length;i++){ const px=g.padL+g.gw*(c.keys[i][0]/T), py=g.padT+g.gh*(1-Math.min(1,Math.max(0,c.keys[i][1])));
+  for(let i=0;i<c.keys.length;i++){ const px=g.padL+g.gw*(c.keys[i][0]/T), py=yAtVal(c.keys[i][1],g);
     if(Math.hypot(x-px,y-py)<7)return i; } return -1; }
-function nearestChannel(g,T,x,y){ const t=(x-g.padL)/g.gw*T, vv=1-(y-g.padT)/g.gh; let best=null,bd=1e9;
-  for(const c of S.track.channels){ const m=S.chan[c.name]; if(!m.visible)continue; const v=Math.min(1,Math.max(0,sample(c.keys,t)));
-    const d=Math.abs(v-vv); if(d<bd){bd=d;best=c.name;} } return bd<0.12?best:null; }
+function nearestChannel(g,T,x,y){ const t=(x-g.padL)/g.gw*T, vv=valAtY(y,g), span=(CURVE_VR[1]-CURVE_VR[0])||1; let best=null,bd=1e9;
+  for(const c of S.track.channels){ const m=S.chan[c.name]; if(!m.visible)continue; const v=sample(c.keys,t);
+    const d=Math.abs(v-vv); if(d<bd){bd=d;best=c.name;} } return bd<0.12*span?best:null; }
 
 /* ---- curve editing: keyframe primitive + add/delete + undo/redo ------- */
 const SIGNED_CH=/^(head|eye)(Pitch|Yaw|Roll|Gaze)?/i;   // pose channels are signed degrees
@@ -802,7 +821,7 @@ function wireCanvases(){
       const near=nearestChannel(g,T,x,y); if(near) selChannel(near);
       seekAtX(x,g.gw,g.padL,T); });
     cv.addEventListener("pointermove",e=>{ if(!curveDrag)return; const {x,y}=canvasMetrics(cv,e); const {ki,c,g,T}=curveDrag;
-      const k=c.keys[ki]; k[1]=Math.min(1,Math.max(0,1-(y-g.padT)/g.gh));
+      const k=c.keys[ki]; const nv=valAtY(y,g); k[1]=SIGNED_CH.test(c.name)?Math.max(-90,Math.min(90,nv)):Math.max(0,Math.min(1,nv));
       const lo=ki>0?c.keys[ki-1][0]:0, hi=ki<c.keys.length-1?c.keys[ki+1][0]:T;
       k[0]=Math.min(hi,Math.max(lo,(x-g.padL)/g.gw*T));
       markEdited(); markChannelOwned(c.name); drawCurves(); drawPreview(); updateInspVal(); });
@@ -811,7 +830,8 @@ function wireCanvases(){
     cv.addEventListener("contextmenu",e=>e.preventDefault());   // right-click is used to delete a key
     cv.addEventListener("dblclick",e=>{ if(!S.track)return; const {x,y,w,h}=canvasMetrics(cv,e); const g=curveGeom(w,h); const T=Math.max(.001,S.duration);
       let name=S.sel; if(!name||!chan(name)){ name=nearestChannel(g,T,x,y); if(name)selChannel(name); }
-      if(!name)return; const t=Math.min(T,Math.max(0,(x-g.padL)/g.gw*T)), v=Math.min(1,Math.max(0,1-(y-g.padT)/g.gh));
+      if(!name)return; const t=Math.min(T,Math.max(0,(x-g.padL)/g.gw*T)); const nv=valAtY(y,g);
+      const v=SIGNED_CH.test(name)?Math.max(-90,Math.min(90,nv)):Math.max(0,Math.min(1,nv));
       snapshotUndo(); setChannelAt(name,v,t); afterEdit(); });     // double-click adds a key
   }
   for(const id of ["#wave","#phonStrip"]){ const c=$(id); if(!c)continue; c.style.cursor="crosshair";
