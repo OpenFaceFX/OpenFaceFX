@@ -1381,6 +1381,22 @@ def main(argv=None) -> int:
     _add_output_options(fa)
     _add_qa_options(fa)
 
+    fg = sub.add_parser("from-gltf",
+                        help="import morph-target (blendshape) weight animation "
+                             "from a glTF 2.0 .glb/.gltf into a track — the read "
+                             "side of the glTF exporter (issue #13), and the "
+                             "headless FBX path (convert FBX->glTF, then import)")
+    fg.add_argument("file", help="the .glb or .gltf file to import")
+    fg.add_argument("--fps", type=float, default=None,
+                    help="frame rate for the reduced track; overrides the rate "
+                         "inferred from the sampler times")
+    fg.add_argument("--epsilon", type=float, default=0.015,
+                    help="RDP simplification tolerance for the imported curves "
+                         "(default 0.015)")
+    fg.add_argument("-o", "--out", required=True)
+    _add_output_options(fg)
+    _add_qa_options(fg)
+
     eo = sub.add_parser("emit-oov-dict",
                         help="emit a reviewable CMUdict of rule-G2P guesses for the "
                              "out-of-vocabulary words in a transcript (issue #66); "
@@ -1770,6 +1786,19 @@ def main(argv=None) -> int:
             track, warnings = read_a2f(args.file, fps=args.fps)
         except (OSError, ValueError) as ex:
             raise SystemExit(f"from-a2f: {ex}")
+        for w in warnings:
+            _warn(args, w)
+        _write(track, args.out, args)
+        _emit_summary(args, track)
+        return 0
+
+    if args.cmd == "from-gltf":
+        from .importers_gltf import read_gltf
+        try:
+            track, warnings = read_gltf(args.file, fps=args.fps,
+                                        epsilon=args.epsilon)
+        except (OSError, ValueError, KeyError) as ex:
+            raise SystemExit(f"from-gltf: {ex}")
         for w in warnings:
             _warn(args, w)
         _write(track, args.out, args)

@@ -20,6 +20,20 @@ its `version` field.
   The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
 
 ### Added
+- **glTF morph-animation importer** (#13) — a `from-gltf` command and
+  `read_gltf(path, fps=…, epsilon=…)` library entry that decode morph-target
+  (blendshape) **weight** animation from any glTF 2.0 `.glb`/`.gltf` back into a
+  track — the read side of the glTF exporter (#49), and the **headless FBX path**
+  (FBX has no pure-Python reader, so convert `FBX → glTF` with FBX2glTF/Blender
+  once, then import). Reads the `weights`-path animation channel: the sampler input
+  is the time grid, its output is the `n_frames × N` frame-major weight matrix,
+  and the N morph names come from `mesh.extras.targetNames`; the matrix is
+  RDP-thinned to a track via `reduce_to_track`, exactly like the CSV/VMD importers.
+  Handles both containers (binary `.glb` chunk, base64 `data:` buffer, external
+  `.bin`), float **and** normalized-int accessors, and `CUBICSPLINE` samplers (keeps
+  the keyframe value). Signed head/eye pose is not imported — glTF morph weights are
+  the `[0,1]` blendshape model. A write → read round-trip recovers every channel
+  within the RDP tolerance. Pure numpy + stdlib, deterministic, additive.
 - **OpenFaceFX Studio** — a web-based facial-animation studio (the FaceFX Studio
   workflow, open) served by a new `openfacefx studio` command. One dependency-free
   SPA (`src/openfacefx/studio_web/`) with FaceFX-style views — **Preview** (live

@@ -884,6 +884,24 @@ is the external gate; the in-repo proof is a full accessor **round-trip**
 (reconstructs every channel within `1e-6`). Deterministic, numpy + stdlib. See
 [docs/api/gltf.md](docs/api/gltf.md).
 
+glTF also reads **back in** (issue
+[#13](https://github.com/OpenFaceFX/OpenFaceFX/issues/13)) — `from-gltf` decodes the
+`weights`-path animation from any `.glb`/`.gltf` (binary chunk, base64 `data:`
+buffer, or external `.bin`), names the morphs from `mesh.extras.targetNames`, and
+RDP-thins each column back to a track. Because **FBX** has no headless pure-Python
+reader, this is also the FBX path: convert `FBX → glTF` (FBX2glTF / Blender) once,
+then import:
+
+```bash
+python -m openfacefx from-gltf capture.glb -o track.json          # blendshape animation → track
+python -m openfacefx from-gltf capture.gltf --fps 60 -o track.anim
+```
+
+Float and normalized-int accessors are both decoded, `CUBICSPLINE` samplers keep
+the keyframe value, and a write → read round-trip recovers every channel within
+the RDP tolerance. `read_gltf(path)` is the library entry; numpy + stdlib,
+deterministic.
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -1298,6 +1316,7 @@ src/openfacefx/
   emotion.py        additive emotion/expression layer, valence/arousal table (#38) ← emotion command
   importers.py      read Rhubarb/Moho/Papagayo cue files back into a track (#44) ← from-cues command
   importers_csv.py  read ARKit/Live Link Face blendshape-weight CSV into a track (#45) ← from-csv command
+  importers_gltf.py read glTF 2.0 morph-weight animation into a track; FBX path (#13) ← from-gltf command
   inspect.py        read-only track stats + a CI format/contract linter (#47) ← inspect, validate commands
   trackdiff.py      read-only A/B drift report, tolerance-gated exit (#50) ← diff command
   transforms.py     retime/mirror/trim (#48) + concat/sequence splice (#51) ← transform, sequence
