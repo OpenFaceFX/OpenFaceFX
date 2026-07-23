@@ -62,12 +62,17 @@ window.StudioBridge = {
   // serialise the whole workspace (actors → takes: params + track), JSON-safe
   getWorkspace:()=>({ v:1, actorIdx:S.actorIdx, takeIdx:S.takeIdx,
     actors:S.actors.map(a=>({ name:a.name, takes:a.takes.map(t=>({
-      name:t.name, params:t.params, wavName:t.wavName,
-      track:t.track, segments:t.segments, duration:t.duration })) })) }),
+      name:t.name, params:t.params, wavName:t.wavName, colors:t.colors||undefined, cmudict:t.cmudict||undefined,
+      track:t.track, segments:t.segments, duration:t.duration,
+      peaks:t.wavPeaks?Array.from(t.wavPeaks):undefined,                 // waveform survives save/load
+      wavB64:(t.wavBytes&&t.wavBytes.length<1500000)?toB64(t.wavBytes):undefined })) })) }),  // audio too if it fits the vault cap
   setWorkspace:w=>{ if(!w||!Array.isArray(w.actors)||!w.actors.length) return false;
+    const fromB64=s=>{ try{ return Uint8Array.from(atob(s),c=>c.charCodeAt(0)); }catch(_){ return null; } };
     S.actors=w.actors.map(a=>({ name:a.name||"Untitled", takes:(a.takes||[]).map(t=>({
       name:t.name||"take_01", params:t.params||{...DEFAULT_PARAMS}, wavName:t.wavName||"no audio — timing from text",
-      wavBytes:null, wavPeaks:null, track:t.track||null, segments:t.segments||[], duration:t.duration||0 })) }));
+      colors:t.colors||null, cmudict:t.cmudict||"",
+      wavBytes:t.wavB64?fromB64(t.wavB64):null, wavPeaks:t.peaks?Float32Array.from(t.peaks):null,
+      track:t.track||null, segments:t.segments||[], duration:t.duration||0 })) }));
     S.actorIdx=Math.min(Math.max(0,w.actorIdx||0), S.actors.length-1);
     const nt=curActor().takes.length;
     S.takeIdx=(w.takeIdx!=null)?Math.min(Math.max(-1,w.takeIdx), nt-1):(nt?0:-1);
@@ -323,8 +328,13 @@ $("#run").onclick=()=>{ const tk=curTake();
   return runGenerate(); };
 
 function ingestChannels(){
-  S.chan={}; S.track.channels.forEach((c,i)=>{ S.chan[c.name]={color:CURVE_COLORS[i%CURVE_COLORS.length],visible:true,idx:i}; });
+  const cols=(curTake()&&curTake().colors)||{};   // per-take custom colours persist
+  S.chan={}; S.track.channels.forEach((c,i)=>{ S.chan[c.name]={color:cols[c.name]||CURVE_COLORS[i%CURVE_COLORS.length],visible:true,idx:i}; });
 }
+const toHex=v=>/^#[0-9a-f]{6}$/i.test(v||"")?v:"#f4b942";   // <input type=color> needs #rrggbb
+function setChannelColor(name,hex){ if(!S.chan[name])return; S.chan[name].color=hex;
+  const tk=curTake(); if(tk){ tk.colors=tk.colors||{}; tk.colors[name]=hex; }
+  buildChannelList(); if(S.view==="curves")drawCurves(); }
 
 /* ===================================================================== *
  *  Actors & takes
@@ -443,13 +453,14 @@ function buildInspector(){
   box.innerHTML=`
     <div class="insp-head">Channel</div>
     <div class="insp-row"><label>Name</label><span class="mono">${esc(c.name)}</span></div>
-    <div class="insp-row"><label>Colour</label><span class="insp-swatch" style="background:${m.color}"></span></div>
+    <div class="insp-row"><label>Colour</label><input type="color" id="inspColor" value="${toHex(m.color)}"></div>
     <div class="insp-row"><label>Keyframes</label><span class="mono">${c.keys.length}</span></div>
     <div class="insp-row"><label>Range</label><span class="mono">${mn.toFixed(2)} – ${mx.toFixed(2)}</span></div>
     <div class="insp-row"><label>Value @ playhead</label><span class="mono" id="inspVal">${sample(c.keys,S.t).toFixed(3)}</span></div>
     <div class="insp-row"><label>Visible</label><input type="checkbox" ${m.visible?"checked":""} id="inspVis"></div>
     <div class="insp-row"><label>Solo (isolate)</label><input type="checkbox" ${S.solo===c.name?"checked":""} id="inspSolo"></div>
     <p class="insp-tip dim">Curves tab: drag this channel's keyframe dots — vertical = value, horizontal = time. Edits update the take &amp; its exports.</p>`;
+  $("#inspColor")&&($("#inspColor").oninput=e=>setChannelColor(c.name,e.target.value));
   $("#inspVis").onchange=e=>{ m.visible=e.target.checked; buildChannelList(); drawAll(); };
   $("#inspSolo").onchange=e=>{ if(e.target.checked){ for(const k in S.chan)S.chan[k].visible=(k===c.name); S.solo=c.name; }
     else { for(const k in S.chan)S.chan[k].visible=true; S.solo=null; } buildChannelList(); drawAll(); };
