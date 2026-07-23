@@ -26,3 +26,6 @@ track.csv
 # mkdocs build output — the Pages workflow builds site/ (landing + demo + docs)
 # in CI and never commits it. Local `mkdocs build` lands here too.
 /site/
+
+# local design references / scratch (screen-capture gifs, etc.)
+work/

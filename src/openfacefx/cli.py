@@ -1393,6 +1393,14 @@ def main(argv=None) -> int:
                          "are not emitted as OOV")
     eo.add_argument("-o", "--out", required=True, help="output .dict path")
 
+    st = sub.add_parser("studio",
+                        help="launch OpenFaceFX Studio — the web studio (Preview / "
+                             "Curves / Phonemes / Face Graph / Export / AI assistant) "
+                             "served locally against the native pipeline")
+    st.add_argument("--port", type=int, default=8765, help="port (default 8765)")
+    st.add_argument("--host", default="127.0.0.1", help="bind host (default 127.0.0.1)")
+    st.add_argument("--no-open", action="store_true", help="do not open a browser")
+
     cv = sub.add_parser("convert",
                         help="re-export or retarget an existing track.json to any "
                              "format (Unity/Godot/Live2D/cues/.lip/CSV/JSON) "
@@ -1630,6 +1638,10 @@ def main(argv=None) -> int:
 
     args = p.parse_args(argv)
     args._warnings = []          # QA summary sink; see _warn / _emit_summary
+
+    if args.cmd == "studio":
+        from .studio import serve
+        return serve(port=args.port, host=args.host, open_browser=not args.no_open)
 
     if args.cmd == "diff-edits":
         from .io_export import read_json

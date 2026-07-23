@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenFaceFX Studio</title>
+<meta name="description" content="A web-based facial-animation & lip-sync studio — the open FaceFX Studio, powered by the OpenFaceFX pipeline running in your browser.">
+<link rel="stylesheet" href="studio.css">
+</head>
+<body>
+
+<!-- ===== Top bar: brand · actor/take · transport mode · assist ============ -->
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">◒</span>
+    <span class="brand-name"><b>Open</b>FaceFX</span>
+    <span class="brand-sub">Studio</span>
+  </div>
+
+  <div class="topbar-group">
+    <label class="field">
+      <span>Actor</span>
+      <input id="actorName" type="text" value="Untitled" spellcheck="false">
+    </label>
+    <label class="field">
+      <span>Take</span>
+      <select id="takeSelect"><option>take_01</option></select>
+    </label>
+  </div>
+
+  <div class="topbar-spacer"></div>
+
+  <div class="topbar-group runtime" id="runtimePill" title="Pipeline runtime">
+    <span class="dot" id="runtimeDot"></span>
+    <span id="runtimeLabel">booting…</span>
+  </div>
+  <button class="btn ghost" id="themeToggle" title="Toggle light / dark">◐</button>
+</header>
+
+<!-- ===== Main 3-column shell =============================================== -->
+<div class="shell">
+
+  <!-- ---- Left rail: generate + channel list ---------------------------- -->
+  <aside class="rail rail-left" id="railLeft">
+    <section class="panel gen">
+      <h2 class="panel-title">Generate</h2>
+      <label class="lbl" for="text">Transcript</label>
+      <textarea id="text" spellcheck="false">Hello world — this is OpenFaceFX Studio, running the real pipeline right in your browser.</textarea>
+
+      <div class="gen-row">
+        <label class="lbl" for="engine">Source</label>
+        <select id="engine">
+          <option value="naive">Text (naive timing)</option>
+          <option value="energy">Text + audio energy</option>
+        </select>
+      </div>
+
+      <div class="gen-row two">
+        <div>
+          <label class="lbl" for="dur">Duration (s)</label>
+          <input type="number" id="dur" value="4.0" min="0.3" step="0.1">
+        </div>
+        <div>
+          <label class="lbl" for="style">Talking style</label>
+          <select id="style">
+            <option value="">default</option>
+            <option value="mumble">mumble</option>
+            <option value="neutral">neutral</option>
+            <option value="broadcast">broadcast</option>
+            <option value="shout">shout</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="gen-row">
+        <label class="filebtn" for="wav" id="wavBtn">Load voice clip…</label>
+        <input type="file" id="wav" accept="audio/*,.wav" hidden>
+        <span class="filehint" id="wavName">no audio — timing from text</span>
+      </div>
+
+      <label class="opt"><input type="checkbox" id="optGestures"> Procedural gestures (blink · brows · head · gaze)</label>
+      <label class="opt"><input type="checkbox" id="optBreath"> Idle breathing</label>
+
+      <button class="btn primary block" id="run" disabled>Booting Python…</button>
+      <div class="bootbar" id="bootbar"><i></i></div>
+    </section>
+
+    <section class="panel channels">
+      <h2 class="panel-title">Channels <span class="count" id="chCount">0</span></h2>
+      <ul class="channel-list" id="channelList">
+        <li class="empty">Generate a take to see its animation channels.</li>
+      </ul>
+    </section>
+  </aside>
+
+  <!-- ---- Center: tabbed workspace ------------------------------------- -->
+  <main class="workspace">
+    <nav class="tabs" id="tabs" role="tablist">
+      <button class="tab active" data-view="preview" role="tab">Preview</button>
+      <button class="tab" data-view="phonemes" role="tab">Phonemes</button>
+      <button class="tab" data-view="curves" role="tab">Curves</button>
+      <button class="tab" data-view="facegraph" role="tab">Face&nbsp;Graph</button>
+      <button class="tab" data-view="export" role="tab">Export</button>
+      <button class="tab" data-view="assistant" role="tab">Assistant</button>
+    </nav>
+
+    <div class="views" id="views">
+      <!-- Preview -->
+      <section class="view active" data-view="preview">
+        <div class="preview-stage">
+          <svg id="face" viewBox="0 0 260 220" aria-label="face preview">
+            <defs>
+              <radialGradient id="skin" cx="50%" cy="42%" r="62%">
+                <stop offset="0%" stop-color="#3a4756"/><stop offset="100%" stop-color="#232c38"/>
+              </radialGradient>
+            </defs>
+            <ellipse cx="130" cy="108" rx="104" ry="96" fill="url(#skin)" stroke="#2b3745"/>
+            <g id="browL"></g><g id="browR"></g>
+            <ellipse id="eyeL" cx="94" cy="84" rx="13" ry="9" fill="#0d131a"/>
+            <ellipse id="eyeR" cx="166" cy="84" rx="13" ry="9" fill="#0d131a"/>
+            <circle cx="94" cy="84" r="4.5" fill="#cfe"/><circle cx="166" cy="84" r="4.5" fill="#cfe"/>
+            <path id="mouth" fill="#6d1f2a" stroke="#c65b68" stroke-width="2.5"/>
+          </svg>
+          <div class="preview-readout" id="previewReadout">
+            <span class="mono" id="tcRead">00:00.000</span>
+            <span class="dim">the schematic face blends visemes in real time — a rig-neutral preview</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Phonemes -->
+      <section class="view" data-view="phonemes">
+        <div class="lane-head"><h3>Waveform &amp; phoneme alignment</h3></div>
+        <canvas id="wave" class="lane" height="120"></canvas>
+        <canvas id="phonStrip" class="lane phon" height="64"></canvas>
+        <p class="view-note dim">The audio (or a synthetic envelope) with the aligned phoneme &amp; viseme strip — the read side of the pipeline.</p>
+      </section>
+
+      <!-- Curves -->
+      <section class="view" data-view="curves">
+        <div class="lane-head">
+          <h3>Animation curves</h3>
+          <label class="opt inline"><input type="checkbox" id="curvesSmooth" checked> smooth</label>
+        </div>
+        <canvas id="curves" class="lane tall"></canvas>
+        <p class="view-note dim">Coarticulated viseme &amp; gesture curves over time. Toggle channels in the left rail; drag the playhead in the transport.</p>
+      </section>
+
+      <!-- Face Graph -->
+      <section class="view" data-view="facegraph">
+        <div class="lane-head">
+          <h3>Face Graph</h3>
+          <select id="fgPreset" class="mini"></select>
+        </div>
+        <canvas id="facegraph" class="lane tall"></canvas>
+        <p class="view-note dim">The retarget network: viseme &amp; emotion inputs drive rig outputs through <b>link functions</b> (linear · quadratic · cubic · sqrt · clamped). Pick a target rig preset above.</p>
+      </section>
+
+      <!-- Export -->
+      <section class="view" data-view="export">
+        <div class="lane-head"><h3>Export</h3></div>
+        <div class="export-grid" id="exportGrid"></div>
+        <p class="view-note dim">Every OpenFaceFX exporter, run in-browser. Retarget presets apply where relevant.</p>
+      </section>
+
+      <!-- Assistant -->
+      <section class="view" data-view="assistant">
+        <div class="lane-head"><h3>AI Assistant</h3><span class="pill" id="assistProvider">no key</span></div>
+        <div id="assistantMount" class="assistant"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ---- Right inspector ---------------------------------------------- -->
+  <aside class="rail rail-right" id="railRight">
+    <section class="panel">
+      <h2 class="panel-title">Inspector</h2>
+      <div id="inspector" class="inspector">
+        <p class="empty">Select a channel or graph node to edit its properties.</p>
+      </div>
+    </section>
+  </aside>
+</div>
+
+<!-- ===== Transport ======================================================= -->
+<footer class="transport">
+  <button class="tp-btn" id="tpStart" title="Start">⏮</button>
+  <button class="tp-btn play" id="tpPlay" title="Play / pause">▶</button>
+  <button class="tp-btn" id="tpEnd" title="End">⏭</button>
+  <div class="scrub"><input type="range" id="scrub" min="0" max="1000" value="0"></div>
+  <span class="mono time" id="tpTime">00:00.000</span>
+  <span class="mono dim" id="tpDur">/ 00:00.000</span>
+  <label class="field small"><span>fps</span><input type="number" id="fps" value="60" min="1" max="120"></label>
+</footer>
+
+<!-- ===== Boot overlay ==================================================== -->
+<div class="boot-overlay" id="bootOverlay">
+  <div class="boot-card">
+    <div class="brand big"><span class="brand-mark">◒</span><span><b>Open</b>FaceFX <span class="brand-sub">Studio</span></span></div>
+    <p id="bootMsg">Starting the in-browser pipeline…</p>
+    <div class="bootbar big"><i id="bootFill"></i></div>
+    <p class="boot-foot dim">CPython + numpy → WebAssembly via Pyodide. Nothing leaves your machine.</p>
+  </div>
+</div>
+
+<script src="studio.js"></script>
+<script src="assistant.js"></script>
+</body>
+</html>

@@ -8,6 +8,27 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **OpenFaceFX Studio** — a web-based facial-animation studio (the FaceFX Studio
+  workflow, open) served by a new `openfacefx studio` command. One dependency-free
+  SPA (`src/openfacefx/studio_web/`) with FaceFX-style views — **Preview** (live
+  viseme+gesture blend), **Phonemes** (waveform + aligned strip), **Curves**
+  (coarticulated curves), **Face Graph** (viseme→rig retarget network via the
+  `links` #68 functions and `mapping` presets), and **Export** (every exporter,
+  in-browser) — plus an **Assistant**. Runs three ways from the same frontend:
+  in the browser via Pyodide (zero-install, pipeline runs client-side), as a
+  standalone desktop tool (`openfacefx studio` serves it against the native
+  pipeline over a stdlib HTTP API — Tauri/Electron-wrappable), and as the basis
+  for a SaaS. See `docs/studio.md`.
+- **AI Assistant with bring-your-own-key LLMs** — transcript cleanup, OOV→ARPAbet
+  pronunciation, emotion direction (valence/arousal), and performance direction,
+  via Anthropic (direct browser calls), OpenAI/Gemini (through a stateless
+  `/api/llm` relay), and local open-source models (Ollama/vLLM/LM Studio,
+  OpenAI-compatible). Provider API keys are stored **zero-knowledge**: encrypted
+  in the browser with a master password (Web Crypto PBKDF2-SHA256 · 600k →
+  non-extractable AES-256-GCM), only ciphertext persisted — key and password never
+  leave the machine.
+
 ## [0.21.0] - 2026-07-20
 
 ### Added
