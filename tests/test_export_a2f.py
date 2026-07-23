@@ -56,7 +56,9 @@ def test_export_structure_and_faithfulness():
     W = np.array(doc["weightMat"])
     for k, name in enumerate(names):
         want = np.round(np.clip(sample(cmap[name], grid), 0.0, 1.0), 6)
-        assert np.allclose(W[:, k], want, atol=1e-9)
+        # both sides are 6-decimal quantities, so allow a 1-ULP boundary diff at
+        # that precision (some channels land exactly on a 6dp rounding edge).
+        assert np.allclose(W[:, k], want, atol=2e-6)
 
 
 def test_pose_channels_excluded():

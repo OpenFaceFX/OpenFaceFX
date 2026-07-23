@@ -85,24 +85,30 @@ def test_retarget_available_and_fallbacks():
     from openfacefx.curves import Channel, FaceTrack, Keyframe
     from openfacefx.retarget import retarget, PRESETS, PRESET_FALLBACKS
 
-    # One TH source at full weight -> arkit: mouthRollUpper 0.6, jawOpen 0.2,
-    # tongueOut 0.4. A tongue-less rig sends tongueOut to jawOpen at 0.2 scale.
+    # One TH source at full weight -> arkit: tongueOut 0.95, jawOpen 0.12, and the
+    # teeth reveal (upperUp/lowerDown 0.15). A tongue-less rig sends tongueOut to
+    # jawOpen at 0.2 scale.
     track = FaceTrack(fps=60, channels=[Channel("TH", [Keyframe(0.0, 1.0)])])
     full = {c.name: c.keys[0].value for c in retarget(track, PRESETS["arkit"]).channels}
-    assert full == {"mouthRollUpper": 0.6, "jawOpen": 0.2, "tongueOut": 0.4}
+    assert full == {"tongueOut": 0.95, "jawOpen": 0.12,
+                    "mouthUpperUpLeft": 0.15, "mouthUpperUpRight": 0.15,
+                    "mouthLowerDownLeft": 0.15, "mouthLowerDownRight": 0.15}
 
-    avail = {"mouthRollUpper", "jawOpen"}          # rig lacks tongueOut
+    avail = {"jawOpen", "mouthUpperUpLeft", "mouthUpperUpRight",
+             "mouthLowerDownLeft", "mouthLowerDownRight"}   # rig lacks tongueOut
     out = retarget(track, PRESETS["arkit"], available=avail,
                    fallbacks=PRESET_FALLBACKS["arkit"])
     assert {c.name: c.keys[0].value for c in out.channels} == {
-        "mouthRollUpper": 0.6, "jawOpen": 0.28}    # 0.2 direct + 0.4 * 0.2 rerouted
+        "jawOpen": 0.31, "mouthUpperUpLeft": 0.15, "mouthUpperUpRight": 0.15,
+        "mouthLowerDownLeft": 0.15, "mouthLowerDownRight": 0.15}   # 0.12 + 0.95*0.2 rerouted
     assert "tongueOut" not in out.target_set       # advertises only real shapes
 
     # An explicit empty rule drops the weight rather than rerouting it.
     dropped = retarget(track, PRESETS["arkit"], available=avail,
                        fallbacks={"tongueOut": ()})
     assert {c.name: c.keys[0].value for c in dropped.channels} == {
-        "mouthRollUpper": 0.6, "jawOpen": 0.2}
+        "jawOpen": 0.12, "mouthUpperUpLeft": 0.15, "mouthUpperUpRight": 0.15,
+        "mouthLowerDownLeft": 0.15, "mouthLowerDownRight": 0.15}
 
     # Fallbacks chain (weights multiply); a cycle is broken, not fatal.
     tk = FaceTrack(fps=60, channels=[Channel("aa", [Keyframe(0.0, 1.0)])])
@@ -119,22 +125,22 @@ def test_retarget_available_and_fallbacks():
 
 
 def test_arkit_dd_gains_tongue_out_kk_stays_velar():
-    # issue #53 (A'): the alveolar DD viseme (t/d/l) now fires ARKit's tongueOut
-    # at 0.2, matching nn — a deliberate, versioned change to the shipped preset's
-    # output for t/d/l tracks. Velar kk (k/g) stays tongue-free on purpose.
+    # issue #53 (A'): the alveolar DD viseme (t/d/l) fires ARKit's tongueOut (now
+    # 0.28) — the tongue tip goes up behind the teeth. Velar kk (k/g) stays
+    # tongue-free on purpose (back of tongue; ARKit has no tongue-back morph).
     from openfacefx.curves import Channel, FaceTrack, Keyframe
     from openfacefx.retarget import retarget, PRESETS, PRESET_FALLBACKS
     dd = FaceTrack(fps=60, channels=[Channel("DD", [Keyframe(0.0, 1.0)])])
     full = {c.name: c.keys[0].value for c in retarget(dd, PRESETS["arkit"]).channels}
-    assert full == {"mouthPressLeft": 0.8, "mouthPressRight": 0.8,
-                    "mouthFunnel": 0.5, "jawOpen": 0.2, "tongueOut": 0.2}
+    assert full == {"jawOpen": 0.24, "tongueOut": 0.28,
+                    "mouthUpperUpLeft": 0.12, "mouthUpperUpRight": 0.12}
     # a tongue-less rig reroutes DD's tongueOut to jawOpen, exactly like nn/TH
-    avail = {"mouthPressLeft", "mouthPressRight", "mouthFunnel", "jawOpen"}
+    avail = {"jawOpen", "mouthUpperUpLeft", "mouthUpperUpRight"}
     out = {c.name: c.keys[0].value for c in
            retarget(dd, PRESETS["arkit"], available=avail,
                     fallbacks=PRESET_FALLBACKS["arkit"]).channels}
-    assert out == {"mouthPressLeft": 0.8, "mouthPressRight": 0.8,
-                   "mouthFunnel": 0.5, "jawOpen": 0.24}   # 0.2 direct + 0.2*0.2 rerouted
+    assert out == {"jawOpen": 0.296, "mouthUpperUpLeft": 0.12,
+                   "mouthUpperUpRight": 0.12}             # 0.24 direct + 0.28*0.2 rerouted
     assert "tongueOut" not in out                          # advertised as rerouted
     # velar kk (k/g) is deliberately tongue-free: back of tongue, no protrusion
     kk = FaceTrack(fps=60, channels=[Channel("kk", [Keyframe(0.0, 1.0)])])

@@ -22,7 +22,7 @@ Each mapping sends a viseme to one or more target shapes with a weight scale;
 
 | Preset | Target convention | Provenance |
 |---|---|---|
-| `arkit` | Apple ARKit 52 blendshapes | Weights reproduced verbatim from [met4citizen/TalkingHead](https://github.com/met4citizen/TalkingHead/blob/main/blender/build-visemes-from-arkit.py) (MIT), a shipping viseme→ARKit map. Apple's canonical shape list: [ARFaceAnchor.BlendShapeLocation](https://developer.apple.com/documentation/arkit/arfaceanchor/blendshapelocation). |
+| `arkit` | Apple ARKit 52 blendshapes | OpenFaceFX's own viseme→ARKit shapes, derived from the articulatory phonetics of each viseme's phoneme group and verified on an ARKit-rigged head (bilabial lip seal, labiodental lip-to-teeth, dental tongue, sibilant bared teeth, rounded funnel/pucker, spread front vowels, open jaw). Replaces an earlier table reproduced from [met4citizen/TalkingHead](https://github.com/met4citizen/TalkingHead/blob/main/blender/build-visemes-from-arkit.py) (MIT) that read as generic on a real face (F/V rounded the lips, P bared the teeth). Apple's canonical shape list: [ARFaceAnchor.BlendShapeLocation](https://developer.apple.com/documentation/arkit/arfaceanchor/blendshapelocation). |
 | `rhubarb` | [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync) mouth shapes A–H + X | Shape semantics from the Rhubarb README; nearest-pose assignment is ours. Uses extended shapes G (F/V) and H (L); if your rig only has the six basic shapes, remap G→A, H→C. |
 | `preston_blair` | Preston-Blair series (Papagayo/Moho/OpenToonz) | Shape set from [garycmartin.com](https://www.garycmartin.com/mouth_shapes.html) and Rhubarb's DAT exporter; assignment ours. Consonant catch-all is named `etc` (the exact layer name OpenToonz/Moho expect); `WQ` is omitted — viseme-level input can't split W from UW. |
 | `fleming_dobbs` | Fleming & Dobbs phoneme-cluster shapes (Papagayo-NG) | Shapes labelled by the phonemes that share each mouth (`MBP`, `NLTDR`, `FV`, `TH`, `GK`, `SH`, `EHSZ`, `AA`, `IY`, `O`, `rest`). Grouping re-expressed from the published Fleming & Dobbs convention (*Animating Facial Features & Expressions*, ISBN 9781886801813) — a functional fact, **not** copied from Papagayo-NG's GPLv3 data. Pose-based; `FLEMING_DOBBS_TO_VISEME` inverts it for import. |
@@ -33,9 +33,12 @@ Each mapping sends a viseme to one or more target shapes with a weight scale;
 
 ## Known quirks worth knowing
 
-- **`arkit`**: kept as published — `CH` and `RR` are identical combos, and `PP`
-  seals with `mouthRollLower/Upper` rather than `mouthClose`. If PP reads weak
-  on your mesh, try `{mouthClose: 0.9, mouthPressLeft/Right: 0.3}` instead.
+- **`arkit`**: phonetically tuned — each viseme drives the morphs that actually
+  form its mouth. `PP` seals with `mouthPress` + a light lip-roll (not
+  `mouthClose`, which deforms the lower lip on some meshes); `FF` raises the lower
+  lip to the upper teeth (`mouthShrugLower` + `mouthUpperUp`), not a pucker; `SS`
+  bares the teeth, front vowels spread, `O`/`U` round. The Studio 3D preview uses
+  the same shapes (`studio_web/studio.js` `PREVIEW_VISEME`).
 - **Meta does not publish** an official Oculus-viseme→ARKit table; every such
   mapping (including this one) is community-made. Treat weights as starting
   points.
@@ -68,20 +71,18 @@ a duplicate table:
   without `tongueOut` and the arkit fallback reroutes the `TH`/`nn`/`DD` tongue
   weight to a small `jawOpen` (below). (A2F's `MouthClose` also folds in jaw
   opening, deviating from Apple's, but that is moot here: `arkit` seals `PP` with
-  lip-roll, not `mouthClose`.)
+  `mouthPress` + lip-roll, not `mouthClose`.)
 - **Reallusion CC3**: shares CC4's Viseme Panel labels — use `cc4`.
 
 ### ARKit `tongueOut` coverage
 
-The `arkit` preset drives Apple's tongue-protrusion morph from the **alveolar**
-visemes: `TH` (0.4), `nn` (0.2), and — **new in this release** (issue #53) — `DD`
-(0.2, the `t`/`d`/`l` family, "tongue to the alveolar ridge"), added to match `nn`
-and close the gap. This is a deliberate, versioned change to the shipped preset's
-output: a track containing `t`/`d`/`l` now emits a small `tongueOut` channel, and
-a tongue-less rig reroutes it to `jawOpen` like `TH`/`nn` already do. The **velar**
-viseme `kk` (`k`/`g`) is deliberately left tongue-free: it is "back of tongue
-raised", the tongue *tip* stays down, so protrusion would misrepresent it — and
-ARKit has no tongue-back morph.
+The `arkit` preset drives Apple's tongue-protrusion morph from the **dental/
+alveolar** visemes: `TH` (0.95, tongue at the teeth), `DD` (0.28, the `t`/`d`/`l`
+family, "tongue to the alveolar ridge"), and `nn` (0.22). A tongue-less rig
+reroutes it to a small `jawOpen` (below). The **velar** viseme `kk` (`k`/`g`) is
+deliberately left tongue-free: it is "back of tongue raised", the tongue *tip*
+stays down, so protrusion would misrepresent it — and ARKit has no tongue-back
+morph.
 
 ## Optional shapes and fallbacks
 

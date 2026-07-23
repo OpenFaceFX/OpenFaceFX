@@ -8,6 +8,17 @@ its `version` field.
 
 ## [Unreleased]
 
+### Changed
+- **`arkit` retarget preset — phonetically corrected shapes.** The viseme→ARKit
+  weight table was rebuilt from each viseme's articulatory phonetics (bilabial lip
+  seal for `PP`, labiodental lip-to-teeth for `FF`, dental tongue for `TH`,
+  sibilant bared teeth for `SS`, rounded funnel/pucker for `O`/`U`/`CH`/`RR`,
+  spread front vowels, open jaw), replacing an earlier table that read as generic
+  on a real face (F/V rounded the lips, P bared the teeth, S pressed them shut,
+  O jutted the jaw forward). **This changes ARKit / Live Link Face / Audio2Face
+  export output** for clips with those sounds — a deliberate, versioned change.
+  The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
+
 ### Added
 - **OpenFaceFX Studio** — a web-based facial-animation studio (the FaceFX Studio
   workflow, open) served by a new `openfacefx studio` command. One dependency-free

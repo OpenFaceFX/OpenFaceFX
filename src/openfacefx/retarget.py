@@ -229,49 +229,70 @@ def rename_only(prefix: str = "", names: Dict[str, str] = None) -> Mapping:
 # Weighted tables are data, not gospel — copy one and tune it to your mesh.
 # ---------------------------------------------------------------------------
 
-# Apple ARKit 52 blendshapes. Weights reproduced verbatim from
-# met4citizen/TalkingHead (MIT), a shipping viseme->ARKit map, EXCEPT the
-# alveolar tongueOut on DD noted below. Known quirks kept as-published: CH and
-# RR are identical; PP seals via lip-roll rather than mouthClose.
+# Apple ARKit 52 blendshapes — OpenFaceFX's own viseme→ARKit shapes, derived from
+# the articulatory phonetics of each viseme's phoneme group and verified on an
+# ARKit-rigged head, rather than copied from any single external map. Each viseme
+# drives the morphs that actually form its mouth: bilabials seal the lips (PP),
+# the labiodental tucks the lower lip to the upper teeth (FF), the dental shows
+# the tongue (TH), sibilants bare the teeth (SS), rounded sounds funnel/pucker
+# (O/U/CH/RR), front vowels spread (I/E), open vowels drop the jaw (aa).
 #
-# tongueOut coverage (issue #53): the alveolar family drives ARKit's tongue-
-# protrusion morph — TH 0.4, nn 0.2, and now DD 0.2 (t/d/l, "tongue to the
-# alveolar ridge", added to match nn and close the gap). kk (k/g) deliberately
-# does NOT: it is velar ("back of tongue raised"), the tongue TIP stays down, so
-# protrusion would misrepresent it — and ARKit has no tongue-back morph. This is
-# a deliberate, versioned change to the shipped preset's output (docs/retargeting.md).
+# This REPLACES an earlier table reproduced from met4citizen/TalkingHead (MIT),
+# which was faithful to that source but read as generic on a real face — F/V
+# rounded the lips (pucker), P bared the teeth, S pressed them shut, O jutted the
+# jaw forward. Corrected here; a deliberate, versioned change to the shipped
+# preset's output (docs/retargeting.md, CHANGELOG). The Studio 3D preview uses the
+# same shapes (studio_web/studio.js PREVIEW_VISEME).
+#
+# tongueOut coverage (issue #53): the dental/alveolar families drive ARKit's
+# tongue-protrusion morph — TH 0.5, DD 0.28, nn 0.22. kk (k/g) deliberately does
+# NOT: it is velar ("back of tongue raised"), the tongue TIP stays down, so
+# protrusion would misrepresent it — and ARKit has no tongue-back morph.
 _ARKIT = {
-    "PP": (("mouthRollLower", 0.8), ("mouthRollUpper", 0.8),
-           ("mouthUpperUpLeft", 0.3), ("mouthUpperUpRight", 0.3)),
-    "FF": (("mouthPucker", 1.0), ("mouthShrugUpper", 1.0),
-           ("mouthRollLower", 1.0), ("mouthDimpleLeft", 1.0),
-           ("mouthDimpleRight", 1.0), ("mouthLowerDownLeft", 0.2),
-           ("mouthLowerDownRight", 0.2)),
-    "TH": (("mouthRollUpper", 0.6), ("jawOpen", 0.2), ("tongueOut", 0.4)),
-    "DD": (("mouthPressLeft", 0.8), ("mouthPressRight", 0.8),
-           ("mouthFunnel", 0.5), ("jawOpen", 0.2), ("tongueOut", 0.2)),
-    # kk is velar — no tongueOut on purpose (see the header note).
-    "kk": (("mouthLowerDownLeft", 0.4), ("mouthLowerDownRight", 0.4),
-           ("mouthDimpleLeft", 0.3), ("mouthDimpleRight", 0.3),
-           ("mouthFunnel", 0.3), ("mouthPucker", 0.3), ("jawOpen", 0.15)),
-    "CH": (("mouthPucker", 0.5), ("jawOpen", 0.2)),
-    "SS": (("mouthPressLeft", 0.8), ("mouthPressRight", 0.8),
-           ("mouthLowerDownLeft", 0.5), ("mouthLowerDownRight", 0.5),
-           ("jawOpen", 0.1)),
-    "nn": (("mouthLowerDownLeft", 0.4), ("mouthLowerDownRight", 0.4),
-           ("mouthDimpleLeft", 0.3), ("mouthDimpleRight", 0.3),
-           ("mouthFunnel", 0.3), ("mouthPucker", 0.3), ("jawOpen", 0.15),
-           ("tongueOut", 0.2)),
-    "RR": (("mouthPucker", 0.5), ("jawOpen", 0.2)),
-    "aa": (("jawOpen", 0.6),),
-    "E":  (("mouthPressLeft", 0.8), ("mouthPressRight", 0.8),
-           ("mouthDimpleLeft", 1.0), ("mouthDimpleRight", 1.0),
-           ("jawOpen", 0.3)),
-    "I":  (("mouthPressLeft", 0.6), ("mouthPressRight", 0.6),
-           ("mouthDimpleLeft", 0.6), ("mouthDimpleRight", 0.6),
-           ("jawOpen", 0.2)),
-    "O":  (("mouthPucker", 1.0), ("jawForward", 0.6), ("jawOpen", 0.2)),
-    "U":  (("mouthFunnel", 1.0),),
+    # B/M/P — bilabial: lips pressed together, no teeth (seal via press + a light
+    # lip-roll; ARKit mouthClose over-drives the lower lip on some meshes).
+    "PP": (("mouthPressLeft", 0.5), ("mouthPressRight", 0.5),
+           ("mouthRollLower", 0.22), ("mouthRollUpper", 0.22)),
+    # F/V — labiodental: lower lip RISES to meet the upper teeth (mouthShrugLower
+    # lifts the lower lip; a little upperUp reveals the teeth it presses against).
+    "FF": (("mouthShrugLower", 0.52), ("mouthUpperUpLeft", 0.3),
+           ("mouthUpperUpRight", 0.3), ("mouthRollLower", 0.3),
+           ("jawOpen", 0.07)),
+    # TH/DH — dental: tongue tip toward the teeth, close bite.
+    "TH": (("tongueOut", 0.95), ("jawOpen", 0.12), ("mouthUpperUpLeft", 0.15),
+           ("mouthUpperUpRight", 0.15), ("mouthLowerDownLeft", 0.15),
+           ("mouthLowerDownRight", 0.15)),
+    # D/T/L — alveolar: tongue tip up behind the teeth, neutral lips, slightly open.
+    "DD": (("jawOpen", 0.24), ("tongueOut", 0.28), ("mouthUpperUpLeft", 0.12),
+           ("mouthUpperUpRight", 0.12)),
+    # K/G/HH — velar/glottal: neutral moderate opening (no tongueOut; see header).
+    "kk": (("jawOpen", 0.32), ("mouthLowerDownLeft", 0.12),
+           ("mouthLowerDownRight", 0.12)),
+    # CH/JH/SH/ZH — postalveolar: lips protrude, slightly rounded ("sh").
+    "CH": (("mouthFunnel", 0.6), ("mouthPucker", 0.4), ("jawOpen", 0.16)),
+    # S/Z — sibilant: teeth close together & bared, corners slightly spread.
+    "SS": (("jawOpen", 0.09), ("mouthStretchLeft", 0.3), ("mouthStretchRight", 0.3),
+           ("mouthUpperUpLeft", 0.28), ("mouthUpperUpRight", 0.28),
+           ("mouthLowerDownLeft", 0.28), ("mouthLowerDownRight", 0.28)),
+    # N/NG — nasal: tongue up, neutral lips, slightly open.
+    "nn": (("jawOpen", 0.2), ("tongueOut", 0.22), ("mouthLowerDownLeft", 0.1),
+           ("mouthLowerDownRight", 0.1)),
+    # ER/R — rhotic: slight lip rounding / protrusion.
+    "RR": (("mouthPucker", 0.45), ("mouthFunnel", 0.3), ("jawOpen", 0.18)),
+    # AA/AE/AH/AY — open vowels: jaw drops to a natural "ah" (not a full gape).
+    "aa": (("jawOpen", 0.6), ("mouthLowerDownLeft", 0.1),
+           ("mouthLowerDownRight", 0.1)),
+    # EH/EY/IH — mid-front vowels: open + spread corners.
+    "E":  (("jawOpen", 0.42), ("mouthStretchLeft", 0.32), ("mouthStretchRight", 0.32),
+           ("mouthDimpleLeft", 0.22), ("mouthDimpleRight", 0.22)),
+    # IY/Y — high-front "ee": wide spread smile, teeth showing, narrow vertical.
+    "I":  (("jawOpen", 0.16), ("mouthStretchLeft", 0.5), ("mouthStretchRight", 0.5),
+           ("mouthSmileLeft", 0.32), ("mouthSmileRight", 0.32),
+           ("mouthUpperUpLeft", 0.2), ("mouthUpperUpRight", 0.2)),
+    # AO/AW/OW/OY — rounded open "oh".
+    "O":  (("mouthFunnel", 0.7), ("mouthPucker", 0.42), ("jawOpen", 0.42)),
+    # UH/UW/W — tight rounded "oo".
+    "U":  (("mouthPucker", 0.85), ("mouthFunnel", 0.5), ("jawOpen", 0.12)),
 }
 
 # Rhubarb Lip Sync mouth shapes (A-H + X, extended shapes G/H used).

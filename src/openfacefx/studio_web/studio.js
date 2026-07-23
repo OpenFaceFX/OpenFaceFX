@@ -427,10 +427,12 @@ const PREVIEW_VISEME = {
   // deforms the lower lip on this model + fights an open neighbour's jaw, so seal
   // with mouthPress + a light roll instead; the jaw is closed for P below.)
   PP: [["mouthPressLeft",0.5],["mouthPressRight",0.5],["mouthRollLower",0.22],["mouthRollUpper",0.22]],
-  // F/V — labiodental fricative: lower lip tucks up to the upper teeth
-  FF: [["mouthRollLower",1.0],["mouthUpperUpLeft",0.5],["mouthUpperUpRight",0.5],["mouthShrugUpper",0.35],["jawOpen",0.05]],
-  // TH/DH — dental fricative: tongue tip between the teeth
-  TH: [["tongueOut",0.5],["jawOpen",0.16],["mouthUpperUpLeft",0.22],["mouthUpperUpRight",0.22],["mouthLowerDownLeft",0.16],["mouthLowerDownRight",0.16]],
+  // F/V — labiodental fricative: lower lip RISES to meet the upper teeth
+  // (mouthShrugLower lifts the lower lip; a little upperUp shows the teeth it meets)
+  FF: [["mouthShrugLower",0.52],["mouthUpperUpLeft",0.3],["mouthUpperUpRight",0.3],["mouthRollLower",0.3],["jawOpen",0.07]],
+  // TH/DH — dental fricative: tongue tip toward the teeth, close bite (the mesh's
+  // tongueOut is subtle, so keep the jaw nearly shut so it reads as teeth-forward)
+  TH: [["tongueOut",0.95],["jawOpen",0.12],["mouthUpperUpLeft",0.15],["mouthUpperUpRight",0.15],["mouthLowerDownLeft",0.15],["mouthLowerDownRight",0.15]],
   // D/T/L — alveolar: tongue tip up behind the teeth, neutral lips, slightly open
   DD: [["jawOpen",0.24],["tongueOut",0.28],["mouthUpperUpLeft",0.12],["mouthUpperUpRight",0.12]],
   // K/G/HH — velar/glottal: moderate neutral opening (shape follows the vowel)
@@ -443,8 +445,8 @@ const PREVIEW_VISEME = {
   nn: [["jawOpen",0.2],["tongueOut",0.22],["mouthLowerDownLeft",0.1],["mouthLowerDownRight",0.1]],
   // ER/R — rhotic: slight lip rounding / protrusion
   RR: [["mouthPucker",0.45],["mouthFunnel",0.3],["jawOpen",0.18]],
-  // AA/AE/AH/AY — open vowels: jaw wide open
-  aa: [["jawOpen",0.9],["mouthLowerDownLeft",0.12],["mouthLowerDownRight",0.12]],
+  // AA/AE/AH/AY — open vowels: jaw drops to a natural "ah" (not a full gape)
+  aa: [["jawOpen",0.6],["mouthLowerDownLeft",0.1],["mouthLowerDownRight",0.1]],
   // EH/EY/IH — mid-front vowels: open + spread corners
   E:  [["jawOpen",0.42],["mouthStretchLeft",0.32],["mouthStretchRight",0.32],["mouthDimpleLeft",0.22],["mouthDimpleRight",0.22]],
   // IY/Y — high-front "ee": wide spread smile, teeth showing, narrow vertical
@@ -469,9 +471,10 @@ function drive3D(p3d){
   // blend with an open neighbouring vowel would otherwise stretch the lower lip up
   const ppe=Math.min(1, sampleName("PP")*1.4);
   if(ppe>0.02) arkit.jawOpen=(arkit.jawOpen||0)*(1-ppe*0.9);
-  // close the mouth on silence / low speech activity so starts & stops read
+  // rest the mouth on silence / low speech activity — relax the jaw so the lips
+  // meet in the neutral pose (mouthClose deforms the lower lip on this mesh)
   const quiet=Math.max(sampleName("sil"), 1-Math.min(1,visSum));
-  if(quiet>0.05) arkit.mouthClose=Math.max(arkit.mouthClose||0, quiet*0.7);
+  if(quiet>0.05) arkit.jawOpen=(arkit.jawOpen||0)*(1-quiet*0.85);
   const g={ blink_L:sampleName("blink_L"), blink_R:sampleName("blink_R"), blink:sampleName("blink"),
     browUp:sampleName("browUp"), browInnerUp:sampleName("browInnerUp"), browOuterUp:sampleName("browOuterUp") };
   const rad=d=>(d||0)*Math.PI/180;
