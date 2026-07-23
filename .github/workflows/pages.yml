@@ -83,48 +83,10 @@ jobs:
             sed -i "s/const OFFX_VERSION = \"[0-9][0-9A-Za-z.-]*\"/const OFFX_VERSION = \"$OFFX_PUB\"/" site/studio/studio.js
             echo "Pinned Studio to openfacefx $OFFX_PUB"
           fi
-          cat > site/index.html <<'EOF'
-          <!doctype html>
-          <html lang="en"><head><meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>OpenFaceFX</title>
-          <style>
-            body{margin:0;min-height:100vh;display:grid;place-items:center;
-                 background:linear-gradient(160deg,#12181f,#0a0e13);
-                 font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#e8edf4}
-            main{text-align:center;padding:24px}
-            img{width:120px}
-            h1{letter-spacing:.02em}h1 b{color:#f4b942}
-            p{color:#8b96a4;max-width:34em;line-height:1.5}
-            a.btn{display:inline-block;margin:10px 8px 0;padding:12px 22px;border-radius:10px;
-                  border:1.5px solid #f4b942;color:#f4b942;text-decoration:none}
-            a.btn.alt{border-color:#39424f;color:#8b96a4}
-          </style></head><body><main>
-            <img src="logo.svg" alt="OpenFaceFX logo">
-            <h1><b>Open</b>FaceFX</h1>
-            <p>Open-source lip-sync: voice recording + transcript &rarr; viseme
-               animation curves for any engine. MIT, numpy-only.</p>
-            <p style="font-size:14px;color:#e8edf4"><b style="color:#f4b942">New &mdash;</b>
-               <span style="white-space:nowrap">OpenFaceFX Studio</span>: a full web studio
-               (preview &middot; curves &middot; phonemes &middot; face graph &middot; export &middot; AI
-               assistant) that runs right here in your browser.</p>
-            <a class="btn" href="studio/">&#127916; Open Studio</a>
-            <a class="btn" href="demo/">&#9654; Live demo</a>
-            <a class="btn" href="try-it.html">&#127908; Try your audio</a>
-            <a class="btn" href="acoustic.html">&#128483; Acoustic</a>
-            <a class="btn" href="face.html">&#128266; Hear it</a>
-            <a class="btn alt" href="docs/">Docs</a>
-            <a class="btn alt" href="https://github.com/OpenFaceFX/OpenFaceFX">GitHub</a>
-            <p style="font-size:13px">The demo is regenerated from the current
-               pipeline on every push:<br>
-               <code>openfacefx naive --text "hello world this is a test of open face f x" --wav examples/voice.wav</code></p>
-            <p style="font-size:13px"><b style="color:#e8edf4">Acoustic</b> is built
-               from a real recognizer run: Allosaurus hears the phones straight from
-               the speech &mdash; no transcript &mdash; and openfacefx animates them.
-               Reproduce it on any clip:<br>
-               <code>bash tools/build-acoustic-demo.sh yourclip.wav</code></p>
-          </main></body></html>
-          EOF
+          # Landing page — the full marketing site (examples/landing.html): animated
+          # hero, view cards, runtimes, AI/vault, exporters. Its CTAs point at the
+          # sub-pages built above (studio/ demo/ try-it.html acoustic.html docs/).
+          cp examples/landing.html site/index.html
           # Never show a dead Acoustic link: drop it if that demo was not built
           # (no committed recognizer output yet — run tools/build-acoustic-demo.sh).
           [ -f site/acoustic.html ] || sed -i '/href="acoustic.html"/d' site/index.html
