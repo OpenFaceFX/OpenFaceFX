@@ -73,6 +73,16 @@ jobs:
             sed -i "s/const OFFX_VERSION = \"[0-9][0-9A-Za-z.-]*\"/const OFFX_VERSION = \"$OFFX_PUB\"/" site/try-it.html
             echo "Pinned in-browser demo to openfacefx $OFFX_PUB"
           fi
+          # OpenFaceFX Studio — the full web studio (Preview / Curves / Phonemes /
+          # Face Graph / Export / AI assistant). On a static host it runs entirely
+          # client-side via Pyodide, so copying the SPA is all it takes; pin its
+          # in-browser wheel to the latest published release like try-it above.
+          mkdir -p site/studio
+          cp -r src/openfacefx/studio_web/. site/studio/
+          if [ -n "$OFFX_PUB" ]; then
+            sed -i "s/const OFFX_VERSION = \"[0-9][0-9A-Za-z.-]*\"/const OFFX_VERSION = \"$OFFX_PUB\"/" site/studio/studio.js
+            echo "Pinned Studio to openfacefx $OFFX_PUB"
+          fi
           cat > site/index.html <<'EOF'
           <!doctype html>
           <html lang="en"><head><meta charset="utf-8">
@@ -94,6 +104,11 @@ jobs:
             <h1><b>Open</b>FaceFX</h1>
             <p>Open-source lip-sync: voice recording + transcript &rarr; viseme
                animation curves for any engine. MIT, numpy-only.</p>
+            <p style="font-size:14px;color:#e8edf4"><b style="color:#f4b942">New &mdash;</b>
+               <span style="white-space:nowrap">OpenFaceFX Studio</span>: a full web studio
+               (preview &middot; curves &middot; phonemes &middot; face graph &middot; export &middot; AI
+               assistant) that runs right here in your browser.</p>
+            <a class="btn" href="studio/">&#127916; Open Studio</a>
             <a class="btn" href="demo/">&#9654; Live demo</a>
             <a class="btn" href="try-it.html">&#127908; Try your audio</a>
             <a class="btn" href="acoustic.html">&#128483; Acoustic</a>
