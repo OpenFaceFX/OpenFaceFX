@@ -27,7 +27,7 @@ Each FaceFX view maps onto code that already exists:
 
 | FaceFX Studio view | OpenFaceFX Studio | Backed by |
 |---|---|---|
-| Preview (3D + sliders) | **Preview** — schematic face blends visemes + gestures live | `curves`, `gestures` |
+| Preview (3D + sliders) | **Preview** — an ARKit-blendshape **3D head** (three.js) driven by the take; schematic 2D fallback when offline | `retarget` (arkit), `gestures` |
 | Phoneme editor (waveform + phoneme/word bar) | **Phonemes** — waveform + aligned phoneme strip | `alignment`, `pipeline`, `energy` |
 | Curve editor (offset curves) | **Curves** — coarticulated viseme & gesture curves | `coarticulation`, `curves` |
 | Face Graph (nodes + link functions) | **Face Graph** — viseme inputs → rig outputs via links | `mapping`, `retarget`, `links` (#68) |

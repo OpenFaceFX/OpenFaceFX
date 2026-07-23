@@ -31,7 +31,8 @@ from . import __version__
 
 _CTYPE = {".html": "text/html; charset=utf-8", ".css": "text/css",
           ".js": "text/javascript", ".json": "application/json",
-          ".svg": "image/svg+xml", ".png": "image/png"}
+          ".svg": "image/svg+xml", ".png": "image/png",
+          ".glb": "model/gltf-binary", ".wasm": "application/wasm"}
 
 
 # --------------------------------------------------------------------------- #
@@ -176,11 +177,16 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _asset(self, name):
         name = name.lstrip("/") or "index.html"
-        if "/" in name or ".." in name:  # flat asset dir only
+        parts = name.split("/")
+        # allow the flat web root plus a single "assets/" subdir; nothing else
+        if ".." in name or len(parts) > 2 or (len(parts) == 2 and parts[0] != "assets"):
             return self._send(404, b"not found", "text/plain")
+        ref = resources.files("openfacefx") / "studio_web"
+        for p in parts:
+            ref = ref / p
         try:
-            data = (resources.files("openfacefx") / "studio_web" / name).read_bytes()
-        except (FileNotFoundError, ModuleNotFoundError, OSError):
+            data = ref.read_bytes()
+        except (FileNotFoundError, ModuleNotFoundError, OSError, IsADirectoryError):
             return self._send(404, b"not found", "text/plain")
         ext = os.path.splitext(name)[1]
         self._send(200, data, _CTYPE.get(ext, "application/octet-stream"))

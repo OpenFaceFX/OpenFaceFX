@@ -53,6 +53,7 @@ button { font-family:inherit; }
 }
 .brand { display:flex; align-items:baseline; gap:8px; font-weight:600; letter-spacing:.01em; }
 .brand-mark { color:var(--accent); font-size:20px; transform:translateY(2px); }
+.brand-name { white-space:nowrap; }        /* "OpenFaceFX" is one wordmark — never split */
 .brand-name b { color:var(--accent); }
 .brand-sub { color:var(--fg-dim); font-weight:500; }
 .brand.big { font-size:22px; gap:10px; } .brand.big .brand-mark { font-size:26px; }
@@ -158,6 +159,8 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
     radial-gradient(120% 100% at 50% 0%,var(--panel) 0%,var(--panel-2) 70%);
   border:1px solid var(--line); border-radius:var(--r); }
 #face { width:min(60%,360px); height:auto; filter:drop-shadow(0 12px 34px rgba(0,0,0,.4)); }
+#face3d { width:min(74%,460px); aspect-ratio:4/5; display:block; filter:drop-shadow(0 16px 40px rgba(0,0,0,.5)); }
+#face3d[hidden] { display:none; }
 .preview-readout { display:flex; flex-direction:column; align-items:center; gap:4px; text-align:center; }
 #tcRead { font-size:20px; color:var(--accent); letter-spacing:.03em; }
 

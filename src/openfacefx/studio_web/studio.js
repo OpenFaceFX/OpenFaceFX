@@ -179,6 +179,7 @@ async function bootstrap(){
     }catch(_){}
     if(!S.native){ if(typeof WebAssembly==="undefined") throw new Error("WebAssembly unavailable"); await bootPyodide(); }
     S.presets=await Pipe.presets(); initFaceGraphPresets();
+    try{ S.arkitMap=await Pipe.presetMap("arkit"); }catch(_){ S.arkitMap=null; }  // for 3D preview
     buildExportGrid(); $("#run").disabled=false; $("#run").textContent="Generate take";
     boot.done();
   }catch(err){ setRuntime("error","runtime failed"); boot.set("Couldn't start: "+err.message,1);
@@ -260,6 +261,7 @@ $$("#tabs .tab").forEach(t=>t.onclick=()=>{
   $$("#tabs .tab").forEach(x=>x.classList.remove("active")); t.classList.add("active");
   $$(".view").forEach(v=>v.classList.remove("active"));
   S.view=t.dataset.view; $(`.view[data-view="${S.view}"]`).classList.add("active"); drawAll();
+  if(S.view==="preview" && window.Preview3D&&window.Preview3D.ready) window.Preview3D.resize();
 });
 function drawAll(){ drawPreview(); if(S.view==="curves")drawCurves(); if(S.view==="phonemes")drawPhonemes(); if(S.view==="facegraph")drawFaceGraph(); }
 
@@ -275,6 +277,27 @@ const SHAPES={sil:[.30,.03,.2],PP:[.34,.02,.1],FF:[.34,.10,.1],TH:[.34,.16,.2],D
   kk:[.34,.20,.3],CH:[.24,.20,.8],SS:[.30,.08,.2],nn:[.32,.16,.2],RR:[.26,.20,.6],
   aa:[.40,.55,.4],E:[.44,.30,.2],I:[.50,.14,.1],O:[.30,.42,.9],U:[.22,.22,1]};
 function drawPreview(){
+  const p3d=window.Preview3D;
+  if(p3d&&p3d.ready){ if(S.track) drive3D(p3d); }
+  else drawSchematic();
+  if(S.track){ $("#tcRead").textContent=fmt(S.t); $("#tpTime").textContent=fmt(S.t); }
+}
+
+/* drive the 3D head: retarget visemes -> ARKit in JS, + gestures + head pose */
+function drive3D(p3d){
+  const arkit={};
+  if(S.arkitMap) for(const [vis,tgts] of Object.entries(S.arkitMap)){
+    const c=chan(vis); if(!c) continue; const v=Math.max(0,sample(c.keys,S.t)); if(v<1e-4) continue;
+    for(const [t,w] of tgts) arkit[t]=Math.min(1,(arkit[t]||0)+v*w);
+  }
+  const g={ blink_L:sampleName("blink_L"), blink_R:sampleName("blink_R"), blink:sampleName("blink"),
+    browUp:sampleName("browUp"), browInnerUp:sampleName("browInnerUp"), browOuterUp:sampleName("browOuterUp") };
+  const rad=d=>(d||0)*Math.PI/180;
+  p3d.update(arkit,g,{ pitch:rad(sampleSigned("headPitch")), yaw:rad(sampleSigned("headYaw")), roll:rad(sampleSigned("headRoll")) });
+}
+function sampleSigned(n){ const c=chan(n); return c?sample(c.keys,S.t):0; }
+
+function drawSchematic(){
   if(!S.track){ return; }
   let W=0,w=0,h=0,r=0;
   for(const c of S.track.channels){ const s=SHAPES[c.name]; if(!s)continue;
@@ -451,6 +474,15 @@ function encodeWav(f32,rate){ const n=f32.length,buf=new ArrayBuffer(44+n*2),dv=
  * ===================================================================== */
 $("#themeToggle").onclick=()=>{ const r=document.documentElement;
   r.dataset.theme=r.dataset.theme==="light"?"dark":"light"; drawAll(); };
-let rt; addEventListener("resize",()=>{ clearTimeout(rt); rt=setTimeout(drawAll,120); });
+let rt; addEventListener("resize",()=>{ clearTimeout(rt); rt=setTimeout(()=>{ drawAll();
+  window.Preview3D&&window.Preview3D.ready&&window.Preview3D.resize(); },120); });
+
+/* the 3D head finished loading → swap the schematic SVG for the WebGL canvas */
+addEventListener("preview3d-ready",()=>{
+  const c=$("#face3d"), s=$("#face"); if(c){ c.hidden=false; } if(s){ s.style.display="none"; }
+  const cap=document.querySelector(".preview-readout .dim");
+  if(cap) cap.textContent="ARKit-blendshape 3D head, driven by the take — drag to orbit, scroll to zoom";
+  window.Preview3D.setActive(true); window.Preview3D.resize(); drawPreview();
+});
 
 bootstrap();

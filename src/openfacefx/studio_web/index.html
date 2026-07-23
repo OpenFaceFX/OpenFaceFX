@@ -6,6 +6,12 @@
 <title>OpenFaceFX Studio</title>
 <meta name="description" content="A web-based facial-animation & lip-sync studio — the open FaceFX Studio, powered by the OpenFaceFX pipeline running in your browser.">
 <link rel="stylesheet" href="studio.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
 </head>
 <body>
 
@@ -108,7 +114,8 @@
       <!-- Preview -->
       <section class="view active" data-view="preview">
         <div class="preview-stage">
-          <svg id="face" viewBox="0 0 260 220" aria-label="face preview">
+          <canvas id="face3d" hidden aria-label="3D face preview"></canvas>
+          <svg id="face" viewBox="0 0 260 220" aria-label="schematic face preview">
             <defs>
               <radialGradient id="skin" cx="50%" cy="42%" r="62%">
                 <stop offset="0%" stop-color="#3a4756"/><stop offset="100%" stop-color="#232c38"/>
@@ -205,5 +212,6 @@
 
 <script src="studio.js"></script>
 <script src="assistant.js"></script>
+<script type="module" src="preview3d.js"></script>
 </body>
 </html>
