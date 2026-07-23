@@ -92,8 +92,14 @@ def _generate(p: dict) -> dict:
                           "head_ambient", "head_nod_on_stress"):
                     if hasattr(gp, a): setattr(gp, a, False)
             track = add_gestures_to_track(track, track.duration, params=gp)
+        try:
+            from openfacefx import word_timings
+            words = [[wt[0], round(float(wt[1]), 4), round(float(wt[2]), 4)]
+                     for wt in word_timings(text, dur, g2p)]
+        except Exception:
+            words = []
         return {"track": to_dict(track), "segments": dump_segments(segs),
-                "duration": round(track.duration, 4), "fps": track.fps}
+                "duration": round(track.duration, 4), "fps": track.fps, "words": words}
     finally:
         if wav_path and os.path.exists(wav_path): os.remove(wav_path)
 

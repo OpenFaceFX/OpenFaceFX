@@ -17,7 +17,7 @@ const CURVE_COLORS = ["#f4b942","#4cc2ff","#e06c9f","#5ad19a","#b78cff","#ff8f6b
 /* ---- global state ---------------------------------------------------- */
 const S = {
   runtime:null, pyodide:null, native:false,
-  track:null, segments:[], duration:0, fps:60,
+  track:null, segments:[], words:[], duration:0, fps:60,
   wavBytes:null, wavPeaks:null,
   chan:{},               // name -> {color, visible, idx}
   sel:null,              // selected channel name
@@ -63,7 +63,7 @@ window.StudioBridge = {
   getWorkspace:()=>({ v:1, actorIdx:S.actorIdx, takeIdx:S.takeIdx,
     actors:S.actors.map(a=>({ name:a.name, takes:a.takes.map(t=>({
       name:t.name, params:t.params, wavName:t.wavName, colors:t.colors||undefined, cmudict:t.cmudict||undefined,
-      track:t.track, segments:t.segments, duration:t.duration,
+      track:t.track, segments:t.segments, words:t.words||undefined, duration:t.duration,
       peaks:t.wavPeaks?Array.from(t.wavPeaks):undefined,                 // waveform survives save/load
       wavB64:(t.wavBytes&&t.wavBytes.length<1500000)?toB64(t.wavBytes):undefined })) })) }),  // audio too if it fits the vault cap
   setWorkspace:w=>{ if(!w||!Array.isArray(w.actors)||!w.actors.length) return false;
@@ -72,7 +72,7 @@ window.StudioBridge = {
       name:t.name||"take_01", params:t.params||{...DEFAULT_PARAMS}, wavName:t.wavName||"no audio — timing from text",
       colors:t.colors||null, cmudict:t.cmudict||"",
       wavBytes:t.wavB64?fromB64(t.wavB64):null, wavPeaks:t.peaks?Float32Array.from(t.peaks):null,
-      track:t.track||null, segments:t.segments||[], duration:t.duration||0 })) }));
+      track:t.track||null, segments:t.segments||[], words:t.words||[], duration:t.duration||0 })) }));
     S.actorIdx=Math.min(Math.max(0,w.actorIdx||0), S.actors.length-1);
     const nt=curActor().takes.length;
     S.takeIdx=(w.takeIdx!=null)?Math.min(Math.max(-1,w.takeIdx), nt-1):(nt?0:-1);
@@ -144,11 +144,17 @@ def studio_generate(text, engine, dur, style, gestures, breath, has_wav, fps, cm
             track = add_gestures_to_track(track, track.duration, params=gp)
         except Exception as e:
             pass
+    try:
+        from openfacefx import word_timings
+        words = [[wt[0], round(float(wt[1]),4), round(float(wt[2]),4)] for wt in word_timings(text, dur, g2p)]
+    except Exception:
+        words = []
     return json.dumps({
         "track": to_dict(track),
         "segments": dump_segments(segs),
         "duration": round(track.duration,4),
         "fps": track.fps,
+        "words": words,
     })
 
 def studio_presets():
@@ -323,9 +329,9 @@ async function runGenerate(preserve){
       for(const nm in tk.owned){ if(oldBy[nm]&&!newTrack.channels.some(c=>c.name===nm)) newTrack.channels.push({name:nm,keys:structuredClone(oldBy[nm].keys)}); }
     }
     tk.params={...captureParams()}; tk.wavBytes=S.wavBytes; tk.wavPeaks=S.wavPeaks; tk.wavName=$("#wavName").textContent;
-    tk.track=newTrack; tk.segments=res.segments||[]; tk.duration=res.duration;
+    tk.track=newTrack; tk.segments=res.segments||[]; tk.words=res.words||[]; tk.duration=res.duration;
     if(!preserve){ tk.edited=false; tk.owned={}; }    // full Generate drops ownership; Reanalyze keeps it
-    S.track=newTrack; S.segments=res.segments||[]; S.duration=res.duration; S.t=0;
+    S.track=newTrack; S.segments=res.segments||[]; S.words=res.words||[]; S.duration=res.duration; S.t=0;
     S.undo.length=0; S.redo.length=0;                 // rebuild clears undo history
     ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons(); updateReanalyze();
     $("#tpDur").textContent="/ "+fmt(S.duration); refreshIO();
@@ -370,7 +376,7 @@ function syncFormToTake(){ const t=curTake(); if(!t)return;
 function newTakeSlot(){ const a=curActor(); a.takes.push({ name:nextTakeName(a), params:captureParams(),
   wavBytes:S.wavBytes, wavPeaks:S.wavPeaks, wavName:$("#wavName").textContent, track:null, segments:[], duration:0 });
   S.takeIdx=a.takes.length-1; return curTake(); }
-function clearResultOnly(){ S.track=null; S.segments=[]; S.duration=0; S.t=0; S.sel=null; S.solo=null; S.chan={};
+function clearResultOnly(){ S.track=null; S.segments=[]; S.words=[]; S.duration=0; S.t=0; S.sel=null; S.solo=null; S.chan={};
   S.inspectKind=null; S.node=null;
   const list=$("#channelList"); if(list) list.innerHTML='<li class="empty">Generate this take to see its animation channels.</li>';
   $("#chCount").textContent="0"; $("#tpDur").textContent="/ 00:00.000"; buildInspector(); setScrub(); drawAll(); }
@@ -378,7 +384,7 @@ function loadTake(){ const t=curTake();
   if(!t){ applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; $("#wavName").textContent="no audio — timing from text"; clearResultOnly(); return; }
   applyParams(t.params); S.wavBytes=t.wavBytes||null; S.wavPeaks=t.wavPeaks||null;
   $("#wavName").textContent=t.wavName||"no audio — timing from text";
-  if(t.track){ S.track=t.track; S.segments=t.segments||[]; S.duration=t.duration; S.t=0; S.sel=null; S.solo=null;
+  if(t.track){ S.track=t.track; S.segments=t.segments||[]; S.words=t.words||[]; S.duration=t.duration; S.t=0; S.sel=null; S.solo=null;
     S.inspectKind=null; S.node=null; ingestChannels(); buildChannelList(); buildInspector();
     $("#tpDur").textContent="/ "+fmt(S.duration); setScrub(); drawAll(); }
   else clearResultOnly(); }
@@ -499,7 +505,7 @@ $$("#tabs .tab").forEach(t=>t.onclick=()=>{
   S.view=t.dataset.view; $(`.view[data-view="${S.view}"]`).classList.add("active"); drawAll();
   if(S.view==="preview" && window.Preview3D&&window.Preview3D.ready) window.Preview3D.resize();
 });
-function drawAll(){ drawPreview(); if(S.view==="curves")drawCurves(); if(S.view==="phonemes")drawPhonemes(); if(S.view==="facegraph")drawFaceGraph(); updateInspVal(); }
+function drawAll(){ drawPreview(); if(S.view==="curves"){drawCurves(); drawCurveStrip();} if(S.view==="phonemes")drawPhonemes(); if(S.view==="facegraph")drawFaceGraph(); updateInspVal(); }
 
 /* linear-sample a channel [[t,v]...] at time t */
 function sample(keys,t){ if(!keys||!keys.length)return 0;
@@ -662,6 +668,23 @@ function drawCurves(){
 }
 /* geometry shared by drawCurves + the curve interaction handlers */
 function curveGeom(w,h){ const padL=8,padR=8,padT=8,padB=18; return {padL,padT,gw:w-padL-padR,gh:h-padT-padB}; }
+/* phoneme + word alignment strip under the Curves tab, sharing the curve x-axis (#16) */
+function drawCurveStrip(){
+  const cv=$("#curveStrip"); if(!cv||!S.track)return; const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h);
+  const T=Math.max(.001,S.duration), padL=8, gw=w-16, X=t=>padL+gw*(t/T);   // match curveGeom's padL/gw
+  x.fillStyle=css("--panel-2"); x.fillRect(0,0,w,h);
+  const hasWords=!!(S.words&&S.words.length), rowH=hasWords?h/2:h;
+  x.font="10px "+css("--font-mono"); x.textBaseline="middle";
+  for(const s of S.segments){ const a=X(s.start), b=X(s.end); const sil=(s.phoneme||"").toLowerCase()==="sil"||s.phoneme==="_";
+    x.fillStyle=sil?css("--panel-2"):css("--elev"); x.fillRect(a+1,2,Math.max(1,b-a-2),rowH-4);
+    x.strokeStyle=css("--line"); x.strokeRect(a+1,2,Math.max(1,b-a-2),rowH-4);
+    if(b-a>12&&!sil){ x.fillStyle=css("--fg-dim"); x.fillText(s.phoneme,a+4,2+(rowH-4)/2); } }
+  if(hasWords) for(const wd of S.words){ const a=X(wd[1]), b=X(wd[2]);
+    x.fillStyle="color-mix(in srgb,"+css("--accent-2")+" 15%,"+css("--elev")+")"; x.fillRect(a+1,rowH+2,Math.max(1,b-a-2),rowH-4);
+    x.strokeStyle=css("--line"); x.strokeRect(a+1,rowH+2,Math.max(1,b-a-2),rowH-4);
+    if(b-a>16){ x.fillStyle=css("--fg"); x.fillText(wd[0],a+4,rowH+2+(rowH-4)/2); } }
+  x.strokeStyle=css("--accent"); x.beginPath(); const hx=X(S.t); x.moveTo(hx,0);x.lineTo(hx,h);x.stroke();
+}
 
 /* ---- Phonemes (waveform + strip) ------------------------------------ */
 function peaks(data,n){ const out=new Float32Array(n); const step=Math.max(1,Math.floor(data.length/n));
@@ -793,6 +816,8 @@ function wireCanvases(){
   }
   for(const id of ["#wave","#phonStrip"]){ const c=$(id); if(!c)continue; c.style.cursor="crosshair";
     c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); seekAtX(x,w,0,Math.max(.001,S.duration)); }); }
+  const cs=$("#curveStrip"); if(cs){ cs.style.cursor="crosshair";   // shares the curve x-axis (padL 8, gw w-16)
+    cs.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(cs,e); seekAtX(x,w-16,8,Math.max(.001,S.duration)); }); }
   const fg=$("#facegraph"); if(fg){ fg.style.cursor="pointer";
     fg.addEventListener("pointerdown",e=>{ const {x,y}=canvasMetrics(fg,e);
       const hit=(S.fgNodes||[]).find(n=>Math.abs(x-n.x)<=n.w/2+3 && Math.abs(y-n.y)<=n.h/2+3);
