@@ -20,6 +20,20 @@ its `version` field.
   The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
 
 ### Added
+- **BVH head/eye-rotation importer** (#32) — a `from-bvh` command and
+  `read_bvh(path)` / `parse_bvh(text)` library entries that import a Biovision
+  Hierarchy mocap file's head (and eye) joint rotation into signed
+  `headPitch/headYaw/headRoll` (+ averaged `eyePitch/eyeYaw` gaze) pose channels —
+  the same pose model the VMD importer harvests from 頭/首 bones, so a captured
+  head performance (nods, turns, tilts, gaze) layers onto generated lip motion.
+  BVH is already intrinsic Euler degrees, so head axes map straight through
+  (X→pitch, Y→yaw, Z→roll; neck as a fallback), columns are RDP-thinned and dead
+  all-zero axes dropped. Crucially the signed values pass through **unclamped** —
+  built directly with `_rdp` rather than `reduce_to_track`, whose positive-only
+  "never fires" filter and `[0,1]` clamp (correct for weight channels) would
+  discard a head turned only one way. BVH axis conventions vary by exporter, so a
+  sign may need flipping per-rig; the values are faithful to the file. Pure numpy
+  + stdlib, deterministic, additive.
 - **glTF morph-animation importer** (#13) — a `from-gltf` command and
   `read_gltf(path, fps=…, epsilon=…)` library entry that decode morph-target
   (blendshape) **weight** animation from any glTF 2.0 `.glb`/`.gltf` back into a

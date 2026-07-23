@@ -1397,6 +1397,22 @@ def main(argv=None) -> int:
     _add_output_options(fg)
     _add_qa_options(fg)
 
+    fb = sub.add_parser("from-bvh",
+                        help="import head/eye rotation from a Biovision Hierarchy "
+                             ".bvh mocap file into signed headPitch/headYaw/headRoll "
+                             "(+ eyePitch/eyeYaw) pose channels (issue #32) — layer "
+                             "a captured head performance onto generated lip motion")
+    fb.add_argument("file", help="the .bvh motion-capture file to import")
+    fb.add_argument("--fps", type=float, default=None,
+                    help="frame rate for the track; overrides the file's Frame Time")
+    fb.add_argument("--epsilon", type=float, default=0.1,
+                    help="RDP simplification tolerance in degrees (default 0.1)")
+    fb.add_argument("--no-eyes", action="store_true",
+                    help="skip eye joints (import head/neck rotation only)")
+    fb.add_argument("-o", "--out", required=True)
+    _add_output_options(fb)
+    _add_qa_options(fb)
+
     eo = sub.add_parser("emit-oov-dict",
                         help="emit a reviewable CMUdict of rule-G2P guesses for the "
                              "out-of-vocabulary words in a transcript (issue #66); "
@@ -1799,6 +1815,20 @@ def main(argv=None) -> int:
                                         epsilon=args.epsilon)
         except (OSError, ValueError, KeyError) as ex:
             raise SystemExit(f"from-gltf: {ex}")
+        for w in warnings:
+            _warn(args, w)
+        _write(track, args.out, args)
+        _emit_summary(args, track)
+        return 0
+
+    if args.cmd == "from-bvh":
+        from .importers_bvh import read_bvh
+        try:
+            track, warnings = read_bvh(args.file, fps=args.fps,
+                                       epsilon=args.epsilon,
+                                       eyes=not args.no_eyes)
+        except (OSError, ValueError) as ex:
+            raise SystemExit(f"from-bvh: {ex}")
         for w in warnings:
             _warn(args, w)
         _write(track, args.out, args)

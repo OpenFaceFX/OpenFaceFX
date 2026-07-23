@@ -43,6 +43,7 @@ from .importers import (import_cues, detect_format, build_cue_track,
 from .importers_csv import read_csv
 from .importers_vmd import parse_vmd, read_vmd
 from .importers_gltf import read_gltf
+from .importers_bvh import read_bvh, parse_bvh
 from .inspect import (inspect_track, validate_asset, validate_file,
                      detect_kind)
 from .transforms import (retime, retime_to_duration, mirror, trim, concat,
@@ -134,7 +135,7 @@ __all__ = [
     "import_cues", "detect_format", "build_cue_track",
     "RHUBARB_TO_VISEME", "PRESTON_BLAIR_TO_VISEME", "FLEMING_DOBBS_TO_VISEME",
     "read_csv",
-    "parse_vmd", "read_vmd", "read_gltf",
+    "parse_vmd", "read_vmd", "read_gltf", "read_bvh", "parse_bvh",
     "inspect_track", "validate_asset", "validate_file", "detect_kind",
     "retime", "retime_to_duration", "mirror", "trim", "concat",
     "MIRROR_PAIRS", "MIRROR_NEGATE",

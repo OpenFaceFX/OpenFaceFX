@@ -902,6 +902,25 @@ the keyframe value, and a write → read round-trip recovers every channel withi
 the RDP tolerance. `read_gltf(path)` is the library entry; numpy + stdlib,
 deterministic.
 
+For **head motion** specifically, `from-bvh` imports a Biovision Hierarchy
+(`.bvh`) mocap file (issue
+[#32](https://github.com/OpenFaceFX/OpenFaceFX/issues/32)) — the lingua franca of
+skeletal capture (Rokoko, Perception Neuron, Blender, MotionBuilder). BVH has no
+blendshapes, but its head joint's Euler-degree rotation *is* the signed
+`headPitch/headYaw/headRoll` pose model (X→pitch, Y→yaw, Z→roll straight through,
+neck as a fallback), and left/right eye joints are averaged into an `eyePitch/
+eyeYaw` gaze — so a captured head performance layers onto generated lip motion:
+
+```bash
+python -m openfacefx from-bvh capture.bvh -o head.track.json   # nods/turns/tilts → pose channels
+```
+
+Columns are RDP-thinned, dead all-zero axes dropped; signed values pass through
+unclamped (a head turned only one way is negative-only, which the weight-channel
+path would wrongly discard). BVH axis conventions vary by exporter, so a sign may
+need flipping per-rig. `read_bvh(path)` / `parse_bvh(text)` are the library
+entries; numpy + stdlib, deterministic.
+
 ## Preview what you generated
 
 `examples/preview.html` is a self-contained page (no server needed) that
@@ -1317,6 +1336,7 @@ src/openfacefx/
   importers.py      read Rhubarb/Moho/Papagayo cue files back into a track (#44) ← from-cues command
   importers_csv.py  read ARKit/Live Link Face blendshape-weight CSV into a track (#45) ← from-csv command
   importers_gltf.py read glTF 2.0 morph-weight animation into a track; FBX path (#13) ← from-gltf command
+  importers_bvh.py  read BVH mocap head/eye rotation into signed pose channels (#32) ← from-bvh command
   inspect.py        read-only track stats + a CI format/contract linter (#47) ← inspect, validate commands
   trackdiff.py      read-only A/B drift report, tolerance-gated exit (#50) ← diff command
   transforms.py     retime/mirror/trim (#48) + concat/sequence splice (#51) ← transform, sequence
