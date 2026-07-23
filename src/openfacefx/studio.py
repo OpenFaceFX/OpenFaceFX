@@ -220,6 +220,20 @@ def _qa(p: dict) -> dict:
     return summarize(tk, segments=segs, oov_words=oov)
 
 
+def _events(p: dict) -> dict:
+    """Auto-author a typed event layer from a take's phonemes (derive_events):
+    emphasis on stressed syllables, phrase markers at pauses."""
+    from openfacefx.alignment import PhonemeSegment
+    from openfacefx import derive_events
+    from openfacefx.events import event_to_dict
+    segs = [PhonemeSegment(phoneme=s.get("phoneme"), start=float(s.get("start", 0) or 0),
+            end=float(s.get("end", 0) or 0), confidence=s.get("confidence"))
+            for s in (p.get("segments") or [])]
+    evs = derive_events(segments=segs, emphasis=bool(p.get("emphasis", True)),
+                        phrase=bool(p.get("phrase", True)))
+    return {"events": [event_to_dict(e) for e in evs]}
+
+
 # --------------------------------------------------------------------------- #
 # HTTP handler                                                                 #
 # --------------------------------------------------------------------------- #
@@ -330,6 +344,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_bake_emotion(body))
             if path == "/api/qa":
                 return self._json(_qa(body))
+            if path == "/api/events":
+                return self._json(_events(body))
             if path in ("/api/auth/register", "/api/auth/login"):
                 from .studio_saas import AuthError
                 fn = _store().register if path.endswith("register") else _store().login

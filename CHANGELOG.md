@@ -20,6 +20,17 @@ its `version` field.
   The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
 
 ### Added
+- **Studio Events tab** (#14) — a new **Events** view in OpenFaceFX Studio that
+  auto-authors a typed event layer from the take's own speech
+  (`pipeline.derive_events`): **emphasis** beats on stressed syllables and
+  **phrase** markers at pauses — the same accents the gesture layer reads. Events
+  render on a two-lane timeline over the phoneme/word strip (click a marker to
+  seek), list with their payloads, and toggle emphasis/phrase live. They ride in
+  the take's track JSON, so the existing exporters emit them as **engine notifies**
+  (Unreal `AnimNotify`, Unity events). Wired in both runtimes — a `studio_events`
+  Pyodide bridge and a native `/api/events` route reconstruct `PhonemeSegment`s and
+  call the already-shipped engine code; no new pipeline logic. Display-only, the
+  generated curves stay byte-identical.
 - **BVH head/eye-rotation importer** (#32) — a `from-bvh` command and
   `read_bvh(path)` / `parse_bvh(text)` library entries that import a Biovision
   Hierarchy mocap file's head (and eye) joint rotation into signed

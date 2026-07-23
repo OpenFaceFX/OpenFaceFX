@@ -118,6 +118,7 @@
       <button class="tab active" data-view="preview" role="tab">Preview</button>
       <button class="tab" data-view="phonemes" role="tab">Phonemes</button>
       <button class="tab" data-view="curves" role="tab">Curves</button>
+      <button class="tab" data-view="events" role="tab">Events</button>
       <button class="tab" data-view="facegraph" role="tab">Face&nbsp;Graph</button>
       <button class="tab" data-view="export" role="tab">Export</button>
       <button class="tab" data-view="assistant" role="tab">Assistant</button>
@@ -192,6 +193,23 @@
         <canvas id="curves" class="lane tall"></canvas>
         <canvas id="curveStrip" class="lane phon" height="44"></canvas>
         <p class="view-note dim">Coarticulated viseme &amp; gesture curves over the phoneme &amp; word strip. Click a curve to select it · drag its dots to move a key · double-click to add · alt/right-click a dot to delete · Ctrl+Z to undo.</p>
+      </section>
+
+      <!-- Events -->
+      <section class="view" data-view="events">
+        <div class="lane-head">
+          <h3>Events</h3>
+          <div class="lane-tools">
+            <button class="btn sm" id="evRun" title="Auto-author events from the speech">⚡ Derive</button>
+            <label class="opt inline"><input type="checkbox" id="evEmphasis" checked> emphasis</label>
+            <label class="opt inline"><input type="checkbox" id="evPhrase" checked> phrase</label>
+            <span class="count" id="evCount">0</span>
+          </div>
+        </div>
+        <canvas id="eventsTl" class="lane tall"></canvas>
+        <canvas id="eventStrip" class="lane phon" height="44"></canvas>
+        <div id="eventList" class="event-list"></div>
+        <p class="view-note dim">A typed event layer auto-authored from the speech itself (<b>derive_events</b>): <b>emphasis</b> beats on stressed syllables and <b>phrase</b> markers at pauses — the same accents the gesture layer reads. Click an event to seek. Events ride in the track JSON and export as engine notifies (Unity/Unreal).</p>
       </section>
 
       <!-- Face Graph -->

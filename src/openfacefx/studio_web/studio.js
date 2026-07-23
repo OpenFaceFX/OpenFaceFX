@@ -27,6 +27,7 @@ const S = {
   actors:[{name:"Untitled", takes:[]}], actorIdx:0, takeIdx:-1,   // actors → takes
   inspectKind:null, node:null, fgNodes:[], solo:null,             // inspector + graph hit-testing
   undo:[], redo:[],                                               // curve-edit history
+  events:[],                                                      // derived event layer (Events tab)
 };
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const DEFAULT_PARAMS={ text:"Hello world — this is OpenFaceFX Studio, running the real pipeline right in your browser.",
@@ -195,6 +196,18 @@ def studio_qa(track_json, segments_json, text):
         pass
     return json.dumps(summarize(tk, segments=segs, oov_words=oov))
 
+def studio_events(segments_json, emphasis=True, phrase=True):
+    # auto-author a typed event layer from the speech (pipeline.derive_events):
+    # emphasis on stressed syllables, phrase markers at pauses.
+    from openfacefx.alignment import PhonemeSegment
+    from openfacefx import derive_events
+    from openfacefx.events import event_to_dict
+    segs = [PhonemeSegment(phoneme=s.get('phoneme'), start=float(s.get('start',0) or 0),
+            end=float(s.get('end',0) or 0), confidence=s.get('confidence'))
+            for s in json.loads(segments_json or '[]')]
+    evs = derive_events(segments=segs, emphasis=bool(emphasis), phrase=bool(phrase))
+    return json.dumps({"events": [event_to_dict(e) for e in evs]})
+
 _EXPORTERS = {}
 def _reg(fmt, fn): _EXPORTERS[fmt]=fn
 
@@ -274,6 +287,10 @@ const Pipe = {
     const text=$("#text").value||"";
     if(S.native) return fetch("/api/qa",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,segments:S.segments,text})}).then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_qa"); const r=JSON.parse(fn(S.track?JSON.stringify(S.track):"null",JSON.stringify(S.segments||[]),text)); fn.destroy(); return r;
+  },
+  async events(emphasis,phrase){
+    if(S.native) return fetch("/api/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({segments:S.segments,emphasis,phrase})}).then(r=>r.json());
+    const fn=S.pyodide.globals.get("studio_events"); const r=JSON.parse(fn(JSON.stringify(S.segments||[]),!!emphasis,!!phrase)); fn.destroy(); return r;
   }
 };
 
@@ -331,6 +348,7 @@ async function runGenerate(preserve){
     tk.params={...captureParams()}; tk.wavBytes=S.wavBytes; tk.wavPeaks=S.wavPeaks; tk.wavName=$("#wavName").textContent;
     tk.track=newTrack; tk.segments=res.segments||[]; tk.words=res.words||[]; tk.duration=res.duration;
     if(!preserve){ tk.edited=false; tk.owned={}; }    // full Generate drops ownership; Reanalyze keeps it
+    if(!preserve){ S.events=[]; } else if(S.events&&S.events.length){ newTrack.events=S.events; }  // event layer: reset on full gen, carried on Reanalyze
     S.track=newTrack; S.segments=res.segments||[]; S.words=res.words||[]; S.duration=res.duration; S.t=0;
     S.undo.length=0; S.redo.length=0;                 // rebuild clears undo history
     ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons(); updateReanalyze();
@@ -377,16 +395,16 @@ function newTakeSlot(){ const a=curActor(); a.takes.push({ name:nextTakeName(a),
   wavBytes:S.wavBytes, wavPeaks:S.wavPeaks, wavName:$("#wavName").textContent, track:null, segments:[], duration:0 });
   S.takeIdx=a.takes.length-1; return curTake(); }
 function clearResultOnly(){ S.track=null; S.segments=[]; S.words=[]; S.duration=0; S.t=0; S.sel=null; S.solo=null; S.chan={};
-  S.inspectKind=null; S.node=null;
+  S.inspectKind=null; S.node=null; S.events=[];
   const list=$("#channelList"); if(list) list.innerHTML='<li class="empty">Generate this take to see its animation channels.</li>';
-  $("#chCount").textContent="0"; $("#tpDur").textContent="/ 00:00.000"; buildInspector(); setScrub(); drawAll(); }
+  $("#chCount").textContent="0"; $("#tpDur").textContent="/ 00:00.000"; buildInspector(); setScrub(); drawAll(); renderEventList(); }
 function loadTake(){ const t=curTake();
   if(!t){ applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; $("#wavName").textContent="no audio — timing from text"; clearResultOnly(); return; }
   applyParams(t.params); S.wavBytes=t.wavBytes||null; S.wavPeaks=t.wavPeaks||null;
   $("#wavName").textContent=t.wavName||"no audio — timing from text";
   if(t.track){ S.track=t.track; S.segments=t.segments||[]; S.words=t.words||[]; S.duration=t.duration; S.t=0; S.sel=null; S.solo=null;
-    S.inspectKind=null; S.node=null; ingestChannels(); buildChannelList(); buildInspector();
-    $("#tpDur").textContent="/ "+fmt(S.duration); setScrub(); drawAll(); }
+    S.inspectKind=null; S.node=null; S.events=(t.track.events)||[]; ingestChannels(); buildChannelList(); buildInspector();
+    $("#tpDur").textContent="/ "+fmt(S.duration); setScrub(); drawAll(); renderEventList(); }
   else clearResultOnly(); }
 function addTake(){ syncFormToTake(); newTakeSlot(); clearResultOnly(); refreshIO(); }
 /* real duplicate — deep-clone the current take (track/segments/audio/edits), not a blank slot */
@@ -503,9 +521,10 @@ $$("#tabs .tab").forEach(t=>t.onclick=()=>{
   $$("#tabs .tab").forEach(x=>x.classList.remove("active")); t.classList.add("active");
   $$(".view").forEach(v=>v.classList.remove("active"));
   S.view=t.dataset.view; $(`.view[data-view="${S.view}"]`).classList.add("active"); drawAll();
+  if(S.view==="events") renderEventList();
   if(S.view==="preview" && window.Preview3D&&window.Preview3D.ready) window.Preview3D.resize();
 });
-function drawAll(){ drawPreview(); if(S.view==="curves"){drawCurves(); drawCurveStrip();} if(S.view==="phonemes")drawPhonemes(); if(S.view==="facegraph")drawFaceGraph(); updateInspVal(); }
+function drawAll(){ drawPreview(); if(S.view==="curves"){drawCurves(); drawCurveStrip();} if(S.view==="phonemes")drawPhonemes(); if(S.view==="facegraph")drawFaceGraph(); if(S.view==="events"){drawEvents(); drawEventStrip();} updateInspVal(); }
 
 /* linear-sample a channel [[t,v]...] at time t */
 function sample(keys,t){ if(!keys||!keys.length)return 0;
@@ -687,9 +706,10 @@ function drawCurves(){
 }
 /* geometry shared by drawCurves + the curve interaction handlers */
 function curveGeom(w,h){ const padL=8,padR=8,padT=8,padB=18; return {padL,padT,gw:w-padL-padR,gh:h-padT-padB}; }
-/* phoneme + word alignment strip under the Curves tab, sharing the curve x-axis (#16) */
-function drawCurveStrip(){
-  const cv=$("#curveStrip"); if(!cv||!S.track)return; const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h);
+/* phoneme + word alignment strip under the Curves tab, sharing the curve x-axis (#16).
+ * `cid` lets the Events tab reuse the same strip under its timeline (#14). */
+function drawCurveStrip(cid){
+  const cv=$(cid||"#curveStrip"); if(!cv||!S.track)return; const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h);
   const T=Math.max(.001,S.duration), padL=8, gw=w-16, X=t=>padL+gw*(t/T);   // match curveGeom's padL/gw
   x.fillStyle=css("--panel-2"); x.fillRect(0,0,w,h);
   const hasWords=!!(S.words&&S.words.length), rowH=hasWords?h/2:h;
@@ -836,8 +856,13 @@ function wireCanvases(){
   }
   for(const id of ["#wave","#phonStrip"]){ const c=$(id); if(!c)continue; c.style.cursor="crosshair";
     c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); seekAtX(x,w,0,Math.max(.001,S.duration)); }); }
-  const cs=$("#curveStrip"); if(cs){ cs.style.cursor="crosshair";   // shares the curve x-axis (padL 8, gw w-16)
-    cs.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(cs,e); seekAtX(x,w-16,8,Math.max(.001,S.duration)); }); }
+  for(const id of ["#curveStrip","#eventStrip"]){ const cs=$(id); if(cs){ cs.style.cursor="crosshair";   // share the curve x-axis (padL 8, gw w-16)
+    cs.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(cs,e); seekAtX(x,w-16,8,Math.max(.001,S.duration)); }); } }
+  const etl=$("#eventsTl"); if(etl){ etl.style.cursor="crosshair";
+    etl.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,y,w}=canvasMetrics(etl,e);
+      const hit=(S._evHit||[]).find(hh=>Math.hypot(x-hh.x,y-hh.y)<10);   // click a marker seeks to it
+      if(hit){ S.t=Math.min(S.duration,Math.max(0,hit.e.t||0)); S.playClock=S.t; setScrub(); drawAll(); }
+      else seekAtX(x,w-16,8,Math.max(.001,S.duration)); }); }
   const fg=$("#facegraph"); if(fg){ fg.style.cursor="pointer";
     fg.addEventListener("pointerdown",e=>{ const {x,y}=canvasMetrics(fg,e);
       const hit=(S.fgNodes||[]).find(n=>Math.abs(x-n.x)<=n.w/2+3 && Math.abs(y-n.y)<=n.h/2+3);
@@ -848,6 +873,9 @@ function wireCanvases(){
   $("#cvAddKey")&&($("#cvAddKey").onclick=addKeyAtPlayhead);
   $("#cvDelKey")&&($("#cvDelKey").onclick=delKeyAtPlayhead);
   $("#qaRun")&&($("#qaRun").onclick=runQA);
+  $("#evRun")&&($("#evRun").onclick=runEvents);
+  // re-derive live when a toggle changes, but only once events already exist
+  ["#evEmphasis","#evPhrase"].forEach(id=>{ const c=$(id); if(c) c.onchange=()=>{ if(S.events&&S.events.length) runEvents(); }; });
   refreshUndoButtons(); wirePosePanel();
   addEventListener("keydown",e=>{ if(!(e.ctrlKey||e.metaKey))return; const t=e.target.tagName;
     if(t==="INPUT"||t==="TEXTAREA"||t==="SELECT")return;
@@ -912,6 +940,63 @@ function renderQA(r){
   $("#qaClose")&&($("#qaClose").onclick=()=>{ panel.hidden=true; });
   panel.querySelectorAll(".qa-flag[data-t]").forEach(li=>li.onclick=()=>{
     S.t=Math.min(S.duration,Math.max(0,parseFloat(li.dataset.t)||0)); S.playClock=S.t; setScrub(); drawAll(); });
+}
+
+/* ===================================================================== *
+ *  Events — auto-authored typed event layer (pipeline.derive_events, #14)
+ * ===================================================================== */
+const EV_COLOR=t=>t==="emphasis"?css("--accent"):t==="marker"?css("--accent-2"):css("--fg-dim");
+async function runEvents(){
+  const el=$("#eventList");
+  if(!S.track){ if(el) el.innerHTML='<p class="dim">Generate a take first, then derive events.</p>'; S.events=[]; drawEvents(); return; }
+  if(el) el.innerHTML='<p class="dim">Deriving…</p>';
+  try{
+    const r=await Pipe.events($("#evEmphasis").checked,$("#evPhrase").checked);
+    S.events=r.events||[];
+    // events ride along in the track JSON → exporters emit them as engine notifies
+    S.track.events=S.events; const tk=curTake(); if(tk&&tk.track) tk.track.events=S.events;
+  }catch(err){ if(el) el.innerHTML='<p class="dim">Derive failed: '+esc(err.message)+'</p>'; return; }
+  renderEventList(); drawEvents(); drawEventStrip();
+}
+function renderEventList(){
+  const el=$("#eventList"); const cnt=$("#evCount"); const evs=S.events||[];
+  if(cnt) cnt.textContent=evs.length;
+  if(!el) return;
+  if(!evs.length){ el.innerHTML='<p class="dim">No events. Emphasis needs a stressed vowel; phrase markers need a <b>sil</b> pause.</p>'; return; }
+  el.innerHTML=evs.map(e=>{
+    const pay=(e.payload&&Object.keys(e.payload).length)?" · "+esc(JSON.stringify(e.payload)):"";
+    const dur=(e.dur||0)>0?" · "+(+e.dur).toFixed(2)+"s":"";
+    return `<div class="ev-row" data-t="${e.t||0}"><span class="ev-dot ev-${esc(e.type||"custom")}"></span>`+
+      `<span class="ev-t">${(+e.t||0).toFixed(2)}s</span><span class="ev-type">${esc(e.type||"")}</span>`+
+      `<span class="ev-name">${esc(e.name||"")}</span><span class="ev-pay dim">${dur}${pay}</span></div>`;
+  }).join("");
+  el.querySelectorAll(".ev-row[data-t]").forEach(r=>r.onclick=()=>{
+    S.t=Math.min(S.duration,Math.max(0,parseFloat(r.dataset.t)||0)); S.playClock=S.t; setScrub(); drawAll(); });
+}
+function drawEventStrip(){ drawCurveStrip("#eventStrip"); }
+function drawEvents(){
+  const cv=$("#eventsTl"); if(!cv)return; const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h);
+  x.fillStyle=css("--panel-2"); x.fillRect(0,0,w,h);
+  const T=Math.max(.001,S.duration), padL=8, gw=w-16, X=t=>padL+gw*(t/T);
+  // time grid
+  x.font="10px "+css("--font-mono"); x.textBaseline="alphabetic";
+  x.strokeStyle=css("--line"); x.fillStyle=css("--fg-mute"); x.lineWidth=1;
+  for(let i=0;i<=8;i++){ const gx=padL+gw*i/8; x.globalAlpha=.4; x.beginPath();x.moveTo(gx,4);x.lineTo(gx,h-14);x.stroke(); x.globalAlpha=1; x.fillText((T*i/8).toFixed(1),gx+2,h-4); }
+  const evs=S.events||[];
+  if(!evs.length){ x.fillStyle=css("--fg-mute"); x.textAlign="center";
+    x.fillText(S.track?"No events — click Derive to auto-author from the speech.":"Generate a take, then Derive events.",w/2,h/2); x.textAlign="left"; }
+  // two lanes: emphasis above, markers/other below
+  const laneY=t=>t==="emphasis"?h*0.36:h*0.64;
+  S._evHit=[];
+  x.textBaseline="alphabetic";
+  for(const e of evs){ const ex=X(e.t||0), ty=e.type||"custom", y=laneY(ty), c=EV_COLOR(ty);
+    if((e.dur||0)>0){ const ex2=X((e.t||0)+e.dur); x.fillStyle=c; x.globalAlpha=.22; x.fillRect(ex,y-10,Math.max(2,ex2-ex),20); x.globalAlpha=1; x.strokeStyle=c; x.strokeRect(ex,y-10,Math.max(2,ex2-ex),20); }
+    x.fillStyle=c; x.beginPath(); x.moveTo(ex,y-8);x.lineTo(ex+6,y);x.lineTo(ex,y+8);x.lineTo(ex-6,y);x.closePath(); x.fill();
+    S._evHit.push({x:ex,y,e});
+    if(gw/Math.max(1,evs.length)>30){ x.fillStyle=css("--fg-dim"); x.font="9px "+css("--font-mono"); x.fillText(e.name||ty,ex+8,y-11); }
+  }
+  // playhead
+  x.strokeStyle=css("--accent"); x.lineWidth=1.5; x.beginPath(); const hx=X(S.t); x.moveTo(hx,2);x.lineTo(hx,h-12);x.stroke();
 }
 
 /* ===================================================================== *
