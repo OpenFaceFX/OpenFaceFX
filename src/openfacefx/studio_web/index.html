@@ -23,15 +23,22 @@
     <span class="brand-sub">Studio</span>
   </div>
 
-  <div class="topbar-group">
-    <label class="field">
-      <span>Actor</span>
-      <input id="actorName" type="text" value="Untitled" spellcheck="false">
-    </label>
-    <label class="field">
-      <span>Take</span>
-      <select id="takeSelect"><option>take_01</option></select>
-    </label>
+  <div class="topbar-group io">
+    <label class="field"><span>Actor</span>
+      <select id="actorSelect" class="io-sel" title="Switch actor"></select></label>
+    <button class="btn ghost io-add" id="actorAdd" title="New actor">＋</button>
+    <label class="field"><span>Take</span>
+      <select id="takeSelect" class="io-sel" title="Switch take"></select></label>
+    <button class="btn ghost io-add" id="takeAdd" title="New take (duplicates current settings)">＋</button>
+    <button class="btn ghost io-add" id="ioMenuBtn" title="Rename / delete actor &amp; take">⋯</button>
+  </div>
+  <div class="io-menu" id="ioMenu" hidden>
+    <button data-act="take-dup">Duplicate take</button>
+    <button data-act="take-rename">Rename take…</button>
+    <button data-act="take-del">Delete take</button>
+    <div class="io-sep"></div>
+    <button data-act="actor-rename">Rename actor…</button>
+    <button data-act="actor-del">Delete actor</button>
   </div>
 
   <div class="topbar-spacer"></div>
@@ -132,7 +139,11 @@
             <span class="mono" id="tcRead">00:00.000</span>
             <span class="dim">the schematic face blends visemes in real time — a rig-neutral preview</span>
           </div>
-          <button class="stage-btn" id="reframeBtn" title="Recenter the head" hidden>⟳ recenter</button>
+          <div class="stage-tools" id="stageTools" hidden>
+            <button class="stage-btn" id="zoomInBtn" title="Zoom in">＋</button>
+            <button class="stage-btn" id="zoomOutBtn" title="Zoom out">−</button>
+            <button class="stage-btn" id="reframeBtn" title="Recenter the head">⟳</button>
+          </div>
         </div>
       </section>
 

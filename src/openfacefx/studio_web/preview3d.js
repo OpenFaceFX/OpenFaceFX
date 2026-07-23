@@ -124,6 +124,12 @@ function loop() {
 /* public: studio.js pushes the frame's values here.
  * arkit = {arkitTargetName: value}, gestures = {blink_L,blink_R,browUp,...},
  * pose = {pitch,yaw,roll} radians. */
+// dolly the camera along its view axis (factor<1 zooms in, >1 out), clamped
+function zoom(factor) { if (!P.camera || !P.controls) return;
+  const t = P.controls.target, dir = P.camera.position.clone().sub(t);
+  const d = Math.max(P.controls.minDistance, Math.min(P.controls.maxDistance, dir.length() * factor));
+  P.camera.position.copy(t).add(dir.setLength(d)); P.controls.update();
+}
 function update(arkit, gestures, pose) {
   const m = {};
   for (const [n, v] of Object.entries(arkit || {})) m[arkitToModel(n)] = Math.min(1, Math.max(0, v));
@@ -139,5 +145,5 @@ function update(arkit, gestures, pose) {
 
 function setActive(on) { P.active = on; if (on) resize(); }
 
-window.Preview3D = { get ready() { return P.ready; }, update, setActive, resize, reframe };
+window.Preview3D = { get ready() { return P.ready; }, update, setActive, resize, reframe, zoom };
 init();

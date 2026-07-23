@@ -24,7 +24,12 @@ const S = {
   view:"preview",
   t:0, playing:false, lastTs:0, playClock:0,
   presets:[], presetSel:"arkit", presetMap:null,
+  actors:[{name:"Untitled", takes:[]}], actorIdx:0, takeIdx:-1,   // actors → takes
+  inspectKind:null, node:null, fgNodes:[], solo:null,             // inspector + graph hit-testing
 };
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const DEFAULT_PARAMS={ text:"Hello world — this is OpenFaceFX Studio, running the real pipeline right in your browser.",
+  engine:"naive", dur:"4.0", style:"", gestures:false, breath:false, fps:"60" };
 
 /* bridge for assistant.js (separate script) to read/write studio context */
 window.StudioBridge = {
@@ -212,9 +217,13 @@ $("#run").onclick=async ()=>{
       gestures:$("#optGestures").checked, breath:$("#optBreath").checked,
       has_wav:hasWav, wav_b64, fps:S.fps });
     if(res.error) throw new Error(res.error);
+    if(!curTake()) newTakeSlot();          // first Generate creates take_01
+    const tk=curTake();
+    tk.params={...captureParams()}; tk.wavBytes=S.wavBytes; tk.wavPeaks=S.wavPeaks; tk.wavName=$("#wavName").textContent;
+    tk.track=res.track; tk.segments=res.segments||[]; tk.duration=res.duration;
     S.track=res.track; S.segments=res.segments||[]; S.duration=res.duration; S.t=0;
-    ingestChannels(); buildChannelList(); drawAll(); setScrub();
-    $("#tpDur").textContent="/ "+fmt(S.duration);
+    ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub();
+    $("#tpDur").textContent="/ "+fmt(S.duration); refreshIO();
     btn.textContent="Generate take";
   }catch(err){ btn.textContent="Generate — failed"; console.error(err); alert("Generate failed: "+err.message); }
   btn.disabled=false;
@@ -225,34 +234,135 @@ function ingestChannels(){
 }
 
 /* ===================================================================== *
+ *  Actors & takes
+ *  An Actor owns a list of Takes; a Take = one generated performance
+ *  (its params + audio + resulting track). Switch, add, duplicate, rename,
+ *  delete — the form + workspace follow the selection.
+ * ===================================================================== */
+function curActor(){ return S.actors[S.actorIdx]; }
+function curTake(){ const a=curActor(); return (a&&a.takes[S.takeIdx])||null; }
+function captureParams(){ return { text:$("#text").value, engine:$("#engine").value, dur:$("#dur").value,
+  style:$("#style").value, gestures:$("#optGestures").checked, breath:$("#optBreath").checked, fps:$("#fps").value }; }
+function applyParams(p){ p=p||DEFAULT_PARAMS;
+  $("#text").value=p.text??""; $("#engine").value=p.engine??"naive"; $("#dur").value=p.dur??"4.0";
+  $("#style").value=p.style??""; $("#optGestures").checked=!!p.gestures; $("#optBreath").checked=!!p.breath;
+  $("#fps").value=p.fps??60; S.fps=parseFloat($("#fps").value)||60; showFps(null); }
+function nextTakeName(a){ const names=new Set(a.takes.map(t=>t.name)); let n=a.takes.length+1;
+  const nm=i=>"take_"+String(i).padStart(2,"0"); while(names.has(nm(n)))n++; return nm(n); }
+function syncFormToTake(){ const t=curTake(); if(!t)return;
+  t.params={...captureParams()}; t.wavBytes=S.wavBytes; t.wavPeaks=S.wavPeaks; t.wavName=$("#wavName").textContent; }
+function newTakeSlot(){ const a=curActor(); a.takes.push({ name:nextTakeName(a), params:captureParams(),
+  wavBytes:S.wavBytes, wavPeaks:S.wavPeaks, wavName:$("#wavName").textContent, track:null, segments:[], duration:0 });
+  S.takeIdx=a.takes.length-1; return curTake(); }
+function clearResultOnly(){ S.track=null; S.segments=[]; S.duration=0; S.t=0; S.sel=null; S.solo=null; S.chan={};
+  S.inspectKind=null; S.node=null;
+  const list=$("#channelList"); if(list) list.innerHTML='<li class="empty">Generate this take to see its animation channels.</li>';
+  $("#chCount").textContent="0"; $("#tpDur").textContent="/ 00:00.000"; buildInspector(); setScrub(); drawAll(); }
+function loadTake(){ const t=curTake();
+  if(!t){ applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; $("#wavName").textContent="no audio — timing from text"; clearResultOnly(); return; }
+  applyParams(t.params); S.wavBytes=t.wavBytes||null; S.wavPeaks=t.wavPeaks||null;
+  $("#wavName").textContent=t.wavName||"no audio — timing from text";
+  if(t.track){ S.track=t.track; S.segments=t.segments||[]; S.duration=t.duration; S.t=0; S.sel=null; S.solo=null;
+    S.inspectKind=null; S.node=null; ingestChannels(); buildChannelList(); buildInspector();
+    $("#tpDur").textContent="/ "+fmt(S.duration); setScrub(); drawAll(); }
+  else clearResultOnly(); }
+function addTake(){ syncFormToTake(); newTakeSlot(); clearResultOnly(); refreshIO(); }
+function addActor(){ syncFormToTake(); const n=S.actors.length+1;
+  S.actors.push({ name:"Actor "+String(n).padStart(2,"0"), takes:[] }); S.actorIdx=S.actors.length-1; S.takeIdx=-1;
+  applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; $("#wavName").textContent="no audio — timing from text";
+  newTakeSlot(); clearResultOnly(); refreshIO(); }
+function switchActor(i){ if(i===S.actorIdx)return; syncFormToTake(); S.actorIdx=i;
+  S.takeIdx=curActor().takes.length?0:-1; loadTake(); refreshIO(); }
+function switchTake(i){ if(i===S.takeIdx)return; syncFormToTake(); S.takeIdx=i; loadTake(); refreshIO(); }
+function delTake(){ const a=curActor(); if(!a.takes.length)return;
+  a.takes.splice(S.takeIdx,1); S.takeIdx=Math.min(S.takeIdx,a.takes.length-1); loadTake(); refreshIO(); }
+function delActor(){ if(S.actors.length<=1){ curActor().takes=[]; S.takeIdx=-1; loadTake(); refreshIO(); return; }
+  S.actors.splice(S.actorIdx,1); S.actorIdx=Math.min(S.actorIdx,S.actors.length-1);
+  S.takeIdx=curActor().takes.length?0:-1; loadTake(); refreshIO(); }
+function refreshIO(){ const asel=$("#actorSelect"), tsel=$("#takeSelect"); if(!asel||!tsel)return;
+  asel.innerHTML=S.actors.map((a,i)=>`<option value="${i}" ${i===S.actorIdx?"selected":""}>${esc(a.name)} (${a.takes.length})</option>`).join("");
+  const a=curActor();
+  tsel.innerHTML=a.takes.length
+    ? a.takes.map((t,i)=>`<option value="${i}" ${i===S.takeIdx?"selected":""}>${esc(t.name)}${t.track?"":" ·new"}</option>`).join("")
+    : `<option value="-1">— no takes —</option>`;
+}
+function inlineRename(kind,cur,cb){ const sel=(kind==="actor"?$("#actorSelect"):$("#takeSelect")); const r=sel.getBoundingClientRect();
+  const inp=document.createElement("input"); inp.className="io-rename"; inp.value=cur; inp.spellcheck=false;
+  inp.style.left=r.left+"px"; inp.style.top=r.top+"px"; inp.style.minWidth=r.width+"px";
+  document.body.appendChild(inp); inp.focus(); inp.select(); let closed=false;
+  const done=commit=>{ if(closed)return; closed=true; const v=inp.value.trim(); if(commit&&v)cb(v); inp.remove(); };
+  inp.onkeydown=e=>{ if(e.key==="Enter"){e.preventDefault();done(true);} else if(e.key==="Escape")done(false); };
+  inp.onblur=()=>done(true); }
+function ioAction(act){ const t=curTake();
+  if(act==="take-dup") addTake();
+  else if(act==="take-rename"){ if(t) inlineRename("take",t.name,v=>{t.name=v;refreshIO();}); }
+  else if(act==="take-del") delTake();
+  else if(act==="actor-rename") inlineRename("actor",curActor().name,v=>{curActor().name=v;refreshIO();});
+  else if(act==="actor-del") delActor(); }
+function wireIO(){
+  $("#actorSelect").onchange=e=>switchActor(+e.target.value);
+  $("#takeSelect").onchange=e=>{ const v=+e.target.value; if(v>=0) switchTake(v); };
+  $("#actorAdd").onclick=addActor; $("#takeAdd").onclick=addTake;
+  const menu=$("#ioMenu");
+  $("#ioMenuBtn").onclick=e=>{ e.stopPropagation(); const b=e.currentTarget.getBoundingClientRect();
+    menu.style.top=(b.bottom+4)+"px"; menu.style.right=(innerWidth-b.right)+"px"; menu.hidden=!menu.hidden; };
+  menu.onclick=e=>{ e.stopPropagation(); const act=e.target.dataset.act; if(!act)return; menu.hidden=true; ioAction(act); };
+  addEventListener("click",()=>{ if(menu) menu.hidden=true; });
+  refreshIO();
+}
+
+/* ===================================================================== *
  *  Channel list + inspector
  * ===================================================================== */
 function buildChannelList(){
-  const list=$("#channelList"); $("#chCount").textContent=S.track.channels.length;
+  const list=$("#channelList"); if(!S.track||!list)return; $("#chCount").textContent=S.track.channels.length;
   list.innerHTML="";
   for(const c of S.track.channels){
     const m=S.chan[c.name];
-    const li=document.createElement("li"); li.className="chan"+(m.visible?"":" off")+(S.sel===c.name?" sel":"");
+    const li=document.createElement("li");
+    li.className="chan"+(m.visible?"":" off")+(S.sel===c.name?" sel":"")+(S.solo===c.name?" solo":"");
     li.innerHTML=`<span class="sw" style="background:${m.color}"></span>
-      <span class="nm">${c.name}</span><span class="kc">${c.keys.length}</span>
+      <span class="nm">${esc(c.name)}</span><span class="kc">${c.keys.length}</span>
       <span class="vis">${m.visible?"◉":"○"}</span>`;
     li.querySelector(".vis").onclick=e=>{e.stopPropagation(); m.visible=!m.visible; buildChannelList(); if(S.view==="curves")drawCurves(); if(S.view==="preview")drawPreview();};
-    li.onclick=()=>{ S.sel=c.name; buildChannelList(); buildInspector(); };
+    li.onclick=()=>selChannel(c.name);
     list.appendChild(li);
   }
 }
+function selChannel(name){ S.sel=name; S.inspectKind="channel"; S.node=null; buildChannelList(); buildInspector();
+  if(S.view==="curves")drawCurves(); }
+
 function buildInspector(){
-  const box=$("#inspector"); if(!S.sel){ box.innerHTML='<p class="empty">Select a channel to edit its properties.</p>'; return; }
-  const c=S.track.channels.find(x=>x.name===S.sel), m=S.chan[S.sel];
+  const box=$("#inspector"); if(!box)return;
+  if(S.inspectKind==="node" && S.node) return renderNodeInspector(box,S.node);
+  if(!S.track || !S.sel || S.inspectKind!=="channel"){
+    box.innerHTML='<p class="empty">Select a channel (left) or a Face&nbsp;Graph node to inspect it. On the Curves tab, click a curve to select it, then drag its keyframe dots to edit.</p>'; return; }
+  const c=chan(S.sel), m=S.chan[S.sel]; if(!c){ box.innerHTML='<p class="empty">—</p>'; return; }
   const vals=c.keys.map(k=>k[1]); const mn=Math.min(...vals), mx=Math.max(...vals);
   box.innerHTML=`
-    <div class="insp-row"><label>Channel</label><span class="mono">${c.name}</span></div>
+    <div class="insp-head">Channel</div>
+    <div class="insp-row"><label>Name</label><span class="mono">${esc(c.name)}</span></div>
     <div class="insp-row"><label>Colour</label><span class="insp-swatch" style="background:${m.color}"></span></div>
     <div class="insp-row"><label>Keyframes</label><span class="mono">${c.keys.length}</span></div>
     <div class="insp-row"><label>Range</label><span class="mono">${mn.toFixed(2)} – ${mx.toFixed(2)}</span></div>
-    <div class="insp-row"><label>Visible</label><input type="checkbox" ${m.visible?"checked":""} id="inspVis"></div>`;
+    <div class="insp-row"><label>Value @ playhead</label><span class="mono" id="inspVal">${sample(c.keys,S.t).toFixed(3)}</span></div>
+    <div class="insp-row"><label>Visible</label><input type="checkbox" ${m.visible?"checked":""} id="inspVis"></div>
+    <div class="insp-row"><label>Solo (isolate)</label><input type="checkbox" ${S.solo===c.name?"checked":""} id="inspSolo"></div>
+    <p class="insp-tip dim">Curves tab: drag this channel's keyframe dots — vertical = value, horizontal = time. Edits update the take &amp; its exports.</p>`;
   $("#inspVis").onchange=e=>{ m.visible=e.target.checked; buildChannelList(); drawAll(); };
+  $("#inspSolo").onchange=e=>{ if(e.target.checked){ for(const k in S.chan)S.chan[k].visible=(k===c.name); S.solo=c.name; }
+    else { for(const k in S.chan)S.chan[k].visible=true; S.solo=null; } buildChannelList(); drawAll(); };
 }
+function renderNodeInspector(box,n){
+  const rows=(n.data||[]).map(([k,w])=>`<div class="insp-row sub"><span class="mono">${esc(k)}</span><span class="mono">${(+w).toFixed(2)}</span></div>`).join("");
+  box.innerHTML=`<div class="insp-head">${n.kind==="in"?"Viseme input node":"Rig-output node"}</div>
+    <div class="insp-row"><label>${n.kind==="in"?"Viseme":"Output"}</label><span class="mono">${esc(n.label)}</span></div>
+    <div class="insp-row"><label>${n.kind==="in"?"Drives":"Driven by"}</label><span class="mono">${(n.data||[]).length} ${n.kind==="in"?"targets":"visemes"}</span></div>
+    ${rows||'<p class="insp-tip dim">No links.</p>'}
+    <p class="insp-tip dim">Links come from the “${esc(S.presetSel)}” retarget preset.</p>`;
+}
+function updateInspVal(){ if(S.inspectKind!=="channel"||!S.sel)return; const el=$("#inspVal"); if(!el)return;
+  const c=chan(S.sel); if(c) el.textContent=sample(c.keys,S.t).toFixed(3); }
 
 /* ===================================================================== *
  *  Views: dispatch + drawing
@@ -263,7 +373,7 @@ $$("#tabs .tab").forEach(t=>t.onclick=()=>{
   S.view=t.dataset.view; $(`.view[data-view="${S.view}"]`).classList.add("active"); drawAll();
   if(S.view==="preview" && window.Preview3D&&window.Preview3D.ready) window.Preview3D.resize();
 });
-function drawAll(){ drawPreview(); if(S.view==="curves")drawCurves(); if(S.view==="phonemes")drawPhonemes(); if(S.view==="facegraph")drawFaceGraph(); }
+function drawAll(){ drawPreview(); if(S.view==="curves")drawCurves(); if(S.view==="phonemes")drawPhonemes(); if(S.view==="facegraph")drawFaceGraph(); updateInspVal(); }
 
 /* linear-sample a channel [[t,v]...] at time t */
 function sample(keys,t){ if(!keys||!keys.length)return 0;
@@ -278,9 +388,9 @@ const SHAPES={sil:[.30,.03,.2],PP:[.34,.02,.1],FF:[.34,.10,.1],TH:[.34,.16,.2],D
   aa:[.40,.55,.4],E:[.44,.30,.2],I:[.50,.14,.1],O:[.30,.42,.9],U:[.22,.22,1]};
 function drawPreview(){
   const p3d=window.Preview3D;
-  if(p3d&&p3d.ready){ if(S.track) drive3D(p3d); }
+  if(p3d&&p3d.ready){ if(S.track) drive3D(p3d); else p3d.update({},{},{pitch:0,yaw:0,roll:0}); }  // neutral when no take
   else drawSchematic();
-  if(S.track){ $("#tcRead").textContent=fmt(S.t); $("#tpTime").textContent=fmt(S.t); }
+  $("#tcRead").textContent=fmt(S.t); $("#tpTime").textContent=fmt(S.t);
 }
 
 /* Preview articulation shaping — DISPLAY ONLY. The pipeline and every exporter
@@ -361,10 +471,16 @@ function drawCurves(){
     x.stroke();
   }
   x.globalAlpha=1;
+  // draggable keyframe dots for the selected channel
+  if(S.sel){ const c=chan(S.sel); if(c){ x.fillStyle=S.chan[S.sel].color; x.strokeStyle=css("--bg"); x.lineWidth=1;
+    for(const [t,v] of c.keys){ const px=padL+gw*(t/T), py=padT+gh*(1-Math.min(1,Math.max(0,v)));
+      x.beginPath(); x.arc(px,py,3.4,0,7); x.fill(); x.stroke(); } } }
   // playhead
   const hx=padL+gw*(S.t/T); x.strokeStyle=css("--accent"); x.lineWidth=1.5;
   x.beginPath();x.moveTo(hx,padT);x.lineTo(hx,padT+gh);x.stroke();
 }
+/* geometry shared by drawCurves + the curve interaction handlers */
+function curveGeom(w,h){ const padL=8,padR=8,padT=8,padB=18; return {padL,padT,gw:w-padL-padR,gh:h-padT-padB}; }
 
 /* ---- Phonemes (waveform + strip) ------------------------------------ */
 function peaks(data,n){ const out=new Float32Array(n); const step=Math.max(1,Math.floor(data.length/n));
@@ -405,23 +521,64 @@ async function drawFaceGraph(){
   const colL=w*.26, colR=w*.74, iy=h/(inputs.length+1), oy=h/(outs.length+1);
   const inPos={}, outPos={};
   inputs.forEach((n,i)=>inPos[n]=[colL,iy*(i+1)]); outs.forEach((n,i)=>outPos[n]=[colR,oy*(i+1)]);
-  // links
+  const selLabel=(S.inspectKind==="node"&&S.node)?S.node.label:null;
+  // links (highlight the ones touching the selected node)
   for(const [inp,tgts] of Object.entries(S.presetMap)) for(const [t,wt] of tgts){
     const a=inPos[inp], b=outPos[t]; if(!a||!b)continue;
-    x.strokeStyle=css("--line-2"); x.globalAlpha=.35+wt*.55; x.lineWidth=.6+wt*2.2;
+    const on=selLabel&&(inp===selLabel||t===selLabel);
+    x.strokeStyle=on?css("--accent"):css("--line-2"); x.globalAlpha=on?.9:(.32+wt*.5); x.lineWidth=(on?1.4:.6)+wt*2.2;
     x.beginPath(); x.moveTo(a[0]+6,a[1]); x.bezierCurveTo((a[0]+b[0])/2,a[1],(a[0]+b[0])/2,b[1],b[0]-6,b[1]); x.stroke(); }
   x.globalAlpha=1;
-  const node=(px,py,label,fill)=>{ x.fillStyle=fill; x.strokeStyle=css("--line-2"); x.lineWidth=1;
-    const tw=x.measureText(label).width, bw=Math.max(46,tw+18); roundRect(x,px-bw/2,py-11,bw,22,6); x.fill(); x.stroke();
-    x.fillStyle=css("--fg"); x.font="12px "+css("--font-mono"); x.textAlign="center"; x.textBaseline="middle"; x.fillText(label,px,py); };
-  x.font="12px "+css("--font-mono");
-  for(const [n,[px,py]] of Object.entries(inPos)) node(px,py,n,css("--elev"));
-  for(const [n,[px,py]] of Object.entries(outPos)) node(px,py,n,"color-mix(in srgb,"+css("--accent")+" 18%, "+css("--elev")+")");
-  x.textAlign="left";
-  x.fillStyle=css("--fg-dim"); x.font="11px "+css("--font-ui");
+  S.fgNodes=[]; x.font="12px "+css("--font-mono");
+  const node=(px,py,label,fill,kind,data)=>{ const tw=x.measureText(label).width, bw=Math.max(46,tw+18);
+    const sel=label===selLabel; x.fillStyle=fill; x.strokeStyle=sel?css("--accent"):css("--line-2"); x.lineWidth=sel?2:1;
+    roundRect(x,px-bw/2,py-11,bw,22,6); x.fill(); x.stroke();
+    x.fillStyle=css("--fg"); x.textAlign="center"; x.textBaseline="middle"; x.fillText(label,px,py);
+    S.fgNodes.push({x:px,y:py,w:bw,h:22,label,kind,data}); };
+  for(const [n,[px,py]] of Object.entries(inPos)) node(px,py,n,css("--elev"),"in",S.presetMap[n]);
+  for(const [n,[px,py]] of Object.entries(outPos)){
+    const incoming=Object.entries(S.presetMap).filter(([,tg])=>tg.some(p=>p[0]===n)).map(([inp,tg])=>[inp,tg.find(p=>p[0]===n)[1]]);
+    node(px,py,n,"color-mix(in srgb,"+css("--accent")+" 18%, "+css("--elev")+")","out",incoming); }
+  x.textAlign="left"; x.fillStyle=css("--fg-dim"); x.font="11px "+css("--font-ui");
   x.fillText("inputs — visemes", colL-60, 16); x.fillText("outputs — "+S.presetSel+" rig", colR-60, 16);
 }
 function roundRect(x,a,b,w,h,r){ x.beginPath(); x.moveTo(a+r,b); x.arcTo(a+w,b,a+w,b+h,r); x.arcTo(a+w,b+h,a,b+h,r); x.arcTo(a,b+h,a,b,r); x.arcTo(a,b,a+w,b,r); x.closePath(); }
+
+/* ===================================================================== *
+ *  Canvas interactions — seek, select a curve, drag keyframes, inspect nodes
+ * ===================================================================== */
+function canvasMetrics(cv,e){ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top,w:r.width,h:r.height}; }
+function seekAtX(x,gw,padL,T){ S.t=Math.min(T,Math.max(0,(x-padL)/gw*T)); S.playClock=S.t; setScrub(); drawAll(); }
+function hitKeyframe(c,g,T,x,y){ if(!c)return -1;
+  for(let i=0;i<c.keys.length;i++){ const px=g.padL+g.gw*(c.keys[i][0]/T), py=g.padT+g.gh*(1-Math.min(1,Math.max(0,c.keys[i][1])));
+    if(Math.hypot(x-px,y-py)<7)return i; } return -1; }
+function nearestChannel(g,T,x,y){ const t=(x-g.padL)/g.gw*T, vv=1-(y-g.padT)/g.gh; let best=null,bd=1e9;
+  for(const c of S.track.channels){ const m=S.chan[c.name]; if(!m.visible)continue; const v=Math.min(1,Math.max(0,sample(c.keys,t)));
+    const d=Math.abs(v-vv); if(d<bd){bd=d;best=c.name;} } return bd<0.12?best:null; }
+let curveDrag=null;
+function wireCanvases(){
+  const cv=$("#curves");
+  if(cv){ cv.style.cursor="crosshair";
+    cv.addEventListener("pointerdown",e=>{ if(!S.track)return; const {x,y,w,h}=canvasMetrics(cv,e); const g=curveGeom(w,h); const T=Math.max(.001,S.duration);
+      if(S.sel){ const c=chan(S.sel); const ki=hitKeyframe(c,g,T,x,y);
+        if(ki>=0){ curveDrag={ki,c,g,T}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; return; } }
+      const near=nearestChannel(g,T,x,y); if(near) selChannel(near);
+      seekAtX(x,g.gw,g.padL,T); });
+    cv.addEventListener("pointermove",e=>{ if(!curveDrag)return; const {x,y}=canvasMetrics(cv,e); const {ki,c,g,T}=curveDrag;
+      const k=c.keys[ki]; k[1]=Math.min(1,Math.max(0,1-(y-g.padT)/g.gh));
+      const lo=ki>0?c.keys[ki-1][0]:0, hi=ki<c.keys.length-1?c.keys[ki+1][0]:T;
+      k[0]=Math.min(hi,Math.max(lo,(x-g.padL)/g.gw*T));
+      drawCurves(); drawPreview(); updateInspVal(); });
+    const end=e=>{ if(curveDrag){ try{cv.releasePointerCapture(e.pointerId);}catch(_){}} curveDrag=null; cv.style.cursor="crosshair"; };
+    cv.addEventListener("pointerup",end); cv.addEventListener("pointercancel",end);
+  }
+  for(const id of ["#wave","#phonStrip"]){ const c=$(id); if(!c)continue; c.style.cursor="crosshair";
+    c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); seekAtX(x,w,0,Math.max(.001,S.duration)); }); }
+  const fg=$("#facegraph"); if(fg){ fg.style.cursor="pointer";
+    fg.addEventListener("pointerdown",e=>{ const {x,y}=canvasMetrics(fg,e);
+      const hit=(S.fgNodes||[]).find(n=>Math.abs(x-n.x)<=n.w/2+3 && Math.abs(y-n.y)<=n.h/2+3);
+      if(hit){ S.inspectKind="node"; S.node=hit; S.sel=null; buildChannelList&&(S.track&&buildChannelList()); buildInspector(); drawFaceGraph(); } }); }
+}
 
 /* ===================================================================== *
  *  Export grid
@@ -516,10 +673,15 @@ let rt; addEventListener("resize",()=>{ clearTimeout(rt); rt=setTimeout(()=>{ dr
 /* the 3D head finished loading → swap the schematic SVG for the WebGL canvas */
 addEventListener("preview3d-ready",()=>{
   const c=$("#face3d"), s=$("#face"); if(c){ c.hidden=false; } if(s){ s.style.display="none"; }
-  const rb=$("#reframeBtn"); if(rb){ rb.hidden=false; rb.onclick=()=>window.Preview3D.reframe&&window.Preview3D.reframe(); }
+  const tools=$("#stageTools"); if(tools) tools.hidden=false;
+  const P=()=>window.Preview3D;
+  $("#reframeBtn") &&($("#reframeBtn").onclick =()=>P().reframe&&P().reframe());
+  $("#zoomInBtn")  &&($("#zoomInBtn").onclick  =()=>P().zoom&&P().zoom(0.8));
+  $("#zoomOutBtn") &&($("#zoomOutBtn").onclick =()=>P().zoom&&P().zoom(1.25));
   const cap=document.querySelector(".preview-readout .dim");
-  if(cap) cap.textContent="ARKit-blendshape 3D head, driven by the take — drag to orbit · scroll to zoom · ⟳ recenter";
-  window.Preview3D.setActive(true); window.Preview3D.resize(); drawPreview();
+  if(cap) cap.textContent="ARKit-blendshape 3D head, driven by the take — drag to orbit · scroll or ＋ / − to zoom · ⟳ recenter";
+  P().setActive(true); P().resize(); drawPreview();
 });
 
+wireIO(); wireCanvases();
 bootstrap();

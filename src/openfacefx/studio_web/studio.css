@@ -167,10 +167,11 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
   display:flex; flex-direction:column; align-items:center; gap:4px; text-align:center;
   padding:0 12px; text-shadow:0 1px 6px rgba(0,0,0,.65); }
 #tcRead { font-size:20px; color:var(--accent); letter-spacing:.03em; }
-.stage-btn { position:absolute; top:12px; right:12px; z-index:2; font-size:12px;
+.stage-tools { position:absolute; top:12px; right:12px; z-index:2; display:flex; flex-direction:column; gap:6px; }
+.stage-tools[hidden] { display:none; }
+.stage-btn { font-size:16px; line-height:1; width:34px; height:34px; display:grid; place-items:center;
   background:color-mix(in srgb,var(--panel) 82%,transparent); color:var(--fg-dim);
-  border:1px solid var(--line-2); border-radius:100px; padding:6px 12px; cursor:pointer;
-  backdrop-filter:blur(4px); }
+  border:1px solid var(--line-2); border-radius:8px; cursor:pointer; backdrop-filter:blur(4px); }
 .stage-btn:hover { color:var(--fg); border-color:var(--accent); }
 
 /* ---- Export grid ----------------------------------------------------- */
@@ -191,6 +192,28 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
   border:1px solid var(--line); border-radius:var(--r-sm); padding:5px 8px; font:inherit; width:120px; }
 .insp-row .mono { font-size:12.5px; }
 .insp-swatch { width:14px; height:14px; border-radius:3px; border:1px solid var(--line-2); }
+
+/* ---- Actor / Take IO + menu ----------------------------------------- */
+.io.topbar-group { gap:6px; }
+.io-sel { min-width:104px; max-width:170px; }
+.io-add { font-size:15px; line-height:1; padding:5px 9px; }
+.io-menu { position:fixed; z-index:60; background:var(--elev); border:1px solid var(--line-2);
+  border-radius:var(--r-sm); box-shadow:var(--shadow); padding:5px; display:flex; flex-direction:column; min-width:172px; }
+.io-menu[hidden] { display:none; }
+.io-menu button { text-align:left; background:transparent; border:0; color:var(--fg);
+  padding:7px 10px; border-radius:var(--r-sm); font-size:12.5px; cursor:pointer; }
+.io-menu button:hover { background:var(--panel-2); }
+.io-sep { height:1px; background:var(--line); margin:4px 2px; }
+.io-rename { position:fixed; z-index:70; background:var(--panel); color:var(--fg);
+  border:1px solid var(--accent); border-radius:var(--r-sm); padding:5px 7px; font:inherit; font-size:13px; }
+
+/* ---- Inspector extras ----------------------------------------------- */
+.insp-head { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--fg-dim); }
+.insp-row.sub { padding-left:8px; opacity:.9; }
+.insp-row.sub .mono { font-size:11.5px; }
+.insp-tip { font-size:11.5px; margin:4px 0 0; line-height:1.45; }
+.chan.solo { outline:1px solid color-mix(in srgb,var(--accent) 60%,transparent); outline-offset:-1px; }
+.lane { touch-action:none; }
 
 /* ---- Assistant ------------------------------------------------------- */
 .assistant { flex:1; display:flex; flex-direction:column; gap:12px; min-height:0; }
