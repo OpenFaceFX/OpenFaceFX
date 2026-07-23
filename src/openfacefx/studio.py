@@ -115,9 +115,10 @@ def _generate(p: dict) -> dict:
         if wav_path and os.path.exists(wav_path): os.remove(wav_path)
 
 
-def _export(fmt: str, track: dict, fgmap: dict = None) -> dict:
+def _export(fmt: str, track: dict, fgmap: dict = None, fgconst: dict = None) -> dict:
     import openfacefx as offx
     from openfacefx import from_dict, retarget, PRESETS
+    from openfacefx.curves import Channel, Keyframe
     tk = from_dict(track)
     tmp = tempfile.mkdtemp(); p = os.path.join(tmp, "out")
     # optional custom viseme→rig preset from the Face Graph (edited/cloned outputs);
@@ -129,13 +130,30 @@ def _export(fmt: str, track: dict, fgmap: dict = None) -> dict:
         except (TypeError, ValueError):
             custom = None
 
+    def apply_const(rt):
+        if not fgconst:
+            return rt
+        dur = float(rt.duration or 0.0)
+        by = {c.name: c for c in rt.channels}
+        for name, val in fgconst.items():
+            try:
+                v = max(0.0, min(1.0, float(val)))
+            except (TypeError, ValueError):
+                continue
+            flat = [Keyframe(0.0, v)] + ([Keyframe(dur, v)] if dur > 0 else [])
+            if name in by:
+                by[name].keys = flat
+            else:
+                rt.channels.append(Channel(name, flat))
+        return rt
+
     def dump(fn, path, name):
         fn();
         with open(path, "rb") as f: data = f.read()
         return {"filename": name, "b64": base64.b64encode(data).decode()}
 
     def ark():
-        try: return retarget(tk, custom if custom else PRESETS["arkit"])
+        try: return apply_const(retarget(tk, custom if custom else PRESETS["arkit"]))
         except Exception: return tk
     try:
         if fmt == "json":
@@ -394,7 +412,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_generate(body))
             if path.startswith("/api/export/"):
                 return self._json(_export(path.rsplit("/", 1)[-1], body.get("track", {}),
-                                          body.get("fgmap") or None))
+                                          body.get("fgmap") or None, body.get("fgconst") or None))
             if path == "/api/llm":
                 return self._json(_llm(body))
             if path == "/api/normalize":

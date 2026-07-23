@@ -30,7 +30,11 @@ its `version` field.
   byte-identical — verified the cloned output reaches the A2F `facsNames` while the
   default export is unchanged. Also **hardened the rig-preset dropdown** (clears the
   stale selected node, guards the async preset fetch, always rebuilds the inspector +
-  redraws) so switching rigs always refreshes.
+  redraws) so switching rigs always refreshes. A cloned output additionally takes a
+  direct **manual Value** — a built-in output's value is driven (read-only), but a
+  clone's is editable: type any constant and it overrides the viseme sum, greys the
+  now-inert incoming edges, and exports as a flat channel at that value (`fgconst`);
+  a ↺ reverts it to viseme-driven.
 - **Studio Face Graph — live signal flow** — the Face Graph now animates: press
   play and each input viseme's activation at the playhead propagates through the
   weights, glowing its node and brightening/pulsing its links to the rig targets
