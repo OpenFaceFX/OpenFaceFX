@@ -40,7 +40,7 @@ window.StudioBridge = {
   native:()=>S.native,
   // --- write surface: AI actions / controls mutate the current take through here ---
   hasTake:()=>!!S.track,
-  regenerate:()=>runGenerate(),                       // rebuild the take from the form
+  regenerate:()=>runGenerate(true),                   // rebuild the take, preserving hand-edited channels
   setParams:(p)=>{ if(!p||typeof p!=="object") return false;
     const STY=["","whisper","mumble","neutral","broadcast","tense","exaggerated","broad","shout"];
     if(p.text!=null) $("#text").value=String(p.text);
@@ -299,7 +299,7 @@ $("#wav").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
   }catch(err){ $("#wavName").textContent="couldn't decode audio"; }
 };
 
-async function runGenerate(){
+async function runGenerate(preserve){
   const btn=$("#run"); btn.disabled=true; btn.textContent="Generating…";
   try{
     S.fps=parseFloat($("#fps").value)||60;
@@ -314,27 +314,40 @@ async function runGenerate(){
     if(res.error) throw new Error(res.error);
     if(!curTake()) newTakeSlot();          // first Generate creates take_01
     const tk=curTake();
+    let newTrack=res.track;
+    // edit-ownership (#8): a Reanalyze rebuilds but KEEPS the user's hand-edited channels
+    if(preserve && tk.track && tk.owned && Object.keys(tk.owned).length){
+      const oldBy={}; tk.track.channels.forEach(c=>oldBy[c.name]=c);
+      newTrack={...res.track, channels:res.track.channels.map(c=>
+        (tk.owned[c.name]&&oldBy[c.name])?{name:c.name,keys:structuredClone(oldBy[c.name].keys)}:c)};
+      for(const nm in tk.owned){ if(oldBy[nm]&&!newTrack.channels.some(c=>c.name===nm)) newTrack.channels.push({name:nm,keys:structuredClone(oldBy[nm].keys)}); }
+    }
     tk.params={...captureParams()}; tk.wavBytes=S.wavBytes; tk.wavPeaks=S.wavPeaks; tk.wavName=$("#wavName").textContent;
-    tk.track=res.track; tk.segments=res.segments||[]; tk.duration=res.duration; tk.edited=false;
-    S.track=res.track; S.segments=res.segments||[]; S.duration=res.duration; S.t=0;
-    S.undo.length=0; S.redo.length=0;                 // fresh generation clears edit history
-    ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons();
+    tk.track=newTrack; tk.segments=res.segments||[]; tk.duration=res.duration;
+    if(!preserve){ tk.edited=false; tk.owned={}; }    // full Generate drops ownership; Reanalyze keeps it
+    S.track=newTrack; S.segments=res.segments||[]; S.duration=res.duration; S.t=0;
+    S.undo.length=0; S.redo.length=0;                 // rebuild clears undo history
+    ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons(); updateReanalyze();
     $("#tpDur").textContent="/ "+fmt(S.duration); refreshIO();
     btn.textContent="Generate take"; btn.disabled=false; return true;
   }catch(err){ btn.textContent="Generate — failed"; console.error(err); alert("Generate failed: "+err.message); btn.disabled=false; return false; }
 }
 $("#run").onclick=()=>{ const tk=curTake();
-  if(tk&&tk.edited&&S.track&&!confirm("Regenerate will replace this take's hand-edited curves. Continue?")) return;
-  return runGenerate(); };
+  if(tk&&tk.edited&&S.track&&!confirm("Generate replaces the whole take, discarding your hand edits.\n\nUse “Reanalyze — keep my edits” to rebuild but preserve edited channels.\n\nReplace anyway?")) return;
+  return runGenerate(false); };
+$("#reanalyze")&&($("#reanalyze").onclick=()=>runGenerate(true));
+function updateReanalyze(){ const b=$("#reanalyze"); if(b) b.hidden=!(curTake()&&curTake().owned&&Object.keys(curTake().owned).length); }
 
 function ingestChannels(){
-  const cols=(curTake()&&curTake().colors)||{};   // per-take custom colours persist
-  S.chan={}; S.track.channels.forEach((c,i)=>{ S.chan[c.name]={color:cols[c.name]||CURVE_COLORS[i%CURVE_COLORS.length],visible:true,idx:i}; });
+  const tk=curTake(); const cols=(tk&&tk.colors)||{}, own=(tk&&tk.owned)||{};   // colours + edit-ownership persist
+  S.chan={}; S.track.channels.forEach((c,i)=>{ S.chan[c.name]={color:cols[c.name]||CURVE_COLORS[i%CURVE_COLORS.length],visible:true,idx:i,owned:own[c.name]?"user":null}; });
 }
 const toHex=v=>/^#[0-9a-f]{6}$/i.test(v||"")?v:"#f4b942";   // <input type=color> needs #rrggbb
 function setChannelColor(name,hex){ if(!S.chan[name])return; S.chan[name].color=hex;
   const tk=curTake(); if(tk){ tk.colors=tk.colors||{}; tk.colors[name]=hex; }
   buildChannelList(); if(S.view==="curves")drawCurves(); }
+/* mark a channel hand-edited so a Reanalyze / AI regenerate keeps it (#8) */
+function markChannelOwned(name){ if(S.chan[name]) S.chan[name].owned="user"; const tk=curTake(); if(tk){ tk.owned=tk.owned||{}; tk.owned[name]=true; } if(typeof updateReanalyze==="function") updateReanalyze(); }
 
 /* ===================================================================== *
  *  Actors & takes
@@ -396,6 +409,7 @@ function refreshIO(){ const asel=$("#actorSelect"), tsel=$("#takeSelect"); if(!a
   tsel.innerHTML=a.takes.length
     ? a.takes.map((t,i)=>`<option value="${i}" ${i===S.takeIdx?"selected":""}>${esc(t.name)}${t.track?"":" ·new"}</option>`).join("")
     : `<option value="-1">— no takes —</option>`;
+  if(typeof updateReanalyze==="function") updateReanalyze();
 }
 function inlineRename(kind,cur,cb){ const sel=(kind==="actor"?$("#actorSelect"):$("#takeSelect")); const r=sel.getBoundingClientRect();
   const inp=document.createElement("input"); inp.className="io-rename"; inp.value=cur; inp.spellcheck=false;
@@ -433,7 +447,7 @@ function buildChannelList(){
     const li=document.createElement("li");
     li.className="chan"+(m.visible?"":" off")+(S.sel===c.name?" sel":"")+(S.solo===c.name?" solo":"");
     li.innerHTML=`<span class="sw" style="background:${m.color}"></span>
-      <span class="nm">${esc(c.name)}</span><span class="kc">${c.keys.length}</span>
+      <span class="nm">${esc(c.name)}</span>${m.owned?'<span class="own" title="hand-edited — kept on Reanalyze">✎</span>':''}<span class="kc">${c.keys.length}</span>
       <span class="vis">${m.visible?"◉":"○"}</span>`;
     li.querySelector(".vis").onclick=e=>{e.stopPropagation(); m.visible=!m.visible; buildChannelList(); if(S.view==="curves")drawCurves(); if(S.view==="preview")drawPreview();};
     li.onclick=()=>selChannel(c.name);
@@ -747,12 +761,12 @@ function setChannelAt(name,value,t){ if(!S.track)return false;
   const keys=c.keys, EPS=1e-4; let i=0; while(i<keys.length && keys[i][0]<t-EPS) i++;
   if(i<keys.length && Math.abs(keys[i][0]-t)<=EPS) keys[i][1]=value;   // upsert existing key
   else keys.splice(i,0,[t,value]);                                     // insert time-sorted
-  return true; }
+  markChannelOwned(name); return true; }
 function addKeyAtPlayhead(){ if(!S.track||!S.sel){ return; } const c=chan(S.sel); if(!c)return;
   snapshotUndo(); setChannelAt(S.sel, sample(c.keys,S.t), S.t); afterEdit(); }
 function delKeyAtPlayhead(){ if(!S.track||!S.sel)return; const c=chan(S.sel); if(!c||c.keys.length<=1)return;
   snapshotUndo(); let bi=0,bd=1e9; for(let i=0;i<c.keys.length;i++){ const d=Math.abs(c.keys[i][0]-S.t); if(d<bd){bd=d;bi=i;} }
-  c.keys.splice(bi,1); afterEdit(); }
+  c.keys.splice(bi,1); markChannelOwned(S.sel); afterEdit(); }
 let curveDrag=null;
 function wireCanvases(){
   const cv=$("#curves");
@@ -760,7 +774,7 @@ function wireCanvases(){
     cv.addEventListener("pointerdown",e=>{ if(!S.track)return; const {x,y,w,h}=canvasMetrics(cv,e); const g=curveGeom(w,h); const T=Math.max(.001,S.duration);
       if(S.sel){ const c=chan(S.sel); const ki=hitKeyframe(c,g,T,x,y);
         if(ki>=0){
-          if(e.altKey||e.button===2){ if(c.keys.length>1){ snapshotUndo(); c.keys.splice(ki,1); afterEdit(); } return; }  // alt/right-click deletes
+          if(e.altKey||e.button===2){ if(c.keys.length>1){ snapshotUndo(); c.keys.splice(ki,1); markChannelOwned(c.name); afterEdit(); } return; }  // alt/right-click deletes
           snapshotUndo(); curveDrag={ki,c,g,T}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; return; } }
       const near=nearestChannel(g,T,x,y); if(near) selChannel(near);
       seekAtX(x,g.gw,g.padL,T); });
@@ -768,7 +782,7 @@ function wireCanvases(){
       const k=c.keys[ki]; k[1]=Math.min(1,Math.max(0,1-(y-g.padT)/g.gh));
       const lo=ki>0?c.keys[ki-1][0]:0, hi=ki<c.keys.length-1?c.keys[ki+1][0]:T;
       k[0]=Math.min(hi,Math.max(lo,(x-g.padL)/g.gw*T));
-      markEdited(); drawCurves(); drawPreview(); updateInspVal(); });
+      markEdited(); markChannelOwned(c.name); drawCurves(); drawPreview(); updateInspVal(); });
     const end=e=>{ if(curveDrag){ try{cv.releasePointerCapture(e.pointerId);}catch(_){}} curveDrag=null; cv.style.cursor="crosshair"; };
     cv.addEventListener("pointerup",end); cv.addEventListener("pointercancel",end);
     cv.addEventListener("contextmenu",e=>e.preventDefault());   // right-click is used to delete a key

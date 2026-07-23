@@ -130,6 +130,8 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .chan .nm { flex:1; font-family:var(--font-mono); font-size:12.5px; }
 .chan .kc { color:var(--fg-mute); font-size:11px; font-variant-numeric:tabular-nums; }
 .chan .vis { opacity:.5; } .chan.off .nm, .chan.off .kc { opacity:.4; }
+.chan .own { color:var(--accent); font-size:11px; margin-right:2px; }
+#reanalyze { margin-top:8px; font-size:12.5px; }
 
 /* ---- Workspace / tabs ------------------------------------------------ */
 .workspace { display:grid; grid-template-rows:var(--tabs-h) 1fr; min-width:0; background:var(--bg); }
