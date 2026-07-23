@@ -26,6 +26,7 @@ const S = {
   presets:[], presetSel:"arkit", presetMap:null,
   actors:[{name:"Untitled", takes:[]}], actorIdx:0, takeIdx:-1,   // actors → takes
   inspectKind:null, node:null, fgNodes:[], solo:null,             // inspector + graph hit-testing
+  undo:[], redo:[],                                               // curve-edit history
 };
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const DEFAULT_PARAMS={ text:"Hello world — this is OpenFaceFX Studio, running the real pipeline right in your browser.",
@@ -157,6 +158,22 @@ def studio_bake_emotion(track_json, envelope_json, intensity):
     except Exception as e:
         return json.dumps({"error": str(e)})
 
+def studio_qa(track_json, segments_json, text):
+    # deterministic QA (qa.summarize): cue-timing outliers, OOV words, warnings
+    from types import SimpleNamespace
+    from openfacefx import summarize
+    tk = from_dict(json.loads(track_json)) if track_json and track_json != 'null' else None
+    segs = [SimpleNamespace(phoneme=s.get('phoneme'), start=float(s.get('start',0) or 0),
+            end=float(s.get('end',0) or 0), confidence=s.get('confidence'))
+            for s in json.loads(segments_json or '[]')]
+    oov = []
+    try:
+        from openfacefx.g2p import G2P
+        oov = G2P().oov_words(text or '')
+    except Exception:
+        pass
+    return json.dumps(summarize(tk, segments=segs, oov_words=oov))
+
 _EXPORTERS = {}
 def _reg(fmt, fn): _EXPORTERS[fmt]=fn
 
@@ -231,6 +248,11 @@ const Pipe = {
   async bakeEmotion(env,intensity){
     if(S.native) return fetch("/api/bake_emotion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,envelope:env,intensity})}).then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_bake_emotion"); const r=JSON.parse(fn(JSON.stringify(S.track),JSON.stringify(env),intensity)); fn.destroy(); return r;
+  },
+  async qa(){
+    const text=$("#text").value||"";
+    if(S.native) return fetch("/api/qa",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,segments:S.segments,text})}).then(r=>r.json());
+    const fn=S.pyodide.globals.get("studio_qa"); const r=JSON.parse(fn(S.track?JSON.stringify(S.track):"null",JSON.stringify(S.segments||[]),text)); fn.destroy(); return r;
   }
 };
 
@@ -278,14 +300,17 @@ async function runGenerate(){
     if(!curTake()) newTakeSlot();          // first Generate creates take_01
     const tk=curTake();
     tk.params={...captureParams()}; tk.wavBytes=S.wavBytes; tk.wavPeaks=S.wavPeaks; tk.wavName=$("#wavName").textContent;
-    tk.track=res.track; tk.segments=res.segments||[]; tk.duration=res.duration;
+    tk.track=res.track; tk.segments=res.segments||[]; tk.duration=res.duration; tk.edited=false;
     S.track=res.track; S.segments=res.segments||[]; S.duration=res.duration; S.t=0;
-    ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub();
+    S.undo.length=0; S.redo.length=0;                 // fresh generation clears edit history
+    ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons();
     $("#tpDur").textContent="/ "+fmt(S.duration); refreshIO();
     btn.textContent="Generate take"; btn.disabled=false; return true;
   }catch(err){ btn.textContent="Generate — failed"; console.error(err); alert("Generate failed: "+err.message); btn.disabled=false; return false; }
 }
-$("#run").onclick=runGenerate;
+$("#run").onclick=()=>{ const tk=curTake();
+  if(tk&&tk.edited&&S.track&&!confirm("Regenerate will replace this take's hand-edited curves. Continue?")) return;
+  return runGenerate(); };
 
 function ingestChannels(){
   S.chan={}; S.track.channels.forEach((c,i)=>{ S.chan[c.name]={color:CURVE_COLORS[i%CURVE_COLORS.length],visible:true,idx:i}; });
@@ -668,22 +693,60 @@ function hitKeyframe(c,g,T,x,y){ if(!c)return -1;
 function nearestChannel(g,T,x,y){ const t=(x-g.padL)/g.gw*T, vv=1-(y-g.padT)/g.gh; let best=null,bd=1e9;
   for(const c of S.track.channels){ const m=S.chan[c.name]; if(!m.visible)continue; const v=Math.min(1,Math.max(0,sample(c.keys,t)));
     const d=Math.abs(v-vv); if(d<bd){bd=d;best=c.name;} } return bd<0.12?best:null; }
+
+/* ---- curve editing: keyframe primitive + add/delete + undo/redo ------- */
+const SIGNED_CH=/^(head|eye)(Pitch|Yaw|Roll|Gaze)?/i;   // pose channels are signed degrees
+function markEdited(){ const tk=curTake(); if(tk) tk.edited=true; }
+function snapshotUndo(){ if(!S.track)return; S.undo.push(structuredClone(S.track.channels));
+  if(S.undo.length>60) S.undo.shift(); S.redo.length=0; refreshUndoButtons(); }
+function afterEdit(){ markEdited(); buildChannelList(); buildInspector(); drawCurves(); drawPreview(); updateInspVal(); refreshUndoButtons(); }
+function refreshUndoButtons(){ const u=$("#cvUndo"),r=$("#cvRedo"); if(u)u.disabled=!S.undo.length; if(r)r.disabled=!S.redo.length; }
+function undoEdit(){ if(!S.undo.length||!S.track)return; S.redo.push(structuredClone(S.track.channels));
+  S.track.channels=S.undo.pop(); afterEdit(); }
+function redoEdit(){ if(!S.redo.length||!S.track)return; S.undo.push(structuredClone(S.track.channels));
+  S.track.channels=S.redo.pop(); afterEdit(); }
+/* upsert a time-sorted [t,value] key on a channel (find-or-create). Keys MUST
+ * stay strictly ascending — exporters + edits assume it. Signed pose channels
+ * aren't clamped to [0,1]. This is the shared write primitive (StudioBridge). */
+function setChannelAt(name,value,t){ if(!S.track)return false;
+  t=(t==null)?S.t:Math.max(0,Math.min(Math.max(S.duration,t),t));
+  const signed=SIGNED_CH.test(name);
+  value=signed?Math.max(-90,Math.min(90,+value||0)):Math.max(0,Math.min(1,+value||0));
+  let c=chan(name);
+  if(!c){ c={name,keys:[]}; S.track.channels.push(c);
+    S.chan[name]={color:CURVE_COLORS[(S.track.channels.length-1)%CURVE_COLORS.length],visible:true,idx:S.track.channels.length-1}; }
+  const keys=c.keys, EPS=1e-4; let i=0; while(i<keys.length && keys[i][0]<t-EPS) i++;
+  if(i<keys.length && Math.abs(keys[i][0]-t)<=EPS) keys[i][1]=value;   // upsert existing key
+  else keys.splice(i,0,[t,value]);                                     // insert time-sorted
+  return true; }
+function addKeyAtPlayhead(){ if(!S.track||!S.sel){ return; } const c=chan(S.sel); if(!c)return;
+  snapshotUndo(); setChannelAt(S.sel, sample(c.keys,S.t), S.t); afterEdit(); }
+function delKeyAtPlayhead(){ if(!S.track||!S.sel)return; const c=chan(S.sel); if(!c||c.keys.length<=1)return;
+  snapshotUndo(); let bi=0,bd=1e9; for(let i=0;i<c.keys.length;i++){ const d=Math.abs(c.keys[i][0]-S.t); if(d<bd){bd=d;bi=i;} }
+  c.keys.splice(bi,1); afterEdit(); }
 let curveDrag=null;
 function wireCanvases(){
   const cv=$("#curves");
   if(cv){ cv.style.cursor="crosshair";
     cv.addEventListener("pointerdown",e=>{ if(!S.track)return; const {x,y,w,h}=canvasMetrics(cv,e); const g=curveGeom(w,h); const T=Math.max(.001,S.duration);
       if(S.sel){ const c=chan(S.sel); const ki=hitKeyframe(c,g,T,x,y);
-        if(ki>=0){ curveDrag={ki,c,g,T}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; return; } }
+        if(ki>=0){
+          if(e.altKey||e.button===2){ if(c.keys.length>1){ snapshotUndo(); c.keys.splice(ki,1); afterEdit(); } return; }  // alt/right-click deletes
+          snapshotUndo(); curveDrag={ki,c,g,T}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; return; } }
       const near=nearestChannel(g,T,x,y); if(near) selChannel(near);
       seekAtX(x,g.gw,g.padL,T); });
     cv.addEventListener("pointermove",e=>{ if(!curveDrag)return; const {x,y}=canvasMetrics(cv,e); const {ki,c,g,T}=curveDrag;
       const k=c.keys[ki]; k[1]=Math.min(1,Math.max(0,1-(y-g.padT)/g.gh));
       const lo=ki>0?c.keys[ki-1][0]:0, hi=ki<c.keys.length-1?c.keys[ki+1][0]:T;
       k[0]=Math.min(hi,Math.max(lo,(x-g.padL)/g.gw*T));
-      drawCurves(); drawPreview(); updateInspVal(); });
+      markEdited(); drawCurves(); drawPreview(); updateInspVal(); });
     const end=e=>{ if(curveDrag){ try{cv.releasePointerCapture(e.pointerId);}catch(_){}} curveDrag=null; cv.style.cursor="crosshair"; };
     cv.addEventListener("pointerup",end); cv.addEventListener("pointercancel",end);
+    cv.addEventListener("contextmenu",e=>e.preventDefault());   // right-click is used to delete a key
+    cv.addEventListener("dblclick",e=>{ if(!S.track)return; const {x,y,w,h}=canvasMetrics(cv,e); const g=curveGeom(w,h); const T=Math.max(.001,S.duration);
+      let name=S.sel; if(!name||!chan(name)){ name=nearestChannel(g,T,x,y); if(name)selChannel(name); }
+      if(!name)return; const t=Math.min(T,Math.max(0,(x-g.padL)/g.gw*T)), v=Math.min(1,Math.max(0,1-(y-g.padT)/g.gh));
+      snapshotUndo(); setChannelAt(name,v,t); afterEdit(); });     // double-click adds a key
   }
   for(const id of ["#wave","#phonStrip"]){ const c=$(id); if(!c)continue; c.style.cursor="crosshair";
     c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); seekAtX(x,w,0,Math.max(.001,S.duration)); }); }
@@ -691,6 +754,42 @@ function wireCanvases(){
     fg.addEventListener("pointerdown",e=>{ const {x,y}=canvasMetrics(fg,e);
       const hit=(S.fgNodes||[]).find(n=>Math.abs(x-n.x)<=n.w/2+3 && Math.abs(y-n.y)<=n.h/2+3);
       if(hit){ S.inspectKind="node"; S.node=hit; S.sel=null; buildChannelList&&(S.track&&buildChannelList()); buildInspector(); drawFaceGraph(); } }); }
+  // curve-edit toolbar + keyboard
+  $("#cvUndo")&&($("#cvUndo").onclick=undoEdit);
+  $("#cvRedo")&&($("#cvRedo").onclick=redoEdit);
+  $("#cvAddKey")&&($("#cvAddKey").onclick=addKeyAtPlayhead);
+  $("#cvDelKey")&&($("#cvDelKey").onclick=delKeyAtPlayhead);
+  $("#qaRun")&&($("#qaRun").onclick=runQA);
+  refreshUndoButtons();
+  addEventListener("keydown",e=>{ if(!(e.ctrlKey||e.metaKey))return; const t=e.target.tagName;
+    if(t==="INPUT"||t==="TEXTAREA"||t==="SELECT")return;
+    const k=e.key.toLowerCase();
+    if(k==="z"){ e.preventDefault(); e.shiftKey?redoEdit():undoEdit(); }
+    else if(k==="y"){ e.preventDefault(); redoEdit(); } });
+}
+
+/* ===================================================================== *
+ *  QA — deterministic timing / pronunciation check (qa.summarize)
+ * ===================================================================== */
+async function runQA(){
+  const panel=$("#qaPanel"); if(!panel)return; panel.hidden=false;
+  if(!S.track){ panel.innerHTML='<p class="dim">Generate a take first, then run QA.</p>'; return; }
+  panel.innerHTML='<p class="dim">Running QA…</p>';
+  try{ renderQA(await Pipe.qa()); }
+  catch(err){ panel.innerHTML='<p class="dim">QA failed: '+esc(err.message)+'</p>'; }
+}
+function renderQA(r){
+  const panel=$("#qaPanel"); if(!panel)return;
+  const cues=r.cue_warnings||[], oov=r.oov_words||[], warns=r.warnings||[];
+  let html=`<div class="qa-head"><span>QA · ${r.channels} channels · ${r.keyframes} keys · ${(+r.duration||0).toFixed(2)}s</span><button class="btn sm" id="qaClose" title="Close">✕</button></div>`;
+  if(!cues.length && !warns.length){ html+='<p class="qa-ok">✓ No timing or pronunciation issues flagged.</p>'; }
+  if(warns.length) html+='<ul class="qa-list">'+warns.map(w=>`<li class="qa-flag warn">⚠ ${esc(w)}</li>`).join("")+'</ul>';
+  if(cues.length){ html+=`<div class="qa-sub">${cues.length} cue-timing outlier(s) — click to seek:</div><ul class="qa-list">`+
+    cues.map(c=>`<li class="qa-flag ${c.kind==="short"?"short":"long"}" data-t="${c.start}">${c.kind==="short"?"⏱ short":"⏳ long"} · <b>${esc(c.phoneme)}</b> @ ${(+c.start).toFixed(2)}s · ${Math.round(c.duration*1000)}ms</li>`).join("")+"</ul>"; }
+  panel.innerHTML=html;
+  $("#qaClose")&&($("#qaClose").onclick=()=>{ panel.hidden=true; });
+  panel.querySelectorAll(".qa-flag[data-t]").forEach(li=>li.onclick=()=>{
+    S.t=Math.min(S.duration,Math.max(0,parseFloat(li.dataset.t)||0)); S.playClock=S.t; setScrub(); drawAll(); });
 }
 
 /* ===================================================================== *

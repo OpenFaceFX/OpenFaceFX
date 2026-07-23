@@ -145,6 +145,24 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .lane-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .lane-head h3 { font-size:14px; }
 .view-note { font-size:12px; margin:2px 0 0; max-width:70ch; }
+
+/* ---- Curve tools + QA panel ----------------------------------------- */
+.lane-tools { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.qa-panel { border:1px solid var(--line); border-radius:var(--r-sm); background:var(--panel);
+  padding:10px 12px; font-size:12.5px; display:flex; flex-direction:column; gap:6px;
+  max-height:240px; overflow:auto; }
+.qa-panel[hidden] { display:none; }
+.qa-head { display:flex; align-items:center; justify-content:space-between; gap:10px;
+  font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--fg-dim); }
+.qa-ok { color:var(--good); margin:0; }
+.qa-sub { color:var(--fg-dim); margin-top:2px; }
+.qa-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; }
+.qa-flag { padding:5px 8px; border-radius:var(--r-sm); background:var(--panel-2); border:1px solid var(--line);
+  font-family:var(--font-mono); font-size:12px; }
+.qa-flag[data-t] { cursor:pointer; } .qa-flag[data-t]:hover { border-color:var(--accent); }
+.qa-flag.warn { color:var(--warn); }
+.qa-flag.short { border-left:3px solid var(--crit); }
+.qa-flag.long { border-left:3px solid var(--info); }
 .mini, .m011 { background:var(--panel-2); color:var(--fg); border:1px solid var(--line);
   border-radius:var(--r-sm); padding:5px 8px; font-size:12.5px; }
 

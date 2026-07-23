@@ -154,20 +154,28 @@
 
       <!-- Phonemes -->
       <section class="view" data-view="phonemes">
-        <div class="lane-head"><h3>Waveform &amp; phoneme alignment</h3></div>
+        <div class="lane-head"><h3>Waveform &amp; phoneme alignment</h3>
+          <button class="btn sm" id="qaRun" title="Check cue timing &amp; pronunciation">⚑ Run QA</button></div>
         <canvas id="wave" class="lane" height="120"></canvas>
         <canvas id="phonStrip" class="lane phon" height="64"></canvas>
-        <p class="view-note dim">The audio (or a synthetic envelope) with the aligned phoneme &amp; viseme strip — the read side of the pipeline.</p>
+        <div id="qaPanel" class="qa-panel" hidden></div>
+        <p class="view-note dim">The audio (or a synthetic envelope) with the aligned phoneme &amp; viseme strip — the read side of the pipeline. <b>Run QA</b> flags cue-timing outliers &amp; out-of-vocabulary words.</p>
       </section>
 
       <!-- Curves -->
       <section class="view" data-view="curves">
         <div class="lane-head">
           <h3>Animation curves</h3>
-          <label class="opt inline"><input type="checkbox" id="curvesSmooth" checked> smooth</label>
+          <div class="lane-tools">
+            <button class="btn sm" id="cvUndo" title="Undo (Ctrl+Z)" disabled>↶</button>
+            <button class="btn sm" id="cvRedo" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
+            <button class="btn sm" id="cvAddKey" title="Add a key at the playhead on the selected channel">＋ key</button>
+            <button class="btn sm" id="cvDelKey" title="Delete the key nearest the playhead">－ key</button>
+            <label class="opt inline"><input type="checkbox" id="curvesSmooth" checked> smooth</label>
+          </div>
         </div>
         <canvas id="curves" class="lane tall"></canvas>
-        <p class="view-note dim">Coarticulated viseme &amp; gesture curves over time. Toggle channels in the left rail; drag the playhead in the transport.</p>
+        <p class="view-note dim">Coarticulated viseme &amp; gesture curves. Click a curve to select it · drag its dots to move a key · double-click to add · alt/right-click a dot to delete · Ctrl+Z to undo.</p>
       </section>
 
       <!-- Face Graph -->

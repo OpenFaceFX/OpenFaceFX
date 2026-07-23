@@ -186,6 +186,23 @@ def _bake_emotion(p: dict) -> dict:
         return {"error": str(e)}
 
 
+def _qa(p: dict) -> dict:
+    """Deterministic QA of a take (qa.summarize): cue outliers, OOV, warnings."""
+    from types import SimpleNamespace
+    from openfacefx import from_dict, summarize
+    tk = from_dict(p["track"]) if p.get("track") else None
+    segs = [SimpleNamespace(phoneme=s.get("phoneme"), start=float(s.get("start", 0) or 0),
+            end=float(s.get("end", 0) or 0), confidence=s.get("confidence"))
+            for s in (p.get("segments") or [])]
+    oov = []
+    try:
+        from openfacefx.g2p import G2P
+        oov = G2P().oov_words(p.get("text", "") or "")
+    except Exception:
+        pass
+    return summarize(tk, segments=segs, oov_words=oov)
+
+
 # --------------------------------------------------------------------------- #
 # HTTP handler                                                                 #
 # --------------------------------------------------------------------------- #
@@ -294,6 +311,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_normalize(body))
             if path == "/api/bake_emotion":
                 return self._json(_bake_emotion(body))
+            if path == "/api/qa":
+                return self._json(_qa(body))
             if path in ("/api/auth/register", "/api/auth/login"):
                 from .studio_saas import AuthError
                 fn = _store().register if path.endswith("register") else _store().login
