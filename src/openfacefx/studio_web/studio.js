@@ -58,6 +58,7 @@ window.StudioBridge = {
     ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); return true; },
   bakeEmotion:(env,intensity)=>Pipe.bakeEmotion(env,intensity),   // -> baked track dict
   normalize:(text)=>Pipe.normalize(text),                          // deterministic, keyless
+  setCmudict:(text)=>{ const tk=curTake(); if(!tk) return false; tk.cmudict=text||""; return true; },  // pronunciation override for next regenerate
   // serialise the whole workspace (actors → takes: params + track), JSON-safe
   getWorkspace:()=>({ v:1, actorIdx:S.actorIdx, takeIdx:S.takeIdx,
     actors:S.actors.map(a=>({ name:a.name, takes:a.takes.map(t=>({
@@ -103,17 +104,26 @@ def _style_coart(style):
     except Exception:
         return None
 
-def studio_generate(text, engine, dur, style, gestures, breath, has_wav, fps):
+def studio_generate(text, engine, dur, style, gestures, breath, has_wav, fps, cmudict=''):
     fps = float(fps) or 60.0
     if has_wav:
         try: dur = offx.wav_duration('/tmp/in.wav')
         except Exception: pass
     dur = float(dur)
-    segs = naive_segments(text, dur)
+    g2p = None
+    if cmudict:
+        try:
+            with open('/tmp/cmu.dict','w') as f: f.write(cmudict)
+            from openfacefx.g2p import G2P
+            g2p = G2P(); g2p.load_cmudict('/tmp/cmu.dict')
+        except Exception: g2p = None
+    segs = naive_segments(text, dur, g2p=g2p)
     coart = _style_coart(style)
     if has_wav and engine == 'energy':
-        try: track = generate_naive(text, dur, wav='/tmp/in.wav', fps=fps)
-        except TypeError: track = generate_naive(text, dur, wav='/tmp/in.wav')
+        try: track = generate_naive(text, dur, wav='/tmp/in.wav', fps=fps, g2p=g2p)
+        except TypeError:
+            try: track = generate_naive(text, dur, wav='/tmp/in.wav', g2p=g2p)
+            except TypeError: track = generate_naive(text, dur, wav='/tmp/in.wav')
     else:
         try:
             track = generate_from_alignment(segs, fps=fps, coart=coart) if coart is not None \
@@ -225,7 +235,7 @@ const Pipe = {
   async generate(args){
     if(S.native) return fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(args)}).then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_generate");
-    const out=await fn(args.text,args.engine,args.dur,args.style,args.gestures,args.breath,args.has_wav,args.fps);
+    const out=await fn(args.text,args.engine,args.dur,args.style,args.gestures,args.breath,args.has_wav,args.fps,args.cmudict||"");
     fn.destroy(); return JSON.parse(out);
   },
   async export(fmt){
@@ -295,7 +305,7 @@ async function runGenerate(){
       text:$("#text").value.trim()||"hello", engine:$("#engine").value,
       dur:parseFloat($("#dur").value)||4, style:$("#style").value,
       gestures:$("#optGestures").checked, breath:$("#optBreath").checked,
-      has_wav:hasWav, wav_b64, fps:S.fps });
+      has_wav:hasWav, wav_b64, fps:S.fps, cmudict:(curTake()&&curTake().cmudict)||"" });
     if(res.error) throw new Error(res.error);
     if(!curTake()) newTakeSlot();          // first Generate creates take_01
     const tk=curTake();
@@ -350,6 +360,14 @@ function loadTake(){ const t=curTake();
     $("#tpDur").textContent="/ "+fmt(S.duration); setScrub(); drawAll(); }
   else clearResultOnly(); }
 function addTake(){ syncFormToTake(); newTakeSlot(); clearResultOnly(); refreshIO(); }
+/* real duplicate — deep-clone the current take (track/segments/audio/edits), not a blank slot */
+function dupTake(){ const a=curActor(), src=curTake(); if(!src){ addTake(); return; }
+  syncFormToTake();
+  const names=new Set(a.takes.map(t=>t.name)); let nm=src.name+" copy", k=2; while(names.has(nm)) nm=src.name+" copy "+(k++);
+  a.takes.push({ name:nm, params:{...src.params}, wavBytes:src.wavBytes, wavPeaks:src.wavPeaks,
+    wavName:src.wavName, cmudict:src.cmudict||"", track:src.track?structuredClone(src.track):null,
+    segments:src.segments?structuredClone(src.segments):[], duration:src.duration||0, edited:!!src.edited });
+  S.takeIdx=a.takes.length-1; loadTake(); refreshIO(); }
 function addActor(){ syncFormToTake(); const n=S.actors.length+1;
   S.actors.push({ name:"Actor "+String(n).padStart(2,"0"), takes:[] }); S.actorIdx=S.actors.length-1; S.takeIdx=-1;
   applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; $("#wavName").textContent="no audio — timing from text";
@@ -377,7 +395,7 @@ function inlineRename(kind,cur,cb){ const sel=(kind==="actor"?$("#actorSelect"):
   inp.onkeydown=e=>{ if(e.key==="Enter"){e.preventDefault();done(true);} else if(e.key==="Escape")done(false); };
   inp.onblur=()=>done(true); }
 function ioAction(act){ const t=curTake();
-  if(act==="take-dup") addTake();
+  if(act==="take-dup") dupTake();
   else if(act==="take-rename"){ if(t) inlineRename("take",t.name,v=>{t.name=v;refreshIO();}); }
   else if(act==="take-del") delTake();
   else if(act==="actor-rename") inlineRename("actor",curActor().name,v=>{curActor().name=v;refreshIO();});

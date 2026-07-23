@@ -67,11 +67,22 @@ def _generate(p: dict) -> dict:
             f.write(base64.b64decode(p["wav_b64"]))
         try: dur = offx.wav_duration(wav_path)
         except Exception: pass
+    g2p = None
+    if p.get("cmudict"):
+        try:
+            from openfacefx.g2p import G2P
+            fd2, cmu = tempfile.mkstemp(suffix=".dict"); os.close(fd2)
+            with open(cmu, "w") as f: f.write(p["cmudict"])
+            g2p = G2P(); g2p.load_cmudict(cmu); os.remove(cmu)
+        except Exception:
+            g2p = None
     try:
-        segs = naive_segments(text, dur)
+        segs = naive_segments(text, dur, g2p=g2p)
         if wav_path and engine == "energy":
-            try: track = generate_naive(text, dur, wav=wav_path, fps=fps)
-            except TypeError: track = generate_naive(text, dur, wav=wav_path)
+            try: track = generate_naive(text, dur, wav=wav_path, fps=fps, g2p=g2p)
+            except TypeError:
+                try: track = generate_naive(text, dur, wav=wav_path, g2p=g2p)
+                except TypeError: track = generate_naive(text, dur, wav=wav_path)
         else:
             track = generate_from_alignment(segs, fps=fps)
         if p.get("gestures") or p.get("breath"):

@@ -130,16 +130,20 @@ const ACTIONS = {
     }
   },
   pronounce: {
-    label:"Pronounce OOV words", hint:"ARPAbet for out-of-vocabulary names/brands — feeds the pronunciation dictionary.",
+    label:"Pronounce OOV words", hint:"ARPAbet for names/brands → applied as a pronunciation override + regenerate.",
     async run(entry){
+      if(!B().hasTake?.()) return "Generate a take first, then apply pronunciations.";
       const t = B().transcript?.() || "";
       const out = await callLLM(entry, { json:true,
-        system:"You are a grapheme-to-phoneme engine. For each unusual/proper-noun word in the text, give an ARPAbet pronunciation (space-separated, stress digits on vowels). Reply JSON {\"words\":[{\"word\":UPPER,\"arpabet\":\"...\"}]}. Only include words a CMU dictionary would likely miss.",
+        system:"You are a grapheme-to-phoneme engine. For each unusual/proper-noun word in the text, give an ARPAbet pronunciation (space-separated ARPAbet phones, stress digits on vowels). Reply JSON {\"words\":[{\"word\":UPPER,\"arpabet\":\"...\"}]}. Only include words a CMU dictionary would likely miss.",
         user:t });
-      const j = extractJSON(out); const rows=(j.words||[]);
+      const j = extractJSON(out); const rows=(j.words||[]).filter(r=>r.word&&r.arpabet);
       if(!rows.length) return "No out-of-vocabulary words detected.";
-      return "CMUdict lines (review, then Export → load as --cmudict):\n\n"+
-        rows.map(r=>`${(r.word||"").toUpperCase()}  ${r.arpabet}`).join("\n");
+      const dict = rows.map(r=>`${(r.word||"").toUpperCase()}  ${String(r.arpabet).trim().toUpperCase()}`).join("\n");
+      if(!B().setCmudict?.(dict)) return "CMUdict lines (no active take to apply to):\n\n"+dict;
+      let msg = "Applied "+rows.length+" pronunciation(s):\n"+dict;
+      if(B().regenerate){ await B().regenerate(); msg += "\n\nRegenerated ✓"; }
+      return msg;
     }
   },
   emotion: {
