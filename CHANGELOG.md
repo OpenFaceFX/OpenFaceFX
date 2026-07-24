@@ -28,6 +28,10 @@ its `version` field.
 - **Studio spectrogram** — the Phonemes lane now draws a real STFT spectrogram of
   the loaded audio (Hann-windowed FFT, ~0–5 kHz, theme-aware heatmap), falling back
   to the waveform/synthetic envelope when there's no clip.
+- **Studio pronunciation editor** — Run QA lists each out-of-vocabulary word that fell
+  back to G2P with an editable **ARPAbet** field (pre-filled with the rule guess); saving
+  writes a CMUdict entry onto the take and **Save all & re-generate** re-solves with the
+  corrected pronunciations. QA respects the take's dictionary, so fixed words drop off.
 
 ### Fixed
 - **Studio Phonemes waveform** — with no audio loaded, the synthetic waveform
