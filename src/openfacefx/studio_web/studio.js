@@ -334,6 +334,19 @@ def studio_align(transcript, fmt, text):
     except Exception as e:
         return json.dumps({"error": fmt+": "+str(e)})
 
+def studio_tts(text, dur):
+    # built-in formant TTS: transcript -> a speech-like WAV (no key/network)
+    import base64
+    dur = float(dur) or 0
+    if dur <= 0: return json.dumps({"error":"duration must be > 0"})
+    try:
+        from openfacefx.tts import synth_wav_bytes           # new module — may be absent in an older published wheel
+    except Exception:
+        return json.dumps({"error":"Voice synthesis needs a newer OpenFaceFX than the in-browser build has — it's live in the desktop/native Studio now, and reaches the browser with the next release."})
+    try: wav = synth_wav_bytes((text or 'hello').strip() or 'hello', dur)
+    except Exception as e: return json.dumps({"error": str(e)})
+    return json.dumps({"wav_b64": base64.b64encode(wav).decode(), "sr":16000, "duration": round(dur,3)})
+
 def studio_resolve(segments_json, fps):
     # rebuild the viseme track from hand-edited phoneme segments (Phonemes-bar editor)
     from openfacefx.alignment import PhonemeSegment, dump_segments
@@ -522,6 +535,10 @@ const Pipe = {
   async resolve(segments,fps){
     if(S.native) return fetch("/api/resolve",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({segments,fps})}).then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_resolve"); const r=JSON.parse(fn(JSON.stringify(segments||[]),fps)); fn.destroy(); return r;
+  },
+  async tts(text,dur){
+    if(S.native) return fetch("/api/tts",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,dur})}).then(r=>r.json());
+    const fn=S.pyodide.globals.get("studio_tts"); const r=JSON.parse(fn(text||"",dur)); fn.destroy(); return r;
   }
 };
 
@@ -552,6 +569,27 @@ $("#wav").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
     $("#dur").value=audio.duration.toFixed(2); $("#engine").value="energy";
   }catch(err){ $("#wavName").textContent="couldn't decode audio"; }
 };
+
+/* Generate voice audio from the transcript with the built-in formant TTS, then
+ * drive the take from it (energy engine + spectrogram) — no clip needed. */
+async function generateVoice(){
+  const text=($("#text").value||"").trim()||"hello"; const dur=parseFloat($("#dur").value)||4;
+  const btn=$("#ttsBtn"); const orig=btn?btn.textContent:""; if(btn){ btn.disabled=true; btn.textContent="synthesizing…"; }
+  try{
+    const res=await Pipe.tts(text,dur);
+    if(res.error) throw new Error(res.error);
+    const bytes=Uint8Array.from(atob(res.wav_b64),c=>c.charCodeAt(0));   // the synth's 16-bit PCM WAV
+    const ac=new (window.AudioContext||window.webkitAudioContext)();
+    const audio=await ac.decodeAudioData(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
+    const ch=audio.getChannelData(0);
+    S.wavBytes=bytes; S.wavPeaks=peaks(ch,1600); S.wavSpec=computeSpectrogram(ch,audio.sampleRate);  // reuse the synth WAV as-is
+    $("#wavName").textContent="AI voice · “"+text.slice(0,22)+(text.length>22?"…":"")+"” · "+audio.duration.toFixed(1)+"s";
+    $("#engine").value="energy";                 // lip-sync from the generated audio
+    await runGenerate();                         // re-solve with the energy engine + the new audio
+  }catch(err){ alert("Voice synthesis failed: "+err.message); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
+}
+$("#ttsBtn") && ($("#ttsBtn").onclick=generateVoice);
 
 /* Import a track from an exported/interchange file → a new take (read side of Export) */
 $("#importFile") && ($("#importFile").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;

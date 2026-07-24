@@ -356,6 +356,22 @@ def _resolve(p: dict) -> dict:
             "channels": len(track.channels)}
 
 
+def _tts(p: dict) -> dict:
+    """Synthesize speech audio from the transcript (built-in formant TTS) → a WAV
+    the Studio drives the energy engine + spectrogram with. No key/network."""
+    import base64
+    from openfacefx.tts import synth_wav_bytes
+    text = (p.get("text") or "").strip() or "hello"
+    dur = float(p.get("dur", 0) or 0)
+    if dur <= 0:
+        return {"error": "duration must be > 0"}
+    try:
+        wav = synth_wav_bytes(text, dur)
+    except (ValueError, KeyError) as e:
+        return {"error": str(e)}
+    return {"wav_b64": base64.b64encode(wav).decode(), "sr": 16000, "duration": round(dur, 3)}
+
+
 def _presets() -> list:
     from openfacefx import PRESETS
     return sorted(PRESETS)
@@ -619,6 +635,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_align(body))
             if path == "/api/resolve":
                 return self._json(_resolve(body))
+            if path == "/api/tts":
+                return self._json(_tts(body))
             if path in ("/api/auth/register", "/api/auth/login"):
                 from .studio_saas import AuthError
                 fn = _store().register if path.endswith("register") else _store().login

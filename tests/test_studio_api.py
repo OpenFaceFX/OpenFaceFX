@@ -21,7 +21,7 @@ from openfacefx.alignment import dump_segments
 from openfacefx.mapping import Mapping
 from openfacefx.studio import (_generate, _export, _events, _mapping_default,
                               _mapping_json, _qa, _presets, _preset, _normalize,
-                              _import, _align, _resolve)
+                              _import, _align, _resolve, _tts)
 
 TEXT = "hello brave new world"
 
@@ -260,6 +260,17 @@ def test_resolve_reflects_edited_boundary():
     moved = _resolve({"segments": segs, "fps": 30})["track"]
     assert base != moved                                            # the curves actually re-time
     assert "error" not in _resolve({"segments": segs})              # fps defaults to 30
+
+
+def test_tts_generates_wav():
+    r = _tts({"text": "hello brave new world", "dur": 1.6})
+    assert "error" not in r and r["sr"] == 16000 and r["duration"] == 1.6
+    wav = base64.b64decode(r["wav_b64"])
+    assert wav[:4] == b"RIFF" and wav[8:12] == b"WAVE" and len(wav) > 2000
+
+
+def test_tts_needs_duration():
+    assert "error" in _tts({"text": "hi", "dur": 0})
 
 
 def test_resolve_empty_errors_cleanly():
