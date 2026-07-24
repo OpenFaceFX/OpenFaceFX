@@ -8,12 +8,27 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-07-25
+
 ### Added
 - **Studio: audio plays with the transport** — when a take has audio (a loaded clip
   or an AI-generated voice), pressing play now plays it, in sync — the audio is the
   transport clock while it runs, so the face/curves/playhead track the real audio.
   Web Audio (`decodeAudioData` + `AudioBufferSourceNode`); scrub/seek re-cue it, it
   restarts on loop, and a transport **🔊/🔇 mute** toggles it.
+
+### Changed
+- **Smoother AI voice** — `openfacefx.tts` was rewritten from per-segment
+  concatenation to a continuous-trajectory synth: formants glide between phonemes
+  (coarticulation), a single continuous glottal phase spans the utterance (no
+  per-segment clicks/buzz), pitch has declination + light vibrato, and a soft-clip
+  warms it. Still synthetic, but much cleaner. (A natural neural voice via a BYO
+  key remains a follow-up.)
+
+### Fixed
+- **Studio: 3D preview blank on first load** — the 3D head was `hidden` at startup,
+  so it was sized to 0 and rendered blank until you switched tabs and back. It now
+  un-hides and sizes correctly on load.
 
 ## [0.23.0] - 2026-07-25
 

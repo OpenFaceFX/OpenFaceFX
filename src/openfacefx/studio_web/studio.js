@@ -6,7 +6,7 @@
 "use strict";
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-const OFFX_VERSION = "0.23.0";
+const OFFX_VERSION = "0.23.1";
 const PYODIDE_VER = "v0.26.1";
 
 /* ---- categorical curve palette (distinct on dark) --------------------- */
