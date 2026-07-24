@@ -8,6 +8,13 @@ its `version` field.
 
 ## [Unreleased]
 
+### Fixed
+- **Studio: in-browser boot survives PyPI CDN lag after a release** — micropip pins
+  the exact just-released version, but PyPI's index is CDN-cached per-edge, so right
+  after publishing a release the boot could hard-fail (`Can't find a pure Python 3
+  wheel`). The boot now retries the pinned version through the lag, then falls back
+  to the latest installable version so the Studio still starts.
+
 ## [0.23.1] - 2026-07-25
 
 ### Added
