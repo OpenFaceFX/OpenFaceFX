@@ -2054,7 +2054,9 @@ addEventListener("preview3d-ready",()=>{
   const sel=$("#previewMode"); if(sel) sel.disabled=false;         // 3D now available as a choice
   const cap=document.querySelector(".preview-readout .dim");
   if(cap && S.previewMode!=="2d") cap.textContent="ARKit-blendshape 3D head, driven by the take — drag to orbit · scroll or ＋ / − to zoom · ⟳ recenter";
-  P().setActive(true); P().resize(); drawPreview();
+  P().setActive(true); drawPreview();                          // un-hide the 3D canvas FIRST (display:block)
+  { const p=P(); if(p){ p.resize(); p.reframe&&p.reframe(); } }   // then size+frame with real dims (sync: the un-hidden canvas has layout now — was 0 while hidden → blank until a tab switch)
+  requestAnimationFrame(()=>{ const p=P(); if(p){ p.resize(); p.reframe&&p.reframe(); } });   // once more after layout settles
 });
 /* Preview model chooser: 2D schematic vs the 3D head, and load your own ARKit
  * avatar (.glb) — e.g. a Microsoft Rocketbox head exported to glTF. */

@@ -1,20 +1,16 @@
 """Pure-numpy formant speech synthesis — turn a transcript into a speech-like
 waveform, so the Studio can *generate* voice audio instead of only loading it.
 
-This is a source-filter / additive-formant synthesizer: voiced phonemes are a
-glottal buzz whose harmonics are shaped by the vowel/consonant formants;
-fricatives are spectrally-shaped noise; stops are a closure + burst. It won't
-pass for a human — it's intelligible-ish *robotic* speech, in the eSpeak/Klatt
-tradition — but it is a real audio buffer that:
-
-  * drives the energy engine (:mod:`openfacefx.energy`) for audio-based lip-sync,
-  * renders a proper spectrogram in the Studio, and
-  * can be played back.
-
-Dependency-free (numpy + the stdlib ``wave`` module, which works under Pyodide),
-deterministic (fixed RNG seed), and reuses the existing phoneme timing
-(:func:`openfacefx.pipeline.naive_segments`), so the same words line up with the
-same mouth shapes.
+A source-filter / additive-formant synthesizer built on **continuous trajectories**
+(the key to sounding less robotic): the formants glide smoothly between phonemes
+(coarticulation), the glottal source keeps a single continuous phase across the
+whole utterance (no per-segment clicks/buzz), pitch has a gentle declination +
+vibrato, and voiced tone is mixed with shaped noise by a smooth voicing envelope.
+It's still recognisably *synthetic* (eSpeak/Klatt tradition), but far cleaner than
+per-segment concatenation. Deterministic, dependency-free (numpy + stdlib ``wave``,
+Pyodide-safe), reusing :func:`openfacefx.pipeline.naive_segments` for timing so the
+words line up with the mouth. It produces a real audio buffer that drives the energy
+engine + spectrogram + playback.
 """
 
 from __future__ import annotations
@@ -22,7 +18,7 @@ from __future__ import annotations
 import io
 import re
 import wave
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 
@@ -32,175 +28,175 @@ from .pipeline import naive_segments
 __all__ = ["synthesize", "to_wav_bytes", "synth_wav_bytes"]
 
 # --- phoneme acoustics (ARPABET base, stress stripped) --------------------- #
-# Vowels: the first three formants (Hz). Monophthongs.
 _VOWEL = {
     "AA": (700, 1220, 2600), "AE": (660, 1720, 2410), "AH": (620, 1220, 2550),
     "AO": (600, 900, 2600), "EH": (550, 1770, 2490), "ER": (490, 1350, 1690),
     "IH": (400, 1900, 2570), "IY": (300, 2300, 3000), "UH": (450, 1100, 2350),
     "UW": (320, 900, 2200), "AX": (620, 1220, 2550),
 }
-# Diphthongs: glide from a start to an end formant target across the segment.
 _DIPH = {
-    "AY": ((660, 1080, 2410), (300, 2300, 3000)),
-    "EY": ((480, 1720, 2520), (300, 2300, 3000)),
-    "OY": ((550, 960, 2400), (300, 2300, 3000)),
-    "AW": ((640, 1230, 2550), (450, 1100, 2350)),
-    "OW": ((500, 900, 2200), (320, 900, 2200)),
+    "AY": ((660, 1080, 2410), (330, 2200, 2900)),
+    "EY": ((480, 1720, 2520), (330, 2200, 2900)),
+    "OY": ((550, 960, 2400), (330, 2200, 2900)),
+    "AW": ((640, 1230, 2550), (450, 1000, 2300)),
+    "OW": ((500, 900, 2200), (330, 900, 2200)),
 }
-# Voiced sonorants (nasal murmur / approximant): formants + a quieter amplitude.
 _NASAL = {"M": (250, 1100, 2300), "N": (250, 1700, 2600), "NG": (250, 2300, 2750)}
 _APPROX = {"L": (360, 1300, 2900), "R": (490, 1350, 1690),
            "W": (300, 610, 2200), "Y": (260, 2070, 3020)}
-# Fricatives: (noise centre Hz, bandwidth Hz). Voiced ones add a low buzz.
 _FRIC_U = {"F": (4200, 3200), "TH": (5800, 2600), "S": (6500, 1400),
            "SH": (3000, 1400), "HH": (1600, 2600)}
 _FRIC_V = {"V": (4200, 3200), "DH": (5800, 2600), "Z": (6500, 1400), "ZH": (3000, 1400)}
 _STOP_U = {"P", "T", "K"}
 _STOP_V = {"B", "D", "G"}
-_AFFR = {"CH": "SH", "JH": "ZH"}       # stop burst + fricative
-_SILENCE = {"SIL", "SP", "_", ""}      # compared against the stress-stripped, upper-cased base
+_AFFR = {"CH": "SH", "JH": "ZH"}
+_SILENCE = {"SIL", "SP", "_", ""}       # compared against the stress-stripped, upper-cased base
 
-_BW = np.array([90.0, 110.0, 170.0])   # formant bandwidths (F1,F2,F3)
+_NEUTRAL = (500.0, 1500.0, 2500.0)      # schwa-ish formants for silence/noise regions
+_BW = np.array([80.0, 110.0, 150.0])    # formant bandwidths (F1,F2,F3)
 
 
 def _base(phoneme: str) -> str:
-    """ARPABET base symbol, stress digits stripped (AH0 -> AH)."""
     return re.sub(r"\d+$", "", (phoneme or "").strip()).upper()
 
 
-def _voiced(n: int, sr: int, f0: float, formants: np.ndarray, amp: float) -> np.ndarray:
-    """Additive glottal buzz at ``f0`` shaped by (possibly time-varying) formants.
-
-    ``formants`` is (n, 3) Hz. Each harmonic's amplitude is the sum of Gaussian
-    formant gains at that harmonic's frequency, plus a small spectral floor and a
-    gentle -6 dB/oct source tilt."""
-    if n <= 0:
-        return np.zeros(0)
-    t = np.arange(n) / sr
-    phase = 2.0 * np.pi * f0 * t
-    out = np.zeros(n)
-    hmax = max(1, int((sr / 2) / max(60.0, f0)))
-    for h in range(1, hmax + 1):
-        fh = h * f0
-        g = np.zeros(n)
-        for i in range(3):
-            g += np.exp(-0.5 * ((fh - formants[:, i]) / _BW[i]) ** 2)
-        g = (g + 0.006) / h ** 1.05                  # small spectral floor + source tilt (cleaner formants)
-        out += g * np.sin(h * phase)
-    mx = np.abs(out).max()
-    if mx > 1e-9:
-        out /= mx
-    return out * amp
+def _stop_centre(base: str) -> float:
+    if base in ("T", "D"):
+        return 3500.0
+    if base in ("K", "G"):
+        return 1700.0
+    return 900.0                          # P/B — low burst
 
 
-def _noise(n: int, sr: int, centre: float, bw: float, amp: float,
-           rng: np.random.Generator) -> np.ndarray:
-    """White noise shaped by a Gaussian band around ``centre`` (FFT-domain)."""
+def _classify(base: str) -> dict:
+    """Per-phoneme synthesis targets: formant glide (start,end), voicing fraction,
+    amplitude, optional (noise-centre, noise-bw), and whether it's a stop (closure+burst)."""
+    if base in _SILENCE:
+        return dict(f=(_NEUTRAL, _NEUTRAL), voi=0.0, amp=0.0, noise=None, stop=False)
+    if base in _DIPH:
+        a, b = _DIPH[base]
+        return dict(f=(a, b), voi=1.0, amp=1.0, noise=None, stop=False)
+    if base in _VOWEL:
+        fm = _VOWEL[base]
+        return dict(f=(fm, fm), voi=1.0, amp=1.0, noise=None, stop=False)
+    if base in _NASAL:
+        fm = _NASAL[base]
+        return dict(f=(fm, fm), voi=1.0, amp=0.6, noise=None, stop=False)
+    if base in _APPROX:
+        fm = _APPROX[base]
+        return dict(f=(fm, fm), voi=1.0, amp=0.78, noise=None, stop=False)
+    if base in _FRIC_U:
+        return dict(f=(_NEUTRAL, _NEUTRAL), voi=0.0, amp=0.42, noise=_FRIC_U[base], stop=False)
+    if base in _FRIC_V:
+        return dict(f=((350, 1200, 2400), (350, 1200, 2400)), voi=0.5, amp=0.5, noise=_FRIC_V[base], stop=False)
+    if base in _STOP_U:
+        return dict(f=(_NEUTRAL, _NEUTRAL), voi=0.0, amp=0.5, noise=(_stop_centre(base), 1900), stop=True)
+    if base in _STOP_V:
+        return dict(f=((350, 1200, 2400), (350, 1200, 2400)), voi=0.28, amp=0.5, noise=(_stop_centre(base), 1900), stop=True)
+    if base in _AFFR:
+        return dict(f=(_NEUTRAL, _NEUTRAL), voi=0.0, amp=0.5, noise=_FRIC_U[_AFFR[base]], stop=True)
+    return dict(f=(_NEUTRAL, _NEUTRAL), voi=0.6, amp=0.5, noise=None, stop=False)   # unknown → soft vowel
+
+
+def _norm(x: np.ndarray) -> np.ndarray:
+    mx = np.abs(x).max()
+    return x / mx if mx > 1e-9 else x
+
+
+def _smooth(x: np.ndarray, sr: int, ms: float) -> np.ndarray:
+    """Box-filter smoothing (coarticulation / envelope glides)."""
+    k = max(1, int(sr * ms / 1000.0))
+    if k <= 1:
+        return x
+    win = np.ones(k) / k
+    if x.ndim == 1:
+        return np.convolve(x, win, "same")
+    return np.stack([np.convolve(x[:, i], win, "same") for i in range(x.shape[1])], axis=1)
+
+
+def _shape_noise(n: int, sr: int, centre: float, bw: float,
+                 rng: np.random.Generator) -> np.ndarray:
     if n <= 0:
         return np.zeros(0)
     x = rng.standard_normal(n)
     spec = np.fft.rfft(x)
-    freqs = np.fft.rfftfreq(n, 1.0 / sr)
-    spec *= np.exp(-0.5 * ((freqs - centre) / bw) ** 2)
-    y = np.fft.irfft(spec, n)
-    mx = np.abs(y).max()
-    if mx > 1e-9:
-        y /= mx
-    return y * amp
-
-
-def _fade(sig: np.ndarray, sr: int, ms: float = 6.0) -> np.ndarray:
-    """Raised-cosine fade in/out to avoid clicks at segment joins."""
-    k = min(len(sig) // 2, int(sr * ms / 1000.0))
-    if k <= 0:
-        return sig
-    ramp = 0.5 - 0.5 * np.cos(np.linspace(0, np.pi, k))
-    sig = sig.copy()
-    sig[:k] *= ramp
-    sig[-k:] *= ramp[::-1]
-    return sig
-
-
-def _segment(base: str, n: int, sr: int, f0: float,
-             rng: np.random.Generator) -> np.ndarray:
-    """Synthesize one phoneme of ``n`` samples."""
-    if n <= 0 or base in _SILENCE:
-        return np.zeros(max(0, n))
-
-    if base in _VOWEL or base in _DIPH:
-        if base in _DIPH:
-            a, b = _DIPH[base]
-            ramp = np.linspace(0, 1, n)[:, None]
-            formants = (1 - ramp) * np.array(a) + ramp * np.array(b)
-        else:
-            formants = np.tile(_VOWEL[base], (n, 1)).astype(float)
-        return _fade(_voiced(n, sr, f0, formants, 1.0), sr)
-
-    if base in _NASAL:
-        formants = np.tile(_NASAL[base], (n, 1)).astype(float)
-        return _fade(_voiced(n, sr, f0, formants, 0.55), sr)
-    if base in _APPROX:
-        formants = np.tile(_APPROX[base], (n, 1)).astype(float)
-        return _fade(_voiced(n, sr, f0, formants, 0.7), sr)
-
-    if base in _FRIC_U:
-        c, bw = _FRIC_U[base]
-        return _fade(_noise(n, sr, c, bw, 0.32, rng), sr)
-    if base in _FRIC_V:
-        c, bw = _FRIC_V[base]
-        buzz = _voiced(n, sr, f0, np.tile((300, 1000, 2200), (n, 1)).astype(float), 0.22)
-        return _fade(_noise(n, sr, c, bw, 0.28, rng) + buzz, sr)
-
-    if base in _STOP_U or base in _STOP_V or base in _AFFR:
-        out = np.zeros(n)
-        closed = int(n * 0.55)                      # silent closure, then a burst
-        burst = n - closed
-        if burst > 0:
-            if base in _AFFR:                        # affricate: burst + fricative tail
-                c, bw = _FRIC_U[_AFFR[base]]
-                out[closed:] = _noise(burst, sr, c, bw, 0.4, rng)
-            else:
-                centre = 3500.0 if base in ("T", "D") else 1800.0 if base in ("K", "G") else 900.0
-                out[closed:] = _noise(burst, sr, centre, 1800.0, 0.45, rng)
-                if base in _STOP_V:                  # voiced stops get a little buzz
-                    out[closed:] += _voiced(burst, sr, f0,
-                                            np.tile((300, 1000, 2200), (burst, 1)).astype(float), 0.18)
-        return _fade(out, sr, 3.0)
-
-    # unknown symbol → a soft neutral vowel so timing is still audible
-    return _fade(_voiced(n, sr, f0, np.tile((500, 1500, 2500), (n, 1)).astype(float), 0.5), sr)
+    f = np.fft.rfftfreq(n, 1.0 / sr)
+    spec *= np.exp(-0.5 * ((f - centre) / bw) ** 2)
+    return _norm(np.fft.irfft(spec, n))
 
 
 def synthesize(text: str, duration: float, *, sr: int = 16000,
-               g2p: Optional[G2P] = None, f0: float = 118.0,
+               g2p: Optional[G2P] = None, f0: float = 112.0,
                seed: int = 7) -> Tuple[np.ndarray, int]:
-    """Synthesize ``text`` into a mono float32 waveform in ``[-1, 1]``.
-
-    Timing comes from :func:`naive_segments` so the audio lines up with the
-    phoneme/viseme track. ``f0`` is the base pitch (Hz); a gentle declination is
-    applied across the utterance. Returns ``(samples, sr)``."""
+    """Synthesize ``text`` into a mono float32 waveform in ``[-1, 1]`` over
+    ``duration`` seconds. Returns ``(samples, sr)``."""
     if duration <= 0:
         raise ValueError("duration must be > 0")
     segs = naive_segments(text, duration, g2p=g2p)
+    n = int(round(duration * sr))
+    if n <= 0:
+        return np.zeros(0, dtype=np.float32), sr
+    t = np.arange(n) / sr
     rng = np.random.default_rng(seed)
-    total = int(round(duration * sr))
-    out = np.zeros(total + sr // 10, dtype=np.float64)   # a little tail headroom
+
+    # per-sample envelopes + formant control points, filled per segment
+    voi = np.zeros(n)
+    amp = np.zeros(n)
+    noise = np.zeros(n)
+    ct: list = [0.0]
+    cf: list = [np.array(_NEUTRAL, dtype=float)]
     for s in segs:
+        c = _classify(_base(s.phoneme))
         a = int(round(s.start * sr))
-        n = int(round((s.end - s.start) * sr))
-        if n <= 0:
+        b = min(int(round(s.end * sr)), n)
+        if b <= a:
             continue
-        # pitch declination: ~+4 % at the start down to ~-8 % at the end
-        frac = 0.0 if duration <= 0 else min(1.0, max(0.0, s.start / duration))
-        f = f0 * (1.04 - 0.12 * frac)
-        seg = _segment(_base(s.phoneme), n, sr, f, rng)
-        if seg.size:
-            end = min(len(out), a + seg.size)
-            out[a:end] += seg[:end - a]
-    out = out[:total]
-    mx = np.abs(out).max()
-    if mx > 1e-9:
-        out = out / mx * 0.92                          # normalize, leave headroom
+        fa = np.array(c["f"][0], dtype=float)
+        fb = np.array(c["f"][1], dtype=float)
+        dur = max(1e-4, s.end - s.start)
+        ct += [s.start + 0.2 * dur, s.start + 0.8 * dur]      # glide within the segment
+        cf += [fa, fb]
+        if c["stop"]:                                         # closure (silent) then burst
+            closed = a + int((b - a) * 0.6)
+            voi[closed:b] = c["voi"]; amp[closed:b] = c["amp"]
+            if c["noise"]:
+                noise[closed:b] += _shape_noise(b - closed, sr, c["noise"][0], c["noise"][1], rng)
+        else:
+            voi[a:b] = c["voi"]; amp[a:b] = c["amp"]
+            if c["noise"]:
+                noise[a:b] += _shape_noise(b - a, sr, c["noise"][0], c["noise"][1], rng)
+    ct.append(duration); cf.append(np.array(_NEUTRAL, dtype=float))
+
+    # smooth formant trajectory (coarticulation) + envelope glides
+    ct_a = np.asarray(ct)
+    cf_a = np.asarray(cf)
+    order = np.argsort(ct_a, kind="stable")
+    ct_a, cf_a = ct_a[order], cf_a[order]
+    F = np.stack([np.interp(t, ct_a, cf_a[:, i]) for i in range(3)], axis=1)
+    F = _smooth(F, sr, 8.0)
+    voi = np.clip(_smooth(voi, sr, 14.0), 0.0, 1.0)
+    amp = _smooth(amp, sr, 12.0)
+
+    # pitch: declination + gentle vibrato
+    frac = np.clip(t / max(duration, 1e-3), 0.0, 1.0)
+    f0t = f0 * (1.06 - 0.16 * frac) * (1.0 + 0.015 * np.sin(2 * np.pi * 4.5 * t))
+    phase = 2 * np.pi * np.cumsum(f0t) / sr
+
+    # voiced source: continuous phase, per-sample formant-shaped harmonics
+    voiced = np.zeros(n)
+    hmax = int((sr / 2) / max(70.0, float(f0t.min())))
+    for h in range(1, hmax + 1):
+        fh = h * f0t
+        g = np.zeros(n)
+        for i in range(3):
+            g += np.exp(-0.5 * ((fh - F[:, i]) / _BW[i]) ** 2)
+        voiced += ((g + 0.004) / h ** 1.15) * np.sin(h * phase)
+
+    voiced = _norm(voiced)
+    noise = _norm(noise)
+    out = amp * (voi * voiced + (1.0 - voi) * noise)
+    out = np.tanh(out * 1.4)                                  # gentle soft-clip (warmth, no harsh peaks)
+    out = _norm(out) * 0.9
     return out.astype(np.float32), sr
 
 
