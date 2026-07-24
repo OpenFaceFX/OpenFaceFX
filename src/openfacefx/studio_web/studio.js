@@ -18,7 +18,7 @@ const CURVE_COLORS = ["#f4b942","#4cc2ff","#e06c9f","#5ad19a","#b78cff","#ff8f6b
 const S = {
   runtime:null, pyodide:null, native:false,
   track:null, segments:[], words:[], duration:0, fps:60,
-  wavBytes:null, wavPeaks:null, wavSpec:null,
+  wavBytes:null, wavPeaks:null, wavSpec:null, previewMode:"3d",
   chan:{},               // name -> {color, visible, idx}
   sel:null,              // selected channel name
   view:"preview",
@@ -904,6 +904,7 @@ $$("#tabs .tab").forEach(t=>t.onclick=()=>{
   $$("#tabs .tab").forEach(x=>x.classList.remove("active")); t.classList.add("active");
   $$(".view").forEach(v=>v.classList.remove("active"));
   S.view=t.dataset.view; $(`.view[data-view="${S.view}"]`).classList.add("active");
+  mountPreview(S.view);                              // move the shared preview into Preview / Workspace
   if(S.view==="workspace"){ const r=$("#ws_rail"); if(r)r._key=null;   // force a rail rebuild on entry
     // the grid's minmax(0,fr) tracks resolve to ~0 on the first tick — fitCanvas would
     // grab a 0-height buffer. Redraw after layout settles so every panel sizes correctly.
@@ -927,10 +928,25 @@ const SHAPES={sil:[.30,.03,.2],PP:[.34,.02,.1],FF:[.34,.10,.1],TH:[.34,.16,.2],D
   kk:[.34,.20,.3],CH:[.24,.20,.8],SS:[.30,.08,.2],nn:[.32,.16,.2],RR:[.26,.20,.6],
   aa:[.40,.55,.4],E:[.44,.30,.2],I:[.50,.14,.1],O:[.30,.42,.9],U:[.22,.22,1]};
 function drawPreview(){
-  const p3d=window.Preview3D;
-  if(p3d&&p3d.ready){ if(S.track) drive3D(p3d); else p3d.update({},{},{pitch:0,yaw:0,roll:0}); }  // neutral when no take
+  const p3d=window.Preview3D; const use3d = !!(p3d&&p3d.ready) && S.previewMode!=="2d";
+  const c=$("#face3d"), s=$("#face");                 // one preview, shared by the Preview tab + Workspace
+  if(c) c.hidden=!use3d;
+  if(s) s.style.display=use3d?"none":"";
+  if(use3d){ if(S.track) drive3D(p3d); else p3d.update({},{},{pitch:0,yaw:0,roll:0}); }  // neutral when no take
   else drawSchematic();
   $("#tcRead").textContent=fmt(S.t); $("#tpTime").textContent=fmt(S.t);
+}
+/* the 3D head lives on a single WebGL canvas, so move the whole preview stage
+ * into whichever view is active (Preview tab or the Workspace face cell) — both
+ * then show the SAME model. */
+function mountPreview(view){
+  const stage=$(".preview-stage"); if(!stage) return;
+  const dest = view==="workspace" ? $("#wsFaceMount") : $('.view[data-view="preview"]');
+  if(dest && stage.parentElement!==dest){
+    dest.appendChild(stage);
+    const p=window.Preview3D;
+    if(p&&p.ready) requestAnimationFrame(()=>{ p.resize(); p.reframe&&p.reframe(); });
+  }
 }
 
 /* Preview articulation shaping — DISPLAY ONLY. The pipeline and every exporter
@@ -1241,7 +1257,8 @@ function drawStrip(cid){
 /* ---- Unified Workspace: every view live on one playhead (FaceFX layout) ---- */
 function drawWorkspace(){
   if(!S.track) return;
-  drawSchematic();                                 // mirrors into the ws_ SVG face
+  // the shared preview stage is relocated into #wsFaceMount; drawPreview (run by
+  // drawAll) drives it, so nothing to do for the face here.
   drawFaceGraph("ws_facegraph");                    // async; sets S.fgNodes to ws coords for hit-testing
   drawCurves("ws_curves");
   drawPhonemes("ws_wave","ws_phonStrip");
@@ -1857,16 +1874,37 @@ let rt; addEventListener("resize",()=>{ clearTimeout(rt); rt=setTimeout(()=>{ dr
 
 /* the 3D head finished loading → swap the schematic SVG for the WebGL canvas */
 addEventListener("preview3d-ready",()=>{
-  const c=$("#face3d"), s=$("#face"); if(c){ c.hidden=false; } if(s){ s.style.display="none"; }
   const tools=$("#stageTools"); if(tools) tools.hidden=false;
   const P=()=>window.Preview3D;
   $("#reframeBtn") &&($("#reframeBtn").onclick =()=>P().reframe&&P().reframe());
   $("#zoomInBtn")  &&($("#zoomInBtn").onclick  =()=>P().zoom&&P().zoom(0.8));
   $("#zoomOutBtn") &&($("#zoomOutBtn").onclick =()=>P().zoom&&P().zoom(1.25));
+  const sel=$("#previewMode"); if(sel) sel.disabled=false;         // 3D now available as a choice
   const cap=document.querySelector(".preview-readout .dim");
-  if(cap) cap.textContent="ARKit-blendshape 3D head, driven by the take — drag to orbit · scroll or ＋ / − to zoom · ⟳ recenter";
+  if(cap && S.previewMode!=="2d") cap.textContent="ARKit-blendshape 3D head, driven by the take — drag to orbit · scroll or ＋ / − to zoom · ⟳ recenter";
   P().setActive(true); P().resize(); drawPreview();
 });
+/* Preview model chooser: 2D schematic vs the 3D head, and load your own ARKit
+ * avatar (.glb) — e.g. a Microsoft Rocketbox head exported to glTF. */
+function wirePreviewChooser(){
+  const sel=$("#previewMode");
+  if(sel){ sel.value=S.previewMode||"3d";
+    sel.onchange=()=>{ S.previewMode=sel.value; drawPreview();
+      const p=window.Preview3D; if(p&&p.ready&&S.previewMode==="3d") requestAnimationFrame(()=>{ p.resize(); p.reframe&&p.reframe(); }); }; }
+  const btn=$("#loadModelBtn"), file=$("#modelFile");
+  if(btn&&file){ btn.onclick=()=>file.click();
+    file.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
+      const p=window.Preview3D;
+      if(!p){ alert("The 3D preview needs WebGL, which isn't available here — can't load a model."); e.target.value=""; return; }
+      const orig=btn.textContent; btn.disabled=true; btn.textContent="loading…";
+      try{ const ok=await p.loadModel(await f.arrayBuffer());
+        if(ok){ S.previewMode="3d"; if(sel) sel.value="3d"; drawPreview();
+          const cap=document.querySelector(".preview-readout .dim"); if(cap) cap.textContent="Loaded "+f.name+" — driven by the take via its ARKit blendshapes.";
+        } else alert("Couldn't use that file. Load a .glb whose meshes have ARKit blendshape morph targets (e.g. a Rocketbox avatar exported to glTF).");
+      }catch(err){ alert("Model load failed: "+err.message); }
+      finally{ btn.disabled=false; btn.textContent=orig; e.target.value=""; } };
+  }
+}
 
-wireIO(); wireCanvases();
+wireIO(); wireCanvases(); wirePreviewChooser();
 bootstrap();

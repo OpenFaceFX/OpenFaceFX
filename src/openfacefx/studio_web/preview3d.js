@@ -20,8 +20,36 @@ const P = {
   meshes: [], head: null, morphs: {}, pose: { pitch: 0, yaw: 0, roll: 0 },
 };
 
-// studio arkit channel name -> facecap morph name (Left/Right -> _L/_R)
-const arkitToModel = n => n.replace(/Left$/, "_L").replace(/Right$/, "_R");
+// Resolve a wanted ARKit morph name to THIS model's morph index, tolerating the
+// naming differences between rigs: facecap's Left→_L / Right→_R, ARKit camelCase
+// vs Live-Link PascalCase — so a Microsoft Rocketbox avatar (or any ARKit-blendshape
+// head) is driven correctly, not just the built-in facecap head.
+function morphIndexResolver(mesh) {
+  const d = mesh.morphTargetDictionary, lut = {}, cache = {};
+  for (const k in d) lut[k.toLowerCase()] = d[k];
+  return name => {
+    if (name in cache) return cache[name];
+    const cands = [name, name.replace(/Left$/, "_L").replace(/Right$/, "_R"),
+      name.charAt(0).toLowerCase() + name.slice(1), name.charAt(0).toUpperCase() + name.slice(1)];
+    let idx = -1;
+    for (const c of cands) {
+      if (c in d) { idx = d[c]; break; }
+      const l = lut[c.toLowerCase()]; if (l !== undefined) { idx = l; break; }
+    }
+    return (cache[name] = idx);
+  };
+}
+function makeLoader() {
+  const ktx2 = new KTX2Loader().setTranscoderPath(CDN_BASIS).detectSupport(P.renderer);
+  return new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
+}
+function installHead(gltf) {
+  if (P.head) P.scene.remove(P.head);
+  P.meshes = []; P.head = gltf.scene;
+  P.head.traverse(o => { if (o.isMesh && o.morphTargetDictionary) { o._offxResolve = morphIndexResolver(o); P.meshes.push(o); } });
+  if (!P.meshes.length) return false;
+  P.scene.add(P.head); return true;
+}
 
 async function init() {
   const canvas = document.getElementById("face3d");
@@ -46,14 +74,8 @@ async function init() {
     // real zoom range is set model-relative in frame(); these are placeholders
     P.controls.minDistance = 0.05; P.controls.maxDistance = 100;
 
-    const ktx2 = new KTX2Loader().setTranscoderPath(CDN_BASIS).detectSupport(P.renderer);
-    const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
-    const gltf = await loader.loadAsync(MODEL);
-
-    P.head = gltf.scene;
-    P.head.traverse(o => { if (o.isMesh && o.morphTargetDictionary) P.meshes.push(o); });
-    if (!P.meshes.length) return;                    // unexpected model -> keep SVG
-    P.scene.add(P.head);
+    const gltf = await makeLoader().loadAsync(MODEL);
+    if (!installHead(gltf)) return;                  // unexpected model -> keep SVG
     frame();
     P.ready = true;
     window.dispatchEvent(new Event("preview3d-ready"));
@@ -102,15 +124,12 @@ function resize() {
 
 function applyMorphs() {
   for (const m of P.meshes) {
-    const d = m.morphTargetDictionary, inf = m.morphTargetInfluences;
+    const inf = m.morphTargetInfluences;
     for (let i = 0; i < inf.length; i++) inf[i] = 0;         // reset
-    for (const [name, v] of Object.entries(P.morphs)) {
-      const idx = d[name]; if (idx !== undefined) inf[idx] = v;
-    }
+    const R = m._offxResolve || (m._offxResolve = morphIndexResolver(m));
+    for (const [name, v] of Object.entries(P.morphs)) { const idx = R(name); if (idx >= 0) inf[idx] = v; }
   }
-  if (P.head) {                                    // animation head pose (small angles)
-    P.head.rotation.set(P.pose.pitch, P.pose.yaw, P.pose.roll);
-  }
+  if (P.head) P.head.rotation.set(P.pose.pitch, P.pose.yaw, P.pose.roll);   // animation head pose (small angles)
 }
 
 function loop() {
@@ -131,19 +150,36 @@ function zoom(factor) { if (!P.camera || !P.controls) return;
   P.camera.position.copy(t).add(dir.setLength(d)); P.controls.update();
 }
 function update(arkit, gestures, pose) {
-  const m = {};
-  for (const [n, v] of Object.entries(arkit || {})) m[arkitToModel(n)] = Math.min(1, Math.max(0, v));
+  const m = {};                                    // keep RAW ARKit names; the per-mesh resolver maps them
+  for (const [n, v] of Object.entries(arkit || {})) m[n] = Math.min(1, Math.max(0, v));
   const g = gestures || {};
   const set = (name, v) => { if (v > 0) m[name] = Math.min(1, Math.max(m[name] || 0, v)); };
-  set("eyeBlink_L", Math.max(g.blink_L || 0, g.blink || 0));
-  set("eyeBlink_R", Math.max(g.blink_R || 0, g.blink || 0));
+  set("eyeBlinkLeft", Math.max(g.blink_L || 0, g.blink || 0));
+  set("eyeBlinkRight", Math.max(g.blink_R || 0, g.blink || 0));
   const brow = Math.max(g.browUp || 0, g.browInnerUp || 0);
-  set("browInnerUp", brow); set("browOuterUp_L", (g.browOuterUp || brow)); set("browOuterUp_R", (g.browOuterUp || brow));
+  set("browInnerUp", brow); set("browOuterUpLeft", (g.browOuterUp || brow)); set("browOuterUpRight", (g.browOuterUp || brow));
   P.morphs = m;
   if (pose) P.pose = pose;
 }
 
+// Swap the previewed head at runtime — a URL string or an ArrayBuffer (a .glb the
+// user loads). Any ARKit-blendshape avatar works, e.g. a Rocketbox head exported
+// to glTF. Returns true on success. Boots the renderer path if WebGL is up but no
+// head loaded yet.
+async function loadModel(source) {
+  if (!P.renderer) return false;
+  try {
+    let gltf;
+    if (typeof source === "string") gltf = await makeLoader().loadAsync(source);
+    else gltf = await new Promise((res, rej) => makeLoader().parse(source, "", res, rej));
+    if (!installHead(gltf)) return false;
+    frame();
+    if (!P.ready) { P.ready = true; window.dispatchEvent(new Event("preview3d-ready")); loop(); }
+    return true;
+  } catch (e) { console.warn("[preview3d] loadModel failed:", e); return false; }
+}
+
 function setActive(on) { P.active = on; if (on) resize(); }
 
-window.Preview3D = { get ready() { return P.ready; }, update, setActive, resize, reframe, zoom };
+window.Preview3D = { get ready() { return P.ready; }, update, setActive, resize, reframe, zoom, loadModel };
 init();

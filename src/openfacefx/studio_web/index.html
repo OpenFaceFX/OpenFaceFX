@@ -170,6 +170,14 @@
             <circle cx="94" cy="84" r="4.5" fill="#cfe"/><circle cx="166" cy="84" r="4.5" fill="#cfe"/>
             <path id="mouth" fill="#6d1f2a" stroke="#c65b68" stroke-width="2.5"/>
           </svg>
+          <div class="preview-chooser">
+            <select id="previewMode" title="Which preview model to use">
+              <option value="3d">3D head</option>
+              <option value="2d">2D schematic</option>
+            </select>
+            <button class="btn ghost sm" id="loadModelBtn" title="Load a .glb avatar with ARKit blendshapes — e.g. a Microsoft Rocketbox head exported to glTF">＋ avatar</button>
+            <input type="file" id="modelFile" accept=".glb,.gltf" hidden>
+          </div>
           <div class="preview-readout" id="previewReadout">
             <span class="mono" id="tcRead">00:00.000</span>
             <span class="dim">the schematic face blends visemes in real time — a rig-neutral preview</span>
@@ -211,18 +219,7 @@
         <div class="ws-grid">
           <div class="ws-cell ws-face-cell">
             <div class="ws-cap">Preview</div>
-            <div class="ws-facewrap">
-              <svg id="ws_face" class="ws-face" viewBox="0 0 260 220" preserveAspectRatio="xMidYMid meet" aria-label="face preview">
-                <defs><radialGradient id="ws_skin" cx="50%" cy="42%" r="62%">
-                  <stop offset="0%" stop-color="#3a4756"/><stop offset="100%" stop-color="#232c38"/></radialGradient></defs>
-                <ellipse cx="130" cy="108" rx="104" ry="96" fill="url(#ws_skin)" stroke="#2b3745"/>
-                <g id="ws_browL"></g><g id="ws_browR"></g>
-                <ellipse id="ws_eyeL" cx="94" cy="84" rx="13" ry="9" fill="#0d131a"/>
-                <ellipse id="ws_eyeR" cx="166" cy="84" rx="13" ry="9" fill="#0d131a"/>
-                <circle cx="94" cy="84" r="4.5" fill="#cfe"/><circle cx="166" cy="84" r="4.5" fill="#cfe"/>
-                <path id="ws_mouth" fill="#6d1f2a" stroke="#c65b68" stroke-width="2.5"/>
-              </svg>
-            </div>
+            <div id="wsFaceMount" class="ws-facemount"></div>   <!-- the shared preview stage is moved in here -->
           </div>
           <div class="ws-cell ws-graph-cell">
             <div class="ws-cap">Face Graph</div>
