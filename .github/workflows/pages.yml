@@ -68,20 +68,21 @@ jobs:
           # stands, which is a valid released version.
           cp examples/try-it.html site/try-it.html
           cp examples/voice.wav site/voice.wav
-          OFFX_PUB=$(python -c "import urllib.request,json;print(json.load(urllib.request.urlopen('https://pypi.org/pypi/openfacefx/json',timeout=15))['info']['version'])" 2>/dev/null || true)
-          if [ -n "$OFFX_PUB" ]; then
-            sed -i "s/const OFFX_VERSION = \"[0-9][0-9A-Za-z.-]*\"/const OFFX_VERSION = \"$OFFX_PUB\"/" site/try-it.html
-            echo "Pinned in-browser demo to openfacefx $OFFX_PUB"
-          fi
-          # OpenFaceFX Studio — the full web studio (Preview / Curves / Phonemes /
-          # Face Graph / Export / AI assistant). On a static host it runs entirely
-          # client-side via Pyodide, so copying the SPA is all it takes; pin its
-          # in-browser wheel to the latest published release like try-it above.
+          # OpenFaceFX Studio — the full web studio (runs client-side via Pyodide).
           mkdir -p site/studio
           cp -r src/openfacefx/studio_web/. site/studio/
-          if [ -n "$OFFX_PUB" ]; then
-            sed -i "s/const OFFX_VERSION = \"[0-9][0-9A-Za-z.-]*\"/const OFFX_VERSION = \"$OFFX_PUB\"/" site/studio/studio.js
-            echo "Pinned Studio to openfacefx $OFFX_PUB"
+          # Pin the in-browser wheel version. Prefer the latest PUBLISHED release
+          # (main may sit ahead of PyPI), but NEVER downgrade below the committed
+          # source pin: PyPI's JSON API is CDN-cached per-edge and can briefly report
+          # an OLDER version right after a release, which would otherwise ship a wheel
+          # missing brand-new modules. So pin to max(source, PyPI).
+          SRC=$(grep -o 'const OFFX_VERSION = "[^"]*"' site/studio/studio.js | head -1 | sed 's/.*"\(.*\)"/\1/')
+          OFFX_PUB=$(python -c "import urllib.request,json;print(json.load(urllib.request.urlopen('https://pypi.org/pypi/openfacefx/json',timeout=15))['info']['version'])" 2>/dev/null || true)
+          PIN=$(printf '%s\n%s\n' "$SRC" "$OFFX_PUB" | grep -v '^[[:space:]]*$' | sort -V | tail -1)   # max(source, PyPI) — never downgrade
+          if [ -n "$PIN" ]; then
+            sed -i "s/const OFFX_VERSION = \"[0-9][0-9A-Za-z.-]*\"/const OFFX_VERSION = \"$PIN\"/" site/try-it.html
+            sed -i "s/const OFFX_VERSION = \"[0-9][0-9A-Za-z.-]*\"/const OFFX_VERSION = \"$PIN\"/" site/studio/studio.js
+            echo "Pinned in-browser demo + Studio to openfacefx $PIN (source=$SRC pypi=$OFFX_PUB)"
           fi
           # Cache-bust the Studio's own JS/CSS so a fresh deploy is never served
           # stale from the browser cache (GitHub Pages sets max-age=600 on assets;
