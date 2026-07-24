@@ -143,7 +143,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-con
     <a class="btn" href="https://github.com/OpenFaceFX/OpenFaceFX">Source on GitHub</a>
   </div>
   <div class="stats">
-    <span class="stat"><b>6</b><span>studio views</span></span>
+    <span class="stat"><b>8</b><span>studio views</span></span>
     <span class="stat"><b>14+</b><span>export targets</span></span>
     <span class="stat"><b>3</b><span>ways to run</span></span>
     <span class="stat"><b>numpy-only</b><span>pure-Python engine</span></span>
@@ -156,11 +156,13 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-con
     <h2>Every FaceFX view, rebuilt open</h2>
     <p class="dim">Each view is a window onto the same pipeline: audio &amp; text become time-stamped phonemes, coarticulated viseme curves, then a rig-neutral retarget you export anywhere.</p>
   </div>
-  <div class="grid g4">
-    <a class="card" href="studio/"><div class="thumb"><canvas data-viz="preview"></canvas></div><span class="tag">preview</span><h3>Preview</h3><p>A 3D ARKit-blendshape head, driven by the take in real time — orbit, zoom, scrub.</p></a>
-    <a class="card" href="studio/"><div class="thumb"><canvas data-viz="phon"></canvas></div><span class="tag">phonemes</span><h3>Phonemes</h3><p>Waveform with the aligned phoneme &amp; word strip — the read side of the pipeline.</p></a>
-    <a class="card" href="studio/"><div class="thumb"><canvas data-viz="curves"></canvas></div><span class="tag">curves</span><h3>Curves</h3><p>Coarticulated viseme &amp; gesture curves — toggle, inspect, drag keyframes to edit.</p></a>
-    <a class="card" href="studio/"><div class="thumb"><canvas data-viz="graph"></canvas></div><span class="tag">face graph</span><h3>Face Graph</h3><p>Viseme inputs drive rig outputs through <b>link functions</b> — the retarget network.</p></a>
+  <div class="grid g3">
+    <a class="card" href="studio/"><div class="thumb"><canvas data-viz="preview"></canvas></div><span class="tag">preview</span><h3>Preview</h3><p>A 3D ARKit-blendshape head, driven by the take in real time — orbit, zoom, scrub, pose &amp; expression presets.</p></a>
+    <a class="card" href="studio/"><div class="thumb"><canvas data-viz="phon"></canvas></div><span class="tag">phonemes</span><h3>Phonemes</h3><p>Waveform with the aligned phoneme &amp; word strip, plus a QA pass for cue timing &amp; out-of-vocabulary words.</p></a>
+    <a class="card" href="studio/"><div class="thumb"><canvas data-viz="curves"></canvas></div><span class="tag">curves</span><h3>Curves</h3><p>Coarticulated viseme &amp; gesture curves — drag keyframes, box-select a range, undo/redo.</p></a>
+    <a class="card" href="studio/"><div class="thumb"><canvas data-viz="events"></canvas></div><span class="tag">events</span><h3>Events</h3><p>Emphasis &amp; phrase events auto-authored from the speech, on a timeline — they export as engine notifies.</p></a>
+    <a class="card" href="studio/"><div class="thumb"><canvas data-viz="graph"></canvas></div><span class="tag">face graph</span><h3>Face Graph</h3><p>Editable retarget network — clone rig outputs, tune weights &amp; <b>link functions</b>; nodes glow with the live signal.</p></a>
+    <a class="card" href="studio/"><div class="thumb"><canvas data-viz="mapping"></canvas></div><span class="tag">mapping</span><h3>Mapping</h3><p>The phoneme→viseme weight table — edit it and re-solve, or export a reusable <code>openfacefx.mapping</code>.</p></a>
   </div>
   <div class="sec-cta">
     <a class="btn amber" href="studio/">Open the Studio →</a>
@@ -257,6 +259,7 @@ const cvar=n=>getComputedStyle(root).getPropertyValue(n).trim();
 })();
 
 /* view thumbnails */
+function rr(x,a,b,w,h,r){ x.beginPath(); if(x.roundRect) x.roundRect(a,b,w,h,r); else x.rect(a,b,w,h); }
 function mini(cv,kind){ const x=cv.getContext("2d"); const d=devicePixelRatio||1;
   const W=cv.clientWidth,H=cv.clientHeight; cv.width=W*d;cv.height=H*d; x.setTransform(d,0,0,d,0,0);
   const A=cvar("--amber"),C=cvar("--cyan"),P=cvar("--pink"),G=cvar("--green"),L=cvar("--line"),M=cvar("--mute");
@@ -274,11 +277,32 @@ function mini(cv,kind){ const x=cv.getContext("2d"); const d=devicePixelRatio||1
     const cc=[A,C,P,G]; for(let c=0;c<cc.length;c++){ x.strokeStyle=cc[c]; x.lineWidth=1.5; x.beginPath();
       for(let i=0;i<=W;i+=3){ const p=i/W; const y=H*(.9-.8*Math.abs(Math.sin(p*6+c*1.5))*Math.exp(-Math.pow((p-.2*c-.2)*3,2)+.3)); i?x.lineTo(i,y):x.moveTo(i,y);} x.stroke(); } }
   else if(kind==="graph"){ x.fillStyle=cvar("--panel2"); x.fillRect(0,0,W,H);
-    const inx=18,outx=W-18, ins=[.25,.5,.75].map(f=>H*f), outs=[.2,.4,.6,.8].map(f=>H*f);
-    x.strokeStyle=L; for(const a of ins)for(const b of outs){ x.globalAlpha=.4; x.lineWidth=.8; x.beginPath();
-      x.moveTo(inx+5,a); x.bezierCurveTo(W/2,a,W/2,b,outx-5,b); x.stroke(); } x.globalAlpha=1;
-    for(const a of ins){ x.fillStyle=cvar("--elev"); x.beginPath();x.arc(inx,a,5,0,7);x.fill(); }
-    for(const b of outs){ x.fillStyle=A; x.beginPath();x.arc(outx,b,5,0,7);x.fill(); } }
+    const inx=17,outx=W-17, ins=[.28,.55,.82].map(f=>H*f), outs=[.16,.38,.6,.82].map(f=>H*f);
+    const live=[[0,1],[0,2],[1,3]];                       // (in,out) links carrying signal
+    for(let ai=0;ai<ins.length;ai++)for(let bi=0;bi<outs.length;bi++){ const on=live.some(p=>p[0]===ai&&p[1]===bi);
+      x.strokeStyle=on?A:L; x.globalAlpha=on?.9:.25; x.lineWidth=on?2:.8; x.beginPath();
+      x.moveTo(inx+8,ins[ai]); x.bezierCurveTo(W/2,ins[ai],W/2,outs[bi],outx-8,outs[bi]); x.stroke(); }
+    x.globalAlpha=1;
+    const inLvl=[.75,.25,0], outLvl=[.6,0,0,.4];          // per-node VU levels
+    const node=(cx,cy,lvl)=>{ const w=17,h=11,rx=cx-w/2,ry=cy-h/2;
+      rr(x,rx,ry,w,h,3); x.fillStyle=cvar("--elev"); x.fill();
+      if(lvl>0){ x.save(); rr(x,rx,ry,w,h,3); x.clip(); x.fillStyle=A; x.globalAlpha=.55; x.fillRect(rx,ry+h-h*lvl,w,h*lvl);
+        x.globalAlpha=1; x.fillRect(rx,ry+h-h*lvl-0.6,w,1.2); x.restore(); }
+      rr(x,rx,ry,w,h,3); x.strokeStyle=lvl>.05?A:L; x.lineWidth=1; x.stroke(); };
+    ins.forEach((cy,i)=>node(inx,cy,inLvl[i])); outs.forEach((cy,i)=>node(outx,cy,outLvl[i])); }
+  else if(kind==="events"){ x.fillStyle=cvar("--panel2"); x.fillRect(0,0,W,H);
+    const seg=["SIL","HH","EH","L","OW","W","ER","L","D"]; let sx=4;
+    for(let i=0;i<seg.length;i++){ const w=(W-8)/seg.length; x.fillStyle=cvar("--elev"); x.fillRect(sx+1,H-15,w-2,11); x.strokeStyle=L; x.strokeRect(sx+1,H-15,w-2,11); sx+=w; }
+    const dia=(px,py,col)=>{ x.fillStyle=col; x.beginPath(); x.moveTo(px,py-4.5);x.lineTo(px+4.5,py);x.lineTo(px,py+4.5);x.lineTo(px-4.5,py);x.closePath(); x.fill(); };
+    [.24,.5,.79].forEach(p=>{ const px=8+(W-16)*p, ly=H*.32; x.strokeStyle=A; x.globalAlpha=.4; x.beginPath();x.moveTo(px,ly+5);x.lineTo(px,H-17);x.stroke(); x.globalAlpha=1; dia(px,ly,A); });
+    dia(8+(W-16)*.05, H*.6, C); }
+  else if(kind==="mapping"){ x.fillStyle=cvar("--panel2"); x.fillRect(0,0,W,H);
+    const rows=[["PP",.5],["FF",.72],["aa",.95],["O",.62]]; x.font="9px "+cvar("--mono"); x.textBaseline="middle"; x.textAlign="left";
+    const rh=(H-10)/rows.length;
+    rows.forEach((r,i)=>{ const y=5+i*rh+rh/2, bx=30, bw=W-30-8;
+      x.fillStyle=A; x.fillText(r[0],6,y);
+      rr(x,bx,y-4,bw,8,2); x.fillStyle=cvar("--elev"); x.fill();
+      rr(x,bx,y-4,bw*r[1],8,2); x.fillStyle=A; x.globalAlpha=.6; x.fill(); x.globalAlpha=1; }); }
 }
 document.querySelectorAll("[data-viz]").forEach(c=>{ const draw=()=>mini(c,c.dataset.viz); draw(); addEventListener("resize",draw);
   const mo=new MutationObserver(draw); mo.observe(root,{attributes:true,attributeFilter:["data-theme"]}); });
