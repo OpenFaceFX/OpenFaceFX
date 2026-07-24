@@ -152,13 +152,13 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .lane-tools { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .qa-panel { border:1px solid var(--line); border-radius:var(--r-sm); background:var(--panel);
   padding:10px 12px; font-size:12.5px; display:flex; flex-direction:column; gap:6px;
-  max-height:240px; overflow:auto; }
+  flex-shrink:0; }   /* grow to fit its content; the view scrolls if it runs past the bottom */
 .qa-panel[hidden] { display:none; }
 .qa-head { display:flex; align-items:center; justify-content:space-between; gap:10px;
   font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--fg-dim); }
 .qa-ok { color:var(--good); margin:0; }
 .qa-sub { color:var(--fg-dim); margin-top:2px; }
-.qa-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; }
+.qa-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; max-height:40vh; overflow:auto; }
 .qa-flag { padding:5px 8px; border-radius:var(--r-sm); background:var(--panel-2); border:1px solid var(--line);
   font-family:var(--font-mono); font-size:12px; }
 .qa-flag[data-t] { cursor:pointer; } .qa-flag[data-t]:hover { border-color:var(--accent); }
@@ -166,7 +166,7 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .qa-flag.short { border-left:3px solid var(--crit); }
 .qa-flag.long { border-left:3px solid var(--info); }
 /* QA pronunciation editor — fix OOV words into the take's cmudict */
-.qa-pron { list-style:none; margin:4px 0 0; padding:0; display:flex; flex-direction:column; gap:4px; }
+.qa-pron { list-style:none; margin:4px 0 0; padding:0; display:flex; flex-direction:column; gap:4px; max-height:44vh; overflow:auto; }
 .qa-pw { display:flex; align-items:center; gap:6px; }
 .qa-pw .pw-word { flex:0 0 108px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fg); }
 .qa-pw .pw-in { flex:1 1 auto; min-width:0; background:var(--panel-2); color:var(--fg);
