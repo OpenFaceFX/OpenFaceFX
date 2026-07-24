@@ -1249,6 +1249,8 @@ function drawPhonemes(waveCid,stripCid){
     x.globalAlpha=.9; x.beginPath();                                   // top + bottom outline
     for(let i=0;i<=N;i++){ const px=w*i/N; i?x.lineTo(px,mid-amp(i)):x.moveTo(px,mid-amp(i)); } x.stroke();
     x.beginPath(); for(let i=0;i<=N;i++){ const px=w*i/N; i?x.lineTo(px,mid+amp(i)):x.moveTo(px,mid+amp(i)); } x.stroke();
+    x.globalAlpha=1; x.fillStyle=css("--fg-mute"); x.font="11px "+css("--font-ui"); x.textBaseline="top";   // tell the user why there's no spectrogram
+    x.fillText("synthetic envelope — no audio loaded · use “Load voice clip…” for a real spectrogram", 8, 6); x.textBaseline="alphabetic";
   }
   x.globalAlpha=1;
   // playhead
@@ -1543,6 +1545,24 @@ function finishMarquee(){ const c=chan(S.sel); if(!c||!marquee){ S.selKeys=[]; r
 function deleteSelKeys(){ const c=chan(S.sel); if(!c||!S.selKeys.length)return; snapshotUndo();
   const del=new Set(S.selKeys); let keys=c.keys.filter(k=>!del.has(k)); if(!keys.length) keys=[c.keys[0]];   // a channel keeps ≥1 key
   c.keys=keys; S.selKeys=[]; markChannelOwned(c.name); afterEdit(); }
+/* RDP keyframe thinning — sparser, FaceFX-style curves. Time is normalised by the
+ * clip length so time & value are comparable, then Douglas–Peucker with `eps`.
+ * Opt-in (a button); edits the take, so it's undoable + marks channels owned. */
+function _rdpKeep(pts,i0,i1,eps,keep){
+  const a=pts[i0], b=pts[i1], dx=b[0]-a[0], dy=b[1]-a[1], L=Math.hypot(dx,dy)||1e-9;
+  let dmax=0, idx=-1;
+  for(let i=i0+1;i<i1;i++){ const d=Math.abs((pts[i][0]-a[0])*dy-(pts[i][1]-a[1])*dx)/L; if(d>dmax){dmax=d;idx=i;} }
+  if(dmax>eps && idx>i0){ _rdpKeep(pts,i0,idx,eps,keep); _rdpKeep(pts,idx,i1,eps,keep); } else keep.add(i1);
+}
+function simplifyChannel(c,eps){ if(!c||c.keys.length<3) return 0; const before=c.keys.length;
+  const T=Math.max(.001,S.duration); const pts=c.keys.map(k=>[k[0]/T,k[1]]);
+  const keep=new Set([0]); _rdpKeep(pts,0,pts.length-1,eps,keep);
+  c.keys=[...keep].sort((a,b)=>a-b).map(i=>c.keys[i]); return before-c.keys.length; }
+function simplifyCurves(){ if(!S.track) return;
+  const targets=(S.sel&&chan(S.sel))?[chan(S.sel)]:S.track.channels.filter(c=>S.chan[c.name]&&S.chan[c.name].visible);
+  if(!targets.length) return; snapshotUndo(); let removed=0;
+  for(const c of targets){ removed+=simplifyChannel(c,0.012); markChannelOwned(c.name); }
+  S.selKeys=[]; afterEdit(); }
 let curveDrag=null, marquee=null;   // marquee = a box-select drag on empty canvas
 const clampV=(name,v)=>SIGNED_CH.test(name)?Math.max(-90,Math.min(90,v)):Math.max(0,Math.min(1,v));
 /* Curve keyframe editor — drag dots, alt/right-click delete, double-click add,
@@ -1622,6 +1642,7 @@ function wireCanvases(){
   $("#cvRedo")&&($("#cvRedo").onclick=redoEdit);
   $("#cvAddKey")&&($("#cvAddKey").onclick=addKeyAtPlayhead);
   $("#cvDelKey")&&($("#cvDelKey").onclick=delKeyAtPlayhead);
+  $("#cvSimplify")&&($("#cvSimplify").onclick=simplifyCurves);
   $("#qaRun")&&($("#qaRun").onclick=runQA);
   $("#ipaToggle")&&($("#ipaToggle").onchange=e=>{ S.ipa=e.target.checked; drawAll(); });   // IPA ⇄ ARPABET phoneme labels (display only)
   $("#evRun")&&($("#evRun").onclick=runEvents);
