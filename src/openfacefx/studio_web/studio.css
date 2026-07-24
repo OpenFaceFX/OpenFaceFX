@@ -165,6 +165,15 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .qa-flag.warn { color:var(--warn); }
 .qa-flag.short { border-left:3px solid var(--crit); }
 .qa-flag.long { border-left:3px solid var(--info); }
+/* QA pronunciation editor — fix OOV words into the take's cmudict */
+.qa-pron { list-style:none; margin:4px 0 0; padding:0; display:flex; flex-direction:column; gap:4px; }
+.qa-pw { display:flex; align-items:center; gap:6px; }
+.qa-pw .pw-word { flex:0 0 108px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fg); }
+.qa-pw .pw-in { flex:1 1 auto; min-width:0; background:var(--panel-2); color:var(--fg);
+  border:1px solid var(--line); border-radius:var(--r-sm); padding:4px 6px; font-size:12px; }
+.qa-pw .pw-in:focus { outline:none; border-color:var(--accent); }
+.qa-pw .pw-save { flex:0 0 auto; }
+.qa-pron-foot { display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; }
 /* Events tab — derived event layer list (#14) */
 .event-list { display:flex; flex-direction:column; gap:3px; max-height:220px; overflow:auto;
   margin-top:8px; font-family:var(--font-mono); font-size:12px; }

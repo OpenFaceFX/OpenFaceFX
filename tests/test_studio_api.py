@@ -162,6 +162,24 @@ def test_qa_counts_channels():
     assert r["channels"] == len(d["channels"])
 
 
+def test_qa_oov_guesses_prefilled():
+    d = to_dict(_track())
+    segs = dump_segments(naive_segments(TEXT, 2.4))
+    r = _qa({"track": d, "segments": segs, "text": "openfacefx zqxwv hello"})
+    g = {o["word"]: o["phones"] for o in r["oov_guesses"]}
+    assert "openfacefx" in g and "zqxwv" in g              # OOV words surfaced for editing
+    assert all(o["phones"] for o in r["oov_guesses"])      # each carries an ARPAbet guess to fix
+
+
+def test_qa_cmudict_clears_fixed_word():
+    d = to_dict(_track())
+    segs = dump_segments(naive_segments(TEXT, 2.4))
+    r = _qa({"track": d, "segments": segs, "text": "openfacefx zqxwv hello",
+             "cmudict": "OPENFACEFX  OW1 P AH0 N F EY1 S EH2 F EH1 K S\n"})
+    words = {o["word"] for o in r["oov_guesses"]}
+    assert "openfacefx" not in words and "zqxwv" in words  # a fixed word drops off; unfixed one stays
+
+
 def test_normalize_folds_punctuation():
     r = _normalize({"text": "“quotes” — dash"})
     assert '"quotes"' in r["text"] and "--" in r["text"]

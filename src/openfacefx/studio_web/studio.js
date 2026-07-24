@@ -202,7 +202,7 @@ def studio_bake_emotion(track_json, envelope_json, intensity):
     except Exception as e:
         return json.dumps({"error": str(e)})
 
-def studio_qa(track_json, segments_json, text):
+def studio_qa(track_json, segments_json, text, cmudict=''):
     # deterministic QA (qa.summarize): cue-timing outliers, OOV words, warnings
     from types import SimpleNamespace
     from openfacefx import summarize
@@ -210,13 +210,21 @@ def studio_qa(track_json, segments_json, text):
     segs = [SimpleNamespace(phoneme=s.get('phoneme'), start=float(s.get('start',0) or 0),
             end=float(s.get('end',0) or 0), confidence=s.get('confidence'))
             for s in json.loads(segments_json or '[]')]
-    oov = []
+    oov = []; guesses = []
     try:
         from openfacefx.g2p import G2P
-        oov = G2P().oov_words(text or '')
+        g = G2P()
+        if cmudict:                                   # respect pronunciations already fixed on this take
+            import os
+            with open('/tmp/qa_cmu.dict','w') as f: f.write(cmudict)
+            g.load_cmudict('/tmp/qa_cmu.dict'); os.remove('/tmp/qa_cmu.dict')
+        oov = g.oov_words(text or '')
+        guesses = [{'word': w, 'phones': ' '.join(g.word(w))} for w in oov]   # editable G2P starter
     except Exception:
         pass
-    return json.dumps(summarize(tk, segments=segs, oov_words=oov))
+    res = summarize(tk, segments=segs, oov_words=oov)
+    res['oov_guesses'] = guesses
+    return json.dumps(res)
 
 def studio_events(segments_json, emphasis=True, phrase=True):
     # auto-author a typed event layer from the speech (pipeline.derive_events):
@@ -485,8 +493,9 @@ const Pipe = {
   },
   async qa(){
     const text=$("#text").value||"";
-    if(S.native) return fetch("/api/qa",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,segments:S.segments,text})}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_qa"); const r=JSON.parse(fn(S.track?JSON.stringify(S.track):"null",JSON.stringify(S.segments||[]),text)); fn.destroy(); return r;
+    const cmudict=(curTake()&&curTake().cmudict)||"";   // so words already fixed on this take drop off the OOV list
+    if(S.native) return fetch("/api/qa",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,segments:S.segments,text,cmudict})}).then(r=>r.json());
+    const fn=S.pyodide.globals.get("studio_qa"); const r=JSON.parse(fn(S.track?JSON.stringify(S.track):"null",JSON.stringify(S.segments||[]),text,cmudict)); fn.destroy(); return r;
   },
   async events(emphasis,phrase){
     if(S.native) return fetch("/api/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({segments:S.segments,emphasis,phrase})}).then(r=>r.json());
@@ -1656,16 +1665,42 @@ async function runQA(){
 }
 function renderQA(r){
   const panel=$("#qaPanel"); if(!panel)return;
-  const cues=r.cue_warnings||[], oov=r.oov_words||[], warns=r.warnings||[];
+  const cues=r.cue_warnings||[], warns=r.warnings||[], oovG=r.oov_guesses||[];
   let html=`<div class="qa-head"><span>QA · ${r.channels} channels · ${r.keyframes} keys · ${(+r.duration||0).toFixed(2)}s</span><button class="btn sm" id="qaClose" title="Close">✕</button></div>`;
-  if(!cues.length && !warns.length){ html+='<p class="qa-ok">✓ No timing or pronunciation issues flagged.</p>'; }
+  if(!cues.length && !warns.length && !oovG.length){ html+='<p class="qa-ok">✓ No timing or pronunciation issues flagged.</p>'; }
   if(warns.length) html+='<ul class="qa-list">'+warns.map(w=>`<li class="qa-flag warn">⚠ ${esc(w)}</li>`).join("")+'</ul>';
   if(cues.length){ html+=`<div class="qa-sub">${cues.length} cue-timing outlier(s) — click to seek:</div><ul class="qa-list">`+
     cues.map(c=>`<li class="qa-flag ${c.kind==="short"?"short":"long"}" data-t="${c.start}">${c.kind==="short"?"⏱ short":"⏳ long"} · <b>${esc(c.phoneme)}</b> @ ${(+c.start).toFixed(2)}s · ${Math.round(c.duration*1000)}ms</li>`).join("")+"</ul>"; }
+  if(oovG.length){ html+=`<div class="qa-sub">${oovG.length} word(s) fell back to G2P — fix the <b>ARPAbet</b> below (pre-filled with the rule guess) so the next take pronounces them right:</div>`+
+    `<ul class="qa-pron">`+oovG.map(o=>`<li class="qa-pw">`+
+      `<span class="mono pw-word" title="${esc(o.word)}">${esc(o.word)}</span>`+
+      `<input class="pw-in mono" data-word="${esc(o.word)}" value="${esc(o.phones||"")}" spellcheck="false" title="Space-separated ARPAbet phonemes, e.g. HH EH1 L OW0">`+
+      `<button class="btn ghost sm pw-save" title="Save this pronunciation to the take">save</button></li>`).join("")+`</ul>`+
+    `<div class="qa-pron-foot"><button class="btn sm" id="pwAll" title="Save every pronunciation above, then re-generate the take with them">Save all &amp; re-generate</button> <span class="dim">stored on this take's pronunciation dictionary</span></div>`; }
   panel.innerHTML=html;
   $("#qaClose")&&($("#qaClose").onclick=()=>{ panel.hidden=true; });
   panel.querySelectorAll(".qa-flag[data-t]").forEach(li=>li.onclick=()=>{
     S.t=Math.min(S.duration,Math.max(0,parseFloat(li.dataset.t)||0)); S.playClock=S.t; setScrub(); drawAll(); });
+  panel.querySelectorAll(".pw-save").forEach(b=>b.onclick=()=>{ const inp=b.parentElement.querySelector(".pw-in");
+    if(savePron(inp.dataset.word, inp.value)){ b.textContent="saved ✓"; setTimeout(()=>b.textContent="save",1400); } });
+  $("#pwAll")&&($("#pwAll").onclick=async()=>{
+    panel.querySelectorAll(".pw-in").forEach(inp=>savePron(inp.dataset.word, inp.value));
+    if(typeof runGenerate==="function"){ await runGenerate(true); }   // re-solve with the new pronunciations (keeps hand edits)
+    runQA(); });                                                       // refresh — fixed words drop off the list
+}
+/* merge/replace one WORD entry in a take's CMUdict-format pronunciation blob (load_cmudict format) */
+function cmudictUpsert(text, word, phones){
+  const W=(word||"").toUpperCase();
+  const keep=(text||"").split("\n").map(l=>l.replace(/\r$/,"")).filter(l=>{ const t=l.trim();
+    if(!t) return false; if(t.startsWith(";;;")) return true;
+    return t.split(/\s+/)[0].replace(/\(\d+\)$/,"").toUpperCase()!==W; });   // drop any prior entry for this word
+  if(phones) keep.push(`${W}  ${phones}`);
+  return keep.length?keep.join("\n")+"\n":"";
+}
+function savePron(word,phones){
+  word=(word||"").trim(); phones=(phones||"").trim().replace(/\s+/g," ");
+  const tk=curTake(); if(!word||!tk) return false;
+  tk.cmudict=cmudictUpsert(tk.cmudict||"", word, phones); markEdited(); return true;
 }
 
 /* ===================================================================== *

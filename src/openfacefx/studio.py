@@ -422,13 +422,25 @@ def _qa(p: dict) -> dict:
     segs = [SimpleNamespace(phoneme=s.get("phoneme"), start=float(s.get("start", 0) or 0),
             end=float(s.get("end", 0) or 0), confidence=s.get("confidence"))
             for s in (p.get("segments") or [])]
-    oov = []
+    oov, guesses = [], []
     try:
         from openfacefx.g2p import G2P
-        oov = G2P().oov_words(p.get("text", "") or "")
+        g = G2P()
+        cmu = p.get("cmudict") or ""
+        if cmu:                                      # respect pronunciations already fixed on this take
+            import os, tempfile
+            path = os.path.join(tempfile.mkdtemp(), "qa_cmu.dict")
+            with open(path, "w") as f:
+                f.write(cmu)
+            g.load_cmudict(path)
+            os.remove(path)
+        oov = g.oov_words(p.get("text", "") or "")
+        guesses = [{"word": w, "phones": " ".join(g.word(w))} for w in oov]   # editable G2P starter
     except Exception:
         pass
-    return summarize(tk, segments=segs, oov_words=oov)
+    res = summarize(tk, segments=segs, oov_words=oov)
+    res["oov_guesses"] = guesses
+    return res
 
 
 def _events(p: dict) -> dict:
