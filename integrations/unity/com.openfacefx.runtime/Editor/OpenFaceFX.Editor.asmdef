@@ -1,0 +1,14 @@
+{
+  "name": "OpenFaceFX.Editor",
+  "rootNamespace": "OpenFaceFX.Editor",
+  "references": ["OpenFaceFX.Runtime"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "autoReferenced": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

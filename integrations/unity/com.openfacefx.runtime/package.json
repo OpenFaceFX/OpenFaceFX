@@ -1,0 +1,17 @@
+{
+  "name": "com.openfacefx.runtime",
+  "version": "0.1.0",
+  "displayName": "OpenFaceFX Runtime",
+  "description": "Play OpenFaceFX lip-sync / facial-animation tracks on Unity characters. Streams ARKit blendshape weights (and optional head/eye bone pose) onto a SkinnedMeshRenderer at runtime. Imports OpenFaceFX track JSON (.offxtrack) and Apple ARKit Live Link Face CSV. Works out of the box with Microsoft Rocketbox ARKit avatars. No third-party dependencies.",
+  "unity": "2021.3",
+  "keywords": ["lip-sync", "facial-animation", "arkit", "blendshapes", "viseme", "facefx", "rocketbox", "livelink", "animation"],
+  "author": { "name": "OpenFaceFX", "url": "https://openfacefx.com" },
+  "license": "MIT",
+  "samples": [
+    {
+      "displayName": "Rocketbox ARKit avatar",
+      "description": "Drive a Microsoft Rocketbox ARKit avatar with an OpenFaceFX take.",
+      "path": "Samples~/RocketboxARKit"
+    }
+  ]
+}
