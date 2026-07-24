@@ -8,6 +8,27 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Unity runtime integration** (`integrations/unity/com.openfacefx.runtime`) — a
+  dependency-free UPM package that plays OpenFaceFX takes on Unity characters,
+  streaming ARKit blendshape weights (and optional head/eye bone pose) onto a
+  `SkinnedMeshRenderer`. Reads the `openfacefx.track` JSON (`.offxtrack`) and the
+  ARKit **Live Link Face** CSV; case-insensitive / prefix / PascalCase⇄camelCase
+  blendshape name matching lines an `arkit` take up with **Microsoft Rocketbox**
+  ARKit avatars (and most ARKit rigs) with no manual mapping. Editor importer +
+  "Convert to OffX Clip" menu + a Rocketbox sample. Requires Unity 2021.3+.
+- **Studio unified Workspace** — a new **Workspace** tab showing the neutral face,
+  Face Graph, animation curves and the audio spectrogram at once on a single
+  playhead (the FaceFX single-screen layout), with a **curve-select rail** (live
+  value per channel, click to select + solo) and a **node properties** readout.
+- **Studio Phonemes-bar editor** — drag a phoneme boundary on the Phonemes strip
+  to fine-tune its timing; the viseme curves re-solve from the edited segments
+  (gesture/emotion/pose channels are preserved). Undo captures the edit whole. New
+  `studio_resolve` bridge + native `/api/resolve`; 3 tests.
+- **Studio spectrogram** — the Phonemes lane now draws a real STFT spectrogram of
+  the loaded audio (Hann-windowed FFT, ~0–5 kHz, theme-aware heatmap), falling back
+  to the waveform/synthetic envelope when there's no clip.
+
 ### Fixed
 - **Studio Phonemes waveform** — with no audio loaded, the synthetic waveform
   summed every viseme channel, which saturated to 1.0 across ~83% of the clip and

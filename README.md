@@ -198,6 +198,13 @@ python -m openfacefx naive --text "..." --wav voice.wav -o clip.anim --anim-nami
 python -m openfacefx mfa --textgrid voice.TextGrid -o track.json --retarget arkit
 ```
 
+…or play a take **live at runtime** in Unity: the
+[`com.openfacefx.runtime`](integrations/unity/) package streams an `arkit` take's
+blendshape weights (and optional head/eye bone pose) onto a `SkinnedMeshRenderer` —
+reading the track JSON or the ARKit Live Link CSV, and lining up with
+[Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) ARKit avatars
+out of the box.
+
 Or a stepped cue list for the indie 2D ecosystem — Rhubarb TSV/XML/JSON,
 Moho/OpenToonz `.dat` (Preston-Blair drawing names), Papagayo `.pgo` — flattened
 to the dominant mouth shape per interval (extension picks the format; `.json`
