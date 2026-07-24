@@ -258,6 +258,38 @@ def studio_mapping_json(edit_json, base_preset):
     p = os.path.join(tempfile.mkdtemp(), 'm.json'); Mapping(targets, rows).to_json(p)
     with open(p) as f: return json.dumps({"json": f.read()})
 
+def studio_import(name, b64):
+    # read side of the exporters: route an uploaded file to the right importer → track
+    import base64, tempfile
+    import openfacefx as offx
+    def need(n):
+        f = getattr(offx, n, None)
+        if f is None: raise Exception("this build can't import that format ("+n+" missing) — use the desktop app or update")
+        return f
+    try: data = base64.b64decode(b64)
+    except Exception: return json.dumps({"error":"could not decode the file"})
+    ext = name.lower(); suffix = os.path.splitext(name)[1] or ".dat"
+    fd, path = tempfile.mkstemp(suffix=suffix); os.close(fd)
+    try:
+        with open(path,"wb") as f: f.write(data)
+        if ext.endswith((".glb",".gltf")): track, warns = need("read_gltf")(path)
+        elif ext.endswith(".vmd"): track, warns = need("read_vmd")(path), []
+        elif ext.endswith(".bvh"): track, warns = need("read_bvh")(path)
+        elif ext.endswith(".csv"): track, warns = need("read_csv")(path)
+        elif ext.endswith(".json"):
+            txt = data.decode("utf-8","replace")
+            if '"facsNames"' in txt or '"weightMat"' in txt: track, warns = need("read_a2f")(path)
+            else: track, warns = need("read_json")(path), []
+        else: track, warns = need("import_cues")(path)
+        if not track.channels: return json.dumps({"error": name+": no animation channels found"})
+        return json.dumps({"track": to_dict(track), "duration": round(float(track.duration),4),
+            "fps": track.fps, "warnings": list(warns or []), "channels": len(track.channels)})
+    except Exception as e:
+        return json.dumps({"error": name+": "+str(e)})
+    finally:
+        try: os.remove(path)
+        except Exception: pass
+
 _EXPORTERS = {}
 def _reg(fmt, fn): _EXPORTERS[fmt]=fn
 
@@ -398,6 +430,10 @@ const Pipe = {
   async mappingDefault(){
     if(S.native) return fetch("/api/mapping_default").then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_mapping_default"); const r=JSON.parse(fn()); fn.destroy(); return r;
+  },
+  async importFile(name,b64){
+    if(S.native) return fetch("/api/import",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name,b64})}).then(r=>r.json());
+    const fn=S.pyodide.globals.get("studio_import"); const r=JSON.parse(fn(name,b64)); fn.destroy(); return r;
   }
 };
 
@@ -428,6 +464,25 @@ $("#wav").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
     $("#dur").value=audio.duration.toFixed(2); $("#engine").value="energy";
   }catch(err){ $("#wavName").textContent="couldn't decode audio"; }
 };
+
+/* Import a track from an exported/interchange file → a new take (read side of Export) */
+$("#importFile") && ($("#importFile").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
+  const hint=$("#importHint"), orig=hint?hint.textContent:""; if(hint) hint.textContent="importing "+f.name+"…";
+  try{
+    const b64=toB64(new Uint8Array(await f.arrayBuffer()));
+    const res=await Pipe.importFile(f.name, b64);
+    if(res.error) throw new Error(res.error);
+    newTakeSlot(); const tk=curTake();
+    tk.track=res.track; tk.segments=[]; tk.words=[]; tk.duration=res.duration;
+    tk.name=(f.name.replace(/\.[^.]+$/,"")||tk.name).slice(0,40);
+    tk.wavName="imported · "+f.name; tk.wavBytes=null; tk.wavPeaks=null;
+    if(res.fps){ tk.params={...tk.params, fps:String(res.fps)}; }
+    loadTake(); refreshIO();
+    if(hint) hint.textContent=`imported ${res.channels} channels`+(res.warnings&&res.warnings.length?` · ${res.warnings.length} warning(s)`:"");
+    if(res.warnings&&res.warnings.length) console.warn("import warnings:", res.warnings);
+  }catch(err){ if(hint) hint.textContent=orig; alert("Import failed: "+err.message); }
+  finally{ e.target.value=""; }   // allow re-importing the same file
+});
 
 async function runGenerate(preserve){
   const btn=$("#run"); btn.disabled=true; btn.textContent="Generating…";

@@ -20,6 +20,16 @@ its `version` field.
   The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
 
 ### Added
+- **Studio import — the read side of Export** — an **Import track…** button in the
+  Generate panel loads an exported/interchange file into a new take, mirroring the
+  exporters: **track JSON**, **glTF** (.glb/.gltf), **VMD**, **ARKit / Live Link
+  CSV**, **NVIDIA Audio2Face** (.a2f.json), **BVH** mocap, and **Rhubarb / Moho /
+  Papagayo cue** files. Format is auto-detected by extension (and A2F vs. track
+  JSON by content); the file is routed to the matching `read_*` / `import_cues`
+  importer via a new `studio_import` bridge + native `/api/import`, then a take is
+  created and selected. An importer missing from the running build reports a clear
+  message instead of failing. Read-only wrt the pipeline; every importer is the
+  numpy/stdlib one already shipped.
 - **Studio Curves — box-select multi-keyframe editing** — drag a marquee over
   empty space in the Curves editor to select multiple keyframes of the current
   channel; drag any selected key to **move the whole group** together (re-sorted

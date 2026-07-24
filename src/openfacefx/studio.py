@@ -201,6 +201,71 @@ def _export(fmt: str, track: dict, fgmap: dict = None, fgconst: dict = None,
         return {"error": str(e)}
 
 
+class _ImportUnavailable(Exception):
+    """The current openfacefx build lacks the importer for this format."""
+
+
+def _dispatch_import(ext: str, path: str, data: bytes):
+    """Route an uploaded file to the right importer → (track, warnings).
+    a2f vs. track-JSON is disambiguated by content."""
+    import openfacefx as offx
+
+    def need(n):
+        f = getattr(offx, n, None)
+        if f is None:
+            raise _ImportUnavailable(
+                f"this build of openfacefx can't import that format ({n} missing) — "
+                "update the app / wheel, or use the desktop app")
+        return f
+
+    if ext.endswith((".glb", ".gltf")):
+        return need("read_gltf")(path)
+    if ext.endswith(".vmd"):
+        return need("read_vmd")(path), []
+    if ext.endswith(".bvh"):
+        return need("read_bvh")(path)
+    if ext.endswith(".csv"):
+        return need("read_csv")(path)
+    if ext.endswith(".json"):
+        txt = data.decode("utf-8", "replace")
+        if '"facsNames"' in txt or '"weightMat"' in txt:
+            return need("read_a2f")(path)
+        return need("read_json")(path), []
+    return need("import_cues")(path)   # rhubarb/moho/papagayo cue files
+
+
+def _import(p: dict) -> dict:
+    """Import a track from an exported/interchange file into a take — the read
+    side of the exporters. Returns {track, duration, fps, warnings} or {error}."""
+    import base64 as b64, tempfile, os
+    from openfacefx import to_dict
+    name = p.get("name", "import")
+    try:
+        data = b64.b64decode(p.get("b64", ""))
+    except Exception:
+        return {"error": "could not decode the uploaded file"}
+    suffix = os.path.splitext(name)[1] or ".dat"
+    fd, path = tempfile.mkstemp(suffix=suffix); os.close(fd)
+    try:
+        with open(path, "wb") as f:
+            f.write(data)
+        track, warnings = _dispatch_import(name.lower(), path, data)
+        if not track.channels:
+            return {"error": f"{name}: no animation channels found"}
+        return {"track": to_dict(track), "duration": round(float(track.duration), 4),
+                "fps": track.fps, "warnings": list(warnings or []),
+                "channels": len(track.channels)}
+    except _ImportUnavailable as e:
+        return {"error": str(e)}
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        return {"error": f"{name}: {e}"}
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def _presets() -> list:
     from openfacefx import PRESETS
     return sorted(PRESETS)
@@ -445,6 +510,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_events(body))
             if path == "/api/mapping_json":
                 return self._json(_mapping_json(body))
+            if path == "/api/import":
+                return self._json(_import(body))
             if path in ("/api/auth/register", "/api/auth/login"):
                 from .studio_saas import AuthError
                 fn = _store().register if path.endswith("register") else _store().login

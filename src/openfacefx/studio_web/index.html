@@ -97,6 +97,12 @@
         <span class="filehint" id="wavName">no audio — timing from text</span>
       </div>
 
+      <div class="gen-row">
+        <label class="filebtn" for="importFile" id="importBtn" title="Import a track from an exported/interchange file — the read side of Export">Import track…</label>
+        <input type="file" id="importFile" accept=".json,.csv,.glb,.gltf,.vmd,.bvh,.tsv,.dat,.xml,.pgo" hidden>
+        <span class="filehint" id="importHint">glTF · VMD · A2F · Live&nbsp;Link CSV · BVH · cues · track JSON → a new take</span>
+      </div>
+
       <label class="opt"><input type="checkbox" id="optGestures"> Procedural gestures (blink · brows · head · gaze)</label>
       <label class="opt"><input type="checkbox" id="optBreath"> Idle breathing</label>
 

@@ -15,11 +15,13 @@ import tempfile
 import pytest
 
 from openfacefx import (naive_segments, generate_from_alignment, to_dict,
-                        from_dict, retarget, PRESETS, write_a2f)
+                        from_dict, retarget, PRESETS, write_a2f, write_json,
+                        write_gltf, write_vmd, write_livelink_csv, write_rhubarb_tsv)
 from openfacefx.alignment import dump_segments
 from openfacefx.mapping import Mapping
 from openfacefx.studio import (_generate, _export, _events, _mapping_default,
-                              _mapping_json, _qa, _presets, _preset, _normalize)
+                              _mapping_json, _qa, _presets, _preset, _normalize,
+                              _import)
 
 TEXT = "hello brave new world"
 
@@ -172,3 +174,40 @@ def test_presets_and_preset_shape():
     assert isinstance(m, dict) and m
     for vis, rows in m.items():
         assert all(isinstance(t, str) for t, _ in rows)
+
+
+# --------------------------------------------------------------------------- #
+# import — the read side of the exporters (round-trips a written file into a take)
+# --------------------------------------------------------------------------- #
+def _imp(tmp_path, writer, obj, filename):
+    p = tmp_path / filename
+    writer(obj, str(p))
+    with open(p, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode()
+    return _import({"name": filename, "b64": b64})
+
+
+def test_import_track_json_roundtrip(tmp_path):
+    r = _imp(tmp_path, write_json, _track(), "t.track.json")
+    assert "error" not in r and r["channels"] > 0 and r["track"]["channels"]
+
+
+def test_import_gltf_and_vmd(tmp_path):
+    assert _imp(tmp_path, write_gltf, _track(), "t.glb").get("channels", 0) > 0
+    assert _imp(tmp_path, write_vmd, _track(), "t.vmd").get("channels", 0) > 0
+
+
+def test_import_arkit_formats(tmp_path):
+    ark = retarget(_track(), PRESETS["arkit"])
+    assert _imp(tmp_path, write_livelink_csv, ark, "t.livelink.csv").get("channels", 0) > 0
+    a2f = _imp(tmp_path, write_a2f, ark, "t.a2f.json")            # .json sniffed as a2f, not track
+    assert a2f.get("channels", 0) > 0
+
+
+def test_import_cue_file(tmp_path):
+    assert _imp(tmp_path, write_rhubarb_tsv, _track(), "t.tsv").get("channels", 0) > 0
+
+
+def test_import_bad_data_errors_cleanly():
+    r = _import({"name": "x.glb", "b64": base64.b64encode(b"not a glb").decode()})
+    assert "error" in r and "track" not in r
