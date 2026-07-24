@@ -325,7 +325,13 @@ def _arkit(tk):
     try: return retarget(tk, PRESETS['arkit'])
     except Exception: return tk
 
-def studio_export(fmt, track_json, fps, fgmap_json='', fgconst_json='', fglink_json=''):
+def _lip_segs(segments_json):
+    from openfacefx.alignment import PhonemeSegment
+    segs = [PhonemeSegment(phoneme=s.get('phoneme'), start=float(s.get('start',0) or 0),
+            end=float(s.get('end',0) or 0)) for s in json.loads(segments_json or '[]')]
+    return segs, (max((s.end for s in segs), default=0.0))
+
+def studio_export(fmt, track_json, fps, fgmap_json='', fgconst_json='', fglink_json='', segments_json='', audio_b64=''):
     tk = from_dict(json.loads(track_json))
     p = '/tmp/out_'+fmt
     # optional custom viseme→rig preset from the Face Graph (edited/cloned outputs);
@@ -363,6 +369,19 @@ def studio_export(fmt, track_json, fps, fgmap_json='', fgconst_json='', fglink_j
         elif fmt=='a2f':  from openfacefx import write_a2f; a=ark(tk); data=W(lambda:write_a2f(a,p+'.a2f.json'),p+'.a2f.json'); name='take.a2f.json'
         elif fmt=='rhubarb': from openfacefx import write_rhubarb_tsv; data=W(lambda:write_rhubarb_tsv(tk,p+'.tsv'),p+'.tsv'); name='take.tsv'
         elif fmt=='moho': from openfacefx import write_moho_dat; data=W(lambda:write_moho_dat(tk,p+'.dat'),p+'.dat'); name='take.dat'
+        elif fmt=='lip':      # Bethesda Skyrim .lip (experimental #12) — from phoneme segments
+            from openfacefx import lip_bytes
+            segs, dur = _lip_segs(segments_json)
+            if not segs: return json.dumps({"error":"no phoneme segments — .lip needs a naive/energy take"})
+            data=lip_bytes(segs, dur, 'skyrim'); name='take.lip'
+        elif fmt=='fuz':      # FUZE container: .lip + audio (Skyrim expects xWMA audio)
+            from openfacefx import lip_bytes
+            from openfacefx.bethesda import write_fuz
+            segs, dur = _lip_segs(segments_json)
+            audio = base64.b64decode(audio_b64) if audio_b64 else b''
+            if not audio: return json.dumps({"error":"no audio — .fuz needs a loaded voice clip (Skyrim expects xWMA)"})
+            lip = lip_bytes(segs, dur, 'skyrim') if segs else b''
+            data=W(lambda:write_fuz(p+'.fuz', audio, lip), p+'.fuz'); name='take.fuz'
         else: return json.dumps({"error":"unknown format "+fmt})
         return json.dumps({"filename":name,"b64":base64.b64encode(data).decode()})
     except Exception as e:
@@ -394,9 +413,12 @@ const Pipe = {
     const custom=(S.fgCustom && S.presetSel==="arkit");
     const fgconst=(custom&&Object.keys(S.fgConst).length)?S.fgConst:null;
     const fglink=(custom&&Object.keys(S.fgLink).length)?S.fgLink:null;
-    if(S.native) return fetch(`/api/export/${fmt}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,fgmap:custom?S.presetMap:null,fgconst,fglink})}).then(r=>r.json());
+    // .lip/.fuz (Bethesda) build from phoneme segments; .fuz also bundles the take's audio
+    const segForLip=(fmt==="lip"||fmt==="fuz")?(S.segments||[]):null;
+    const audioForFuz=(fmt==="fuz"&&S.wavBytes)?toB64(S.wavBytes):"";
+    if(S.native) return fetch(`/api/export/${fmt}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,fgmap:custom?S.presetMap:null,fgconst,fglink,segments:segForLip,audio_b64:audioForFuz})}).then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_export");
-    const out=await fn(fmt,JSON.stringify(S.track),S.fps,custom?JSON.stringify(S.presetMap):"",fgconst?JSON.stringify(fgconst):"",fglink?JSON.stringify(fglink):""); fn.destroy(); return JSON.parse(out);
+    const out=await fn(fmt,JSON.stringify(S.track),S.fps,custom?JSON.stringify(S.presetMap):"",fgconst?JSON.stringify(fgconst):"",fglink?JSON.stringify(fglink):"",segForLip?JSON.stringify(segForLip):"",audioForFuz); fn.destroy(); return JSON.parse(out);
   },
   async presets(){
     if(S.native) return fetch("/api/presets").then(r=>r.json());
@@ -1458,6 +1480,8 @@ const EXPORTS=[
   ["rhubarb","Rhubarb cues",".tsv","Stepped mouth-shape cue list."],
   ["moho","Moho / OpenToonz",".dat","Switch-data mouth cues."],
   ["csv","CSV",".csv","One row per keyframe."],
+  ["lip","Bethesda .lip",".lip","Skyrim lip-sync from the phoneme segments. Experimental (#12) — unverified in-game."],
+  ["fuz","FUZE container",".fuz","Skyrim .fuz: the .lip + the loaded voice clip. Note: Skyrim expects xWMA audio — convert externally for in-game use."],
 ];
 function buildExportGrid(){
   $("#exportGrid").innerHTML=EXPORTS.map(([fmt,label,ext,desc])=>

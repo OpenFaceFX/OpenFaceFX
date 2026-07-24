@@ -116,7 +116,7 @@ def _generate(p: dict) -> dict:
 
 
 def _export(fmt: str, track: dict, fgmap: dict = None, fgconst: dict = None,
-            fglink: dict = None) -> dict:
+            fglink: dict = None, segments: list = None, audio_b64: str = "") -> dict:
     import openfacefx as offx
     from openfacefx import from_dict, retarget, PRESETS
     from openfacefx.curves import Channel, Keyframe
@@ -174,10 +174,33 @@ def _export(fmt: str, track: dict, fgmap: dict = None, fgconst: dict = None,
     def ark():
         try: return apply_const(apply_links(retarget(tk, custom if custom else PRESETS["arkit"])))
         except Exception: return tk
+    def _lip_segs():
+        from openfacefx.alignment import PhonemeSegment
+        segs = [PhonemeSegment(phoneme=s.get("phoneme"), start=float(s.get("start", 0) or 0),
+                end=float(s.get("end", 0) or 0)) for s in (segments or [])]
+        return segs, max((s.end for s in segs), default=0.0)
     try:
         if fmt == "json":
             return {"filename": "take.track.json",
                     "b64": base64.b64encode(json.dumps(track, indent=2).encode()).decode()}
+        if fmt == "lip":                # Bethesda Skyrim .lip (experimental #12)
+            from openfacefx import lip_bytes
+            segs, dur = _lip_segs()
+            if not segs:
+                return {"error": "no phoneme segments — .lip needs a naive/energy take"}
+            return {"filename": "take.lip",
+                    "b64": base64.b64encode(lip_bytes(segs, dur, "skyrim")).decode()}
+        if fmt == "fuz":                # FUZE container: .lip + audio (Skyrim expects xWMA)
+            from openfacefx import lip_bytes
+            from openfacefx.bethesda import write_fuz
+            audio = base64.b64decode(audio_b64) if audio_b64 else b""
+            if not audio:
+                return {"error": "no audio — .fuz needs a loaded voice clip (Skyrim expects xWMA)"}
+            segs, dur = _lip_segs()
+            lip = lip_bytes(segs, dur, "skyrim") if segs else b""
+            fp = p + ".fuz"; write_fuz(fp, audio, lip)
+            with open(fp, "rb") as f:
+                return {"filename": "take.fuz", "b64": base64.b64encode(f.read()).decode()}
         table = {
             "csv":     (offx.write_csv, tk, ".csv", "take.csv"),
             "glb":     (offx.write_gltf, tk, ".glb", "take.glb"),
@@ -497,7 +520,8 @@ class _Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/export/"):
                 return self._json(_export(path.rsplit("/", 1)[-1], body.get("track", {}),
                                           body.get("fgmap") or None, body.get("fgconst") or None,
-                                          body.get("fglink") or None))
+                                          body.get("fglink") or None, body.get("segments") or None,
+                                          body.get("audio_b64") or ""))
             if path == "/api/llm":
                 return self._json(_llm(body))
             if path == "/api/normalize":

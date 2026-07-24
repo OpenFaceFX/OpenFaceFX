@@ -20,6 +20,13 @@ its `version` field.
   The Studio 3D preview drives the same shapes (`studio_web/studio.js`).
 
 ### Added
+- **Studio export — Bethesda `.lip` / `.fuz`** — the Export grid now includes the
+  Skyrim **`.lip`** writer (experimental, #12 — built from the take's phoneme
+  segments) and a **`.fuz`** FUZE container that bundles the `.lip` with the
+  loaded voice clip (`openfacefx.bethesda.write_fuz`; Skyrim expects xWMA audio,
+  noted on the card). Threads the segments (and, for `.fuz`, the audio) into
+  `studio_export`/`_export`; clear errors when a `.lip` has no segments or a `.fuz`
+  has no audio. Surfaces the `bethesda.py` + `export_lip.py` tooling in the Studio.
 - **Studio import — the read side of Export** — an **Import track…** button in the
   Generate panel loads an exported/interchange file into a new take, mirroring the
   exporters: **track JSON**, **glTF** (.glb/.gltf), **VMD**, **ARKit / Live Link

@@ -211,3 +211,31 @@ def test_import_cue_file(tmp_path):
 def test_import_bad_data_errors_cleanly():
     r = _import({"name": "x.glb", "b64": base64.b64encode(b"not a glb").decode()})
     assert "error" in r and "track" not in r
+
+
+# --------------------------------------------------------------------------- #
+# Bethesda .lip / .fuz export (from phoneme segments)
+# --------------------------------------------------------------------------- #
+def test_export_lip_from_segments():
+    d = to_dict(_track())
+    segs = dump_segments(naive_segments(TEXT, 2.4))
+    r = _export("lip", d, segments=segs)
+    assert "error" not in r and len(base64.b64decode(r["b64"])) > 0
+    assert "error" in _export("lip", d, segments=[])          # .lip needs segments
+
+
+def test_export_fuz_bundles_lip_and_audio():
+    from openfacefx.bethesda import FUZ_MAGIC, read_fuz
+    d = to_dict(_track())
+    segs = dump_segments(naive_segments(TEXT, 2.4))
+    audio = b"RIFFfake-audio" * 20
+    r = _export("fuz", d, segments=segs, audio_b64=base64.b64encode(audio).decode())
+    data = base64.b64decode(r["b64"])
+    assert data[:4] == FUZ_MAGIC
+    assert "error" in _export("fuz", d, segments=segs)         # .fuz needs audio
+    import tempfile as _tf, os as _os
+    p = _os.path.join(_tf.mkdtemp(), "t.fuz")
+    with open(p, "wb") as f:
+        f.write(data)
+    lip, back = read_fuz(p)                                    # round-trips
+    assert len(lip) > 0 and back == audio
