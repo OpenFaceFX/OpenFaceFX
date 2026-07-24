@@ -9,6 +9,13 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **`openfacefx.tts` — built-in speech synthesis** — a pure-numpy formant/source-filter
+  synthesizer (`synthesize`, `synth_wav_bytes`, `to_wav_bytes`) turns a transcript into a
+  speech-like WAV, reusing `naive_segments` timing so the words line up with the mouth.
+  Dependency-free (numpy + stdlib `wave`), deterministic. In the **Studio**, a **🔊 Generate
+  voice** button synthesizes the transcript and drives the take from it (spectrogram + energy
+  lip-sync) — generate audio instead of only loading it, no key or network. (Robotic/formant
+  quality; a natural neural-TTS option via a BYO key is a possible follow-up.)
 - **Studio: shared 3D preview + model chooser + custom avatars** — the Workspace now
   shows the **same** model as the Preview tab (the 3D ARKit head is relocated between
   them instead of the Workspace using a flat 2D face). A **3D head / 2D schematic**
