@@ -21,7 +21,7 @@ from openfacefx.alignment import dump_segments
 from openfacefx.mapping import Mapping
 from openfacefx.studio import (_generate, _export, _events, _mapping_default,
                               _mapping_json, _qa, _presets, _preset, _normalize,
-                              _import, _align)
+                              _import, _align, _resolve)
 
 TEXT = "hello brave new world"
 
@@ -222,6 +222,31 @@ def test_export_lip_from_segments():
     r = _export("lip", d, segments=segs)
     assert "error" not in r and len(base64.b64decode(r["b64"])) > 0
     assert "error" in _export("lip", d, segments=[])          # .lip needs segments
+
+
+# --------------------------------------------------------------------------- #
+# resolve — the Phonemes-bar timing editor (edited segments -> re-solved track)
+# --------------------------------------------------------------------------- #
+def test_resolve_rebuilds_track_from_segments():
+    segs = dump_segments(naive_segments(TEXT, 2.4))
+    r = _resolve({"segments": segs, "fps": 30})
+    assert "error" not in r and r["channels"] > 0 and r["track"]["channels"]
+    assert r["fps"] == 30 and r["duration"] > 0
+
+
+def test_resolve_reflects_edited_boundary():
+    segs = dump_segments(naive_segments(TEXT, 2.4))
+    i = next(k for k in range(len(segs) - 1) if segs[k]["phoneme"] not in ("sil", "_"))
+    base = _resolve({"segments": segs, "fps": 30})["track"]
+    segs[i]["end"] = segs[i + 1]["start"] = segs[i]["end"] + 0.15   # slide one boundary
+    moved = _resolve({"segments": segs, "fps": 30})["track"]
+    assert base != moved                                            # the curves actually re-time
+    assert "error" not in _resolve({"segments": segs})              # fps defaults to 30
+
+
+def test_resolve_empty_errors_cleanly():
+    assert "error" in _resolve({"segments": []})
+    assert "error" in _resolve({"segments": [{"phoneme": "aa", "start": 1.0, "end": 1.0}]})  # degenerate span
 
 
 def test_align_srt_self_transcribing():

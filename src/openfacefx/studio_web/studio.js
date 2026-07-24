@@ -324,6 +324,19 @@ def studio_align(transcript, fmt, text):
     except Exception as e:
         return json.dumps({"error": fmt+": "+str(e)})
 
+def studio_resolve(segments_json, fps):
+    # rebuild the viseme track from hand-edited phoneme segments (Phonemes-bar editor)
+    from openfacefx.alignment import PhonemeSegment, dump_segments
+    fps = float(fps) or 30.0
+    segs = [PhonemeSegment(phoneme=s.get('phoneme'), start=float(s.get('start',0) or 0),
+            end=float(s.get('end',0) or 0)) for s in json.loads(segments_json or '[]')]
+    segs = [s for s in segs if s.end > s.start]
+    if not segs: return json.dumps({"error":"no phoneme segments"})
+    try: track = generate_from_alignment(segs, fps=fps)
+    except Exception as e: return json.dumps({"error": str(e)})
+    return json.dumps({"track": to_dict(track), "segments": dump_segments(segs),
+        "duration": round(float(track.duration),4), "fps": track.fps, "channels": len(track.channels)})
+
 _EXPORTERS = {}
 def _reg(fmt, fn): _EXPORTERS[fmt]=fn
 
@@ -494,6 +507,10 @@ const Pipe = {
   async align(transcript,fmt,text){
     if(S.native) return fetch("/api/align",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({transcript,format:fmt,text})}).then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_align"); const r=JSON.parse(fn(transcript||"",fmt,text)); fn.destroy(); return r;
+  },
+  async resolve(segments,fps){
+    if(S.native) return fetch("/api/resolve",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({segments,fps})}).then(r=>r.json());
+    const fn=S.pyodide.globals.get("studio_resolve"); const r=JSON.parse(fn(JSON.stringify(segments||[]),fps)); fn.destroy(); return r;
   }
 };
 
@@ -1281,14 +1298,37 @@ function nearestChannel(g,T,x,y){ const t=(x-g.padL)/g.gw*T, vv=valAtY(y,g), spa
 /* ---- curve editing: keyframe primitive + add/delete + undo/redo ------- */
 const SIGNED_CH=/^(head|eye)(Pitch|Yaw|Roll|Gaze)?/i;   // pose channels are signed degrees
 function markEdited(){ const tk=curTake(); if(tk) tk.edited=true; }
-function snapshotUndo(){ if(!S.track)return; S.undo.push(structuredClone(S.track.channels));
+function _editSnap(){ return {c:structuredClone(S.track.channels), s:structuredClone(S.segments)}; }
+function _editRestore(e){ S.track.channels=e.c; if(e.s)S.segments=e.s;
+  ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons(); }
+function snapshotUndo(){ if(!S.track)return; S.undo.push(_editSnap());
   if(S.undo.length>60) S.undo.shift(); S.redo.length=0; refreshUndoButtons(); }
 function afterEdit(){ markEdited(); buildChannelList(); buildInspector(); drawCurves(); drawPreview(); updateInspVal(); refreshUndoButtons(); }
 function refreshUndoButtons(){ const u=$("#cvUndo"),r=$("#cvRedo"); if(u)u.disabled=!S.undo.length; if(r)r.disabled=!S.redo.length; }
-function undoEdit(){ if(!S.undo.length||!S.track)return; S.redo.push(structuredClone(S.track.channels));
-  S.track.channels=S.undo.pop(); afterEdit(); }
-function redoEdit(){ if(!S.redo.length||!S.track)return; S.undo.push(structuredClone(S.track.channels));
-  S.track.channels=S.redo.pop(); afterEdit(); }
+function undoEdit(){ if(!S.undo.length||!S.track)return; S.redo.push(_editSnap()); _editRestore(S.undo.pop()); }
+function redoEdit(){ if(!S.redo.length||!S.track)return; S.undo.push(_editSnap()); _editRestore(S.redo.pop()); }
+
+/* ---- Phonemes-bar timing editor -------------------------------------- *
+ * Drag the boundary between two phonemes to re-time them, then re-solve the
+ * viseme curves from the edited segments. Gesture/emotion/pose channels (the
+ * non-viseme ones) survive the re-time; only the phoneme-driven viseme curves
+ * are rebuilt. Undo captures segments+track together. */
+function phonBoundaryAt(x,w){                        // segment index whose .end sits under x (±6.5px), else -1
+  if(!S.segments||S.segments.length<2) return -1;
+  const T=Math.max(.001,S.duration); let best=-1,bd=6.5;
+  for(let i=0;i<S.segments.length-1;i++){ const d=Math.abs(x-w*((S.segments[i].end||0)/T)); if(d<bd){ bd=d; best=i; } }
+  return best;
+}
+async function resolvePhonemes(){                    // rebuild viseme curves from S.segments; keep non-viseme channels
+  if(!S.segments||!S.segments.length) return;
+  const res=await Pipe.resolve(S.segments,S.fps||30);
+  if(res.error){ console.warn("[phonemes] re-solve failed:",res.error); return; }
+  const kept=(S.track?S.track.channels:[]).filter(c=>!SHAPES[c.name]);   // gestures/emotion/pose survive a re-time
+  S.track={...res.track, channels:[...res.track.channels, ...kept]};
+  const tk=curTake(); if(tk){ tk.track=S.track; tk.segments=res.segments||S.segments; tk.duration=Math.max(res.duration||0,tk.duration||0); }
+  S.segments=res.segments||S.segments; S.duration=Math.max(res.duration||0,S.duration||0);
+  markEdited(); ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub();
+}
 /* upsert a time-sorted [t,value] key on a channel (find-or-create). Keys MUST
  * stay strictly ascending — exporters + edits assume it. Signed pose channels
  * aren't clamped to [0,1]. This is the shared write primitive (StudioBridge). */
@@ -1354,8 +1394,20 @@ function wireCanvases(){
       const v=SIGNED_CH.test(name)?Math.max(-90,Math.min(90,nv)):Math.max(0,Math.min(1,nv));
       snapshotUndo(); setChannelAt(name,v,t); afterEdit(); });     // double-click adds a key
   }
-  for(const id of ["#wave","#phonStrip"]){ const c=$(id); if(!c)continue; c.style.cursor="crosshair";
-    c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); seekAtX(x,w,0,Math.max(.001,S.duration)); }); }
+  { const c=$("#wave"); if(c){ c.style.cursor="crosshair";
+    c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); seekAtX(x,w,0,Math.max(.001,S.duration)); }); } }
+  // Phonemes bar: drag a boundary between two phonemes to re-time; elsewhere it seeks.
+  { const c=$("#phonStrip"); if(c){ c.style.cursor="crosshair"; let drag=-1;
+    c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); const i=phonBoundaryAt(x,w);
+      if(i>=0){ drag=i; snapshotUndo(); try{c.setPointerCapture(e.pointerId);}catch(_){ } c.style.cursor="ew-resize"; e.preventDefault(); }
+      else seekAtX(x,w,0,Math.max(.001,S.duration)); });
+    c.addEventListener("pointermove",e=>{ const {x,w}=canvasMetrics(c,e); const T=Math.max(.001,S.duration);
+      if(drag<0){ c.style.cursor=phonBoundaryAt(x,w)>=0?"ew-resize":"crosshair"; return; }
+      const a=S.segments[drag], b=S.segments[drag+1]; const eps=Math.max(.008,T*0.004);
+      let t=x/w*T; t=Math.min((b.end||T)-eps, Math.max((a.start||0)+eps, t));
+      a.end=t; b.start=t; drawStrip(); });
+    const end=e=>{ if(drag<0)return; drag=-1; c.style.cursor="crosshair"; try{c.releasePointerCapture(e.pointerId);}catch(_){ } resolvePhonemes(); };
+    c.addEventListener("pointerup",end); c.addEventListener("pointercancel",end); } }
   for(const id of ["#curveStrip","#eventStrip"]){ const cs=$(id); if(cs){ cs.style.cursor="crosshair";   // share the curve x-axis (padL 8, gw w-16)
     cs.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(cs,e); seekAtX(x,w-16,8,Math.max(.001,S.duration)); }); } }
   const etl=$("#eventsTl"); if(etl){ etl.style.cursor="crosshair";

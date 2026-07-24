@@ -336,6 +336,26 @@ def _align(p: dict) -> dict:
         return {"error": f"{fmt}: {e}"}
 
 
+def _resolve(p: dict) -> dict:
+    """Rebuild the viseme track from (hand-edited) phoneme segments — the read side
+    of the Phonemes-bar timing editor. Returns {track, segments, duration, fps}."""
+    from openfacefx import generate_from_alignment, to_dict
+    from openfacefx.alignment import PhonemeSegment, dump_segments
+    fps = float(p.get("fps", 30) or 30)
+    segs = [PhonemeSegment(phoneme=s.get("phoneme"), start=float(s.get("start", 0) or 0),
+            end=float(s.get("end", 0) or 0)) for s in (p.get("segments") or [])]
+    segs = [s for s in segs if s.end > s.start]      # drop degenerate spans
+    if not segs:
+        return {"error": "no phoneme segments"}
+    try:
+        track = generate_from_alignment(segs, fps=fps)
+    except (ValueError, KeyError) as e:
+        return {"error": str(e)}
+    return {"track": to_dict(track), "segments": dump_segments(segs),
+            "duration": round(float(track.duration), 4), "fps": track.fps,
+            "channels": len(track.channels)}
+
+
 def _presets() -> list:
     from openfacefx import PRESETS
     return sorted(PRESETS)
@@ -585,6 +605,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_import(body))
             if path == "/api/align":
                 return self._json(_align(body))
+            if path == "/api/resolve":
+                return self._json(_resolve(body))
             if path in ("/api/auth/register", "/api/auth/login"):
                 from .studio_saas import AuthError
                 fn = _store().register if path.endswith("register") else _store().login
