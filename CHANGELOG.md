@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-07-24
+
 ### Changed
 - **`arkit` retarget preset — phonetically corrected shapes.** The viseme→ARKit
   weight table was rebuilt from each viseme's articulatory phonetics (bilabial lip
