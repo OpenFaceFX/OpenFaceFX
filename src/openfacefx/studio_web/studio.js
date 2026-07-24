@@ -18,7 +18,7 @@ const CURVE_COLORS = ["#f4b942","#4cc2ff","#e06c9f","#5ad19a","#b78cff","#ff8f6b
 const S = {
   runtime:null, pyodide:null, native:false,
   track:null, segments:[], words:[], duration:0, fps:60,
-  wavBytes:null, wavPeaks:null,
+  wavBytes:null, wavPeaks:null, wavSpec:null,
   chan:{},               // name -> {color, visible, idx}
   sel:null,              // selected channel name
   view:"preview",
@@ -536,7 +536,7 @@ $("#wav").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
   try{
     const ab=await f.arrayBuffer(); const ac=new (window.AudioContext||window.webkitAudioContext)();
     const audio=await ac.decodeAudioData(ab); const ch=audio.getChannelData(0);
-    S.wavBytes=encodeWav(ch,audio.sampleRate); S.wavPeaks=peaks(ch,1600);
+    S.wavBytes=encodeWav(ch,audio.sampleRate); S.wavPeaks=peaks(ch,1600); S.wavSpec=computeSpectrogram(ch,audio.sampleRate);
     $("#wavName").textContent=`${f.name} · ${audio.duration.toFixed(1)}s`;
     $("#dur").value=audio.duration.toFixed(2); $("#engine").value="energy";
   }catch(err){ $("#wavName").textContent="couldn't decode audio"; }
@@ -552,7 +552,7 @@ $("#importFile") && ($("#importFile").onchange=async e=>{ const f=e.target.files
     newTakeSlot(); const tk=curTake();
     tk.track=res.track; tk.segments=[]; tk.words=[]; tk.duration=res.duration;
     tk.name=(f.name.replace(/\.[^.]+$/,"")||tk.name).slice(0,40);
-    tk.wavName="imported · "+f.name; tk.wavBytes=null; tk.wavPeaks=null;
+    tk.wavName="imported · "+f.name; tk.wavBytes=null; tk.wavPeaks=null; tk.wavSpec=null;
     if(res.fps){ tk.params={...tk.params, fps:String(res.fps)}; }
     loadTake(); refreshIO();
     if(hint) hint.textContent=`imported ${res.channels} channels`+(res.warnings&&res.warnings.length?` · ${res.warnings.length} warning(s)`:"");
@@ -571,7 +571,7 @@ $("#alignFile") && ($("#alignFile").onchange=async e=>{ const f=e.target.files[0
     newTakeSlot(); const tk=curTake();
     tk.track=res.track; tk.segments=res.segments||[]; tk.words=[]; tk.duration=res.duration;
     tk.name=("aligned · "+f.name.replace(/\.[^.]+$/,"")).slice(0,40);
-    tk.wavName="aligned from "+f.name+" ("+$("#alignFmt").value+")"; tk.wavBytes=null; tk.wavPeaks=null;
+    tk.wavName="aligned from "+f.name+" ("+$("#alignFmt").value+")"; tk.wavBytes=null; tk.wavPeaks=null; tk.wavSpec=null;
     if(res.fps){ tk.params={...tk.params, fps:String(res.fps)}; }
     loadTake(); refreshIO();
     if(hint) hint.textContent=`aligned · ${res.channels} channels · ${(+res.duration).toFixed(2)}s (see the Phonemes tab)`;
@@ -603,7 +603,7 @@ async function runGenerate(preserve){
         (tk.owned[c.name]&&oldBy[c.name])?{name:c.name,keys:structuredClone(oldBy[c.name].keys)}:c)};
       for(const nm in tk.owned){ if(oldBy[nm]&&!newTrack.channels.some(c=>c.name===nm)) newTrack.channels.push({name:nm,keys:structuredClone(oldBy[nm].keys)}); }
     }
-    tk.params={...captureParams()}; tk.wavBytes=S.wavBytes; tk.wavPeaks=S.wavPeaks; tk.wavName=$("#wavName").textContent;
+    tk.params={...captureParams()}; tk.wavBytes=S.wavBytes; tk.wavPeaks=S.wavPeaks; tk.wavSpec=S.wavSpec; tk.wavName=$("#wavName").textContent;
     tk.track=newTrack; tk.segments=res.segments||[]; tk.words=res.words||[]; tk.duration=res.duration;
     if(!preserve){ tk.edited=false; tk.owned={}; }    // full Generate drops ownership; Reanalyze keeps it
     if(!preserve){ S.events=[]; } else if(S.events&&S.events.length){ newTrack.events=S.events; }  // event layer: reset on full gen, carried on Reanalyze
@@ -668,17 +668,17 @@ function applyParams(p){ p=p||DEFAULT_PARAMS;
 function nextTakeName(a){ const names=new Set(a.takes.map(t=>t.name)); let n=a.takes.length+1;
   const nm=i=>"take_"+String(i).padStart(2,"0"); while(names.has(nm(n)))n++; return nm(n); }
 function syncFormToTake(){ const t=curTake(); if(!t)return;
-  t.params={...captureParams()}; t.wavBytes=S.wavBytes; t.wavPeaks=S.wavPeaks; t.wavName=$("#wavName").textContent; }
+  t.params={...captureParams()}; t.wavBytes=S.wavBytes; t.wavPeaks=S.wavPeaks; t.wavSpec=S.wavSpec; t.wavName=$("#wavName").textContent; }
 function newTakeSlot(){ const a=curActor(); a.takes.push({ name:nextTakeName(a), params:captureParams(),
-  wavBytes:S.wavBytes, wavPeaks:S.wavPeaks, wavName:$("#wavName").textContent, track:null, segments:[], duration:0 });
+  wavBytes:S.wavBytes, wavPeaks:S.wavPeaks, wavSpec:S.wavSpec, wavName:$("#wavName").textContent, track:null, segments:[], duration:0 });
   S.takeIdx=a.takes.length-1; return curTake(); }
 function clearResultOnly(){ S.track=null; S.segments=[]; S.words=[]; S.duration=0; S.t=0; S.sel=null; S.solo=null; S.chan={}; S.selKeys=[];
   S.inspectKind=null; S.node=null; S.events=[];
   const list=$("#channelList"); if(list) list.innerHTML='<li class="empty">Generate this take to see its animation channels.</li>';
   $("#chCount").textContent="0"; $("#tpDur").textContent="/ 00:00.000"; buildInspector(); setScrub(); drawAll(); renderEventList(); }
 function loadTake(){ const t=curTake();
-  if(!t){ applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; $("#wavName").textContent="no audio — timing from text"; clearResultOnly(); updateBatchBtn(); return; }
-  applyParams(t.params); S.wavBytes=t.wavBytes||null; S.wavPeaks=t.wavPeaks||null; updateBatchBtn();
+  if(!t){ applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; S.wavSpec=null; $("#wavName").textContent="no audio — timing from text"; clearResultOnly(); updateBatchBtn(); return; }
+  applyParams(t.params); S.wavBytes=t.wavBytes||null; S.wavPeaks=t.wavPeaks||null; S.wavSpec=t.wavSpec||null; updateBatchBtn();
   $("#wavName").textContent=t.wavName||"no audio — timing from text";
   if(t.track){ S.track=t.track; S.segments=t.segments||[]; S.words=t.words||[]; S.duration=t.duration; S.t=0; S.sel=null; S.solo=null; S.selKeys=[];
     S.inspectKind=null; S.node=null; S.events=(t.track.events)||[]; ingestChannels(); buildChannelList(); buildInspector();
@@ -689,13 +689,13 @@ function addTake(){ syncFormToTake(); newTakeSlot(); clearResultOnly(); refreshI
 function dupTake(){ const a=curActor(), src=curTake(); if(!src){ addTake(); return; }
   syncFormToTake();
   const names=new Set(a.takes.map(t=>t.name)); let nm=src.name+" copy", k=2; while(names.has(nm)) nm=src.name+" copy "+(k++);
-  a.takes.push({ name:nm, params:{...src.params}, wavBytes:src.wavBytes, wavPeaks:src.wavPeaks,
+  a.takes.push({ name:nm, params:{...src.params}, wavBytes:src.wavBytes, wavPeaks:src.wavPeaks, wavSpec:src.wavSpec,
     wavName:src.wavName, cmudict:src.cmudict||"", track:src.track?structuredClone(src.track):null,
     segments:src.segments?structuredClone(src.segments):[], duration:src.duration||0, edited:!!src.edited });
   S.takeIdx=a.takes.length-1; loadTake(); refreshIO(); }
 function addActor(){ syncFormToTake(); const n=S.actors.length+1;
   S.actors.push({ name:"Actor "+String(n).padStart(2,"0"), takes:[] }); S.actorIdx=S.actors.length-1; S.takeIdx=-1;
-  applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; $("#wavName").textContent="no audio — timing from text";
+  applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; S.wavSpec=null; $("#wavName").textContent="no audio — timing from text";
   newTakeSlot(); clearResultOnly(); refreshIO(); }
 function switchActor(i){ if(i===S.actorIdx)return; syncFormToTake(); S.actorIdx=i;
   S.takeIdx=curActor().takes.length?0:-1; loadTake(); refreshIO(); }
@@ -1110,14 +1110,87 @@ function drawCurveStrip(cid){
 /* ---- Phonemes (waveform + strip) ------------------------------------ */
 function peaks(data,n){ const out=new Float32Array(n); const step=Math.max(1,Math.floor(data.length/n));
   for(let i=0;i<n;i++){ let mx=0; for(let j=0;j<step;j++){ const v=Math.abs(data[i*step+j]||0); if(v>mx)mx=v; } out[i]=mx; } return out; }
+
+/* ---- Spectrogram (STFT) — the FaceFX read-side of the audio ----------- *
+ * Compact magnitude STFT for the Phonemes lane. Runs once at decode (or
+ * lazily from the stored wav), quantised to a Uint8 heatmap so it survives
+ * a take switch cheaply. Fixed column count → cost is ~constant per clip. */
+function fftInPlace(re,im){ const n=re.length;                 // iterative radix-2 Cooley-Tukey
+  for(let i=1,j=0;i<n;i++){ let bit=n>>1; for(;j&bit;bit>>=1)j^=bit; j^=bit;
+    if(i<j){ const tr=re[i];re[i]=re[j];re[j]=tr; const ti=im[i];im[i]=im[j];im[j]=ti; } }
+  for(let len=2;len<=n;len<<=1){ const ang=-2*Math.PI/len, wr=Math.cos(ang), wi=Math.sin(ang);
+    for(let i=0;i<n;i+=len){ let cr=1,ci=0;
+      for(let k=0;k<len>>1;k++){ const a=i+k, b=a+(len>>1);
+        const vr=re[b]*cr-im[b]*ci, vi=re[b]*ci+im[b]*cr;
+        re[b]=re[a]-vr; im[b]=im[a]-vi; re[a]+=vr; im[a]+=vi;
+        const ncr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=ncr; } } }
+}
+function computeSpectrogram(samples,sr,cols=260,bins=48){
+  const win=1024; const N=samples.length; if(!N||N<win||!sr) return null;
+  const hann=new Float32Array(win); for(let i=0;i<win;i++)hann[i]=0.5-0.5*Math.cos(2*Math.PI*i/(win-1));
+  const hop=Math.max(1,Math.floor((N-win)/(cols-1)));
+  const nyq=sr/2; const topBin=Math.max(bins,Math.min(win>>1,Math.floor(5000/nyq*(win>>1))));  // ~0-5kHz
+  const re=new Float32Array(win), im=new Float32Array(win);
+  const mag=new Float32Array(cols*bins); let gmax=1e-9;
+  for(let c=0;c<cols;c++){ const off=c*hop;
+    for(let i=0;i<win;i++){ re[i]=(samples[off+i]||0)*hann[i]; im[i]=0; }
+    fftInPlace(re,im);
+    for(let b=0;b<bins;b++){ const lo=Math.floor(b*topBin/bins), hi=Math.max(lo+1,Math.floor((b+1)*topBin/bins));
+      let s=0; for(let k=lo;k<hi;k++) s+=Math.hypot(re[k],im[k]);
+      const v=Math.log10(1+s/(hi-lo)); mag[c*bins+b]=v; if(v>gmax)gmax=v; } }
+  const data=new Uint8Array(cols*bins); for(let i=0;i<mag.length;i++) data[i]=Math.round(255*Math.min(1,mag[i]/gmax));
+  return {cols,bins,data};
+}
+function parseColor(s){ s=(s||"").trim();
+  if(s[0]==="#"){ const n=s.length===4?("#"+s[1]+s[1]+s[2]+s[2]+s[3]+s[3]):s;
+    return [parseInt(n.slice(1,3),16),parseInt(n.slice(3,5),16),parseInt(n.slice(5,7),16)]; }
+  const m=s.match(/[\d.]+/g); return m&&m.length>=3?[+m[0],+m[1],+m[2]]:[130,130,130]; }
+function specLUT(){                                            // 256-entry heatmap from theme colours
+  const stops=[[parseColor(css("--panel-2")),0],[parseColor(css("--accent-2")),.5],[parseColor(css("--accent")),.82],[parseColor(css("--fg")),1]];
+  const lut=new Array(256);
+  for(let i=0;i<256;i++){ const t=i/255; let a=stops[0],b=stops[stops.length-1];
+    for(let s=0;s<stops.length-1;s++){ if(t>=stops[s][1]&&t<=stops[s+1][1]){ a=stops[s];b=stops[s+1];break; } }
+    const f=(b[1]-a[1])?(t-a[1])/(b[1]-a[1]):0;
+    lut[i]=[a[0][0]+(b[0][0]-a[0][0])*f|0, a[0][1]+(b[0][1]-a[0][1])*f|0, a[0][2]+(b[0][2]-a[0][2])*f|0]; }
+  return lut;
+}
+function drawSpectrogram(x,w,h,spec){
+  const {cols,bins,data}=spec; const lut=specLUT();
+  const tmp=drawSpectrogram._c||(drawSpectrogram._c=document.createElement("canvas"));
+  tmp.width=cols; tmp.height=bins; const tx=tmp.getContext("2d"); const img=tx.createImageData(cols,bins);
+  for(let c=0;c<cols;c++)for(let b=0;b<bins;b++){ const v=data[c*bins+b], rgb=lut[v];
+    const o=((bins-1-b)*cols+c)*4; img.data[o]=rgb[0]; img.data[o+1]=rgb[1]; img.data[o+2]=rgb[2]; img.data[o+3]=255; }  // low freq at bottom
+  tx.putImageData(img,0,0); const sm=x.imageSmoothingEnabled; x.imageSmoothingEnabled=true;
+  x.drawImage(tmp,0,0,cols,bins,0,0,w,h); x.imageSmoothingEnabled=sm;
+}
+/* compute the spectrogram lazily from the current take's stored wav (survives
+ * take-switch / vault reload, where only the encoded bytes are kept). */
+async function ensureSpec(){
+  if(S.wavSpec||!S.wavBytes||S._specBusy) return;
+  S._specBusy=true;
+  try{ const ac=new (window.AudioContext||window.webkitAudioContext)();
+    const audio=await ac.decodeAudioData(S.wavBytes.buffer.slice(S.wavBytes.byteOffset,S.wavBytes.byteOffset+S.wavBytes.byteLength));
+    const spec=computeSpectrogram(audio.getChannelData(0),audio.sampleRate);
+    S.wavSpec=spec; const tk=curTake(); if(tk) tk.wavSpec=spec;
+    if(S.view==="phonemes"||S.view==="workspace") drawPhonemes();
+  }catch(_){ /* leave spec null → waveform fallback */ }
+  finally{ S._specBusy=false; }
+}
 function drawPhonemes(){
   const cv=$("#wave"); if(!S.track)return; const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h);
   const T=Math.max(.001,S.duration); const mid=h/2;
   x.fillStyle=css("--panel-2"); x.fillRect(0,0,w,h);
+  if(S.wavBytes&&!S.wavSpec) ensureSpec();                      // lazily build the STFT from the take's audio
+  if(S.wavSpec){                                                // FaceFX-style spectrogram of the loaded audio
+    drawSpectrogram(x,w,h,S.wavSpec);
+    if(S.wavPeaks){ x.strokeStyle=css("--fg"); x.globalAlpha=.16; x.beginPath();   // faint amplitude outline on top
+      for(let i=0;i<w;i++){ const p=S.wavPeaks[Math.floor(S.wavPeaks.length*i/w)]||0; i?x.lineTo(i,mid-p*mid*.9):x.moveTo(i,mid-p*mid*.9); } x.stroke(); x.globalAlpha=1; }
+  }
   // waveform: real peaks if audio, else synthetic openness envelope
-  x.strokeStyle=css("--accent-2"); x.globalAlpha=.85; x.beginPath();
-  if(S.wavPeaks){ for(let i=0;i<w;i++){ const p=S.wavPeaks[Math.floor(S.wavPeaks.length*i/w)]||0; x.moveTo(i,mid-p*mid*.9); x.lineTo(i,mid+p*mid*.9); } x.stroke(); }
+  else if(S.wavPeaks){ x.strokeStyle=css("--accent-2"); x.globalAlpha=.85; x.beginPath();
+    for(let i=0;i<w;i++){ const p=S.wavPeaks[Math.floor(S.wavPeaks.length*i/w)]||0; x.moveTo(i,mid-p*mid*.9); x.lineTo(i,mid+p*mid*.9); } x.stroke(); }
   else {
+    x.strokeStyle=css("--accent-2"); x.globalAlpha=.85; x.beginPath();
     // No audio: draw a synthetic speech-energy envelope from the visemes. Weight by
     // mouth openness (a naive SUM saturates to 1 almost everywhere → a flat band)
     // and normalise to the clip's own peak so it reads as a real envelope.
