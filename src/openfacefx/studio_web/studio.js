@@ -1100,8 +1100,23 @@ function drawPhonemes(){
   // waveform: real peaks if audio, else synthetic openness envelope
   x.strokeStyle=css("--accent-2"); x.globalAlpha=.85; x.beginPath();
   if(S.wavPeaks){ for(let i=0;i<w;i++){ const p=S.wavPeaks[Math.floor(S.wavPeaks.length*i/w)]||0; x.moveTo(i,mid-p*mid*.9); x.lineTo(i,mid+p*mid*.9); } x.stroke(); }
-  else { for(let i=0;i<=w;i++){ const tt=T*i/w; let o=0; for(const c of S.track.channels){ if(SHAPES[c.name]&&c.name!=="sil")o+=Math.max(0,sample(c.keys,tt)); } o=Math.min(1,o); const y=mid-o*mid*.9; i?x.lineTo(i,y):x.moveTo(i,y);} x.stroke();
-    x.beginPath(); for(let i=0;i<=w;i++){ const tt=T*i/w; let o=0; for(const c of S.track.channels){ if(SHAPES[c.name]&&c.name!=="sil")o+=Math.max(0,sample(c.keys,tt)); } o=Math.min(1,o); const y=mid+o*mid*.9; i?x.lineTo(i,y):x.moveTo(i,y);} x.stroke(); }
+  else {
+    // No audio: draw a synthetic speech-energy envelope from the visemes. Weight by
+    // mouth openness (a naive SUM saturates to 1 almost everywhere → a flat band)
+    // and normalise to the clip's own peak so it reads as a real envelope.
+    const OPENW={aa:1,O:.95,E:.72,U:.62,I:.46,RR:.5,CH:.52,SS:.36,DD:.4,nn:.4,TH:.4,kk:.46,FF:.3,PP:.18,sil:0};
+    const N=Math.max(2,Math.floor(w)); const env=new Float32Array(N+1); let mx=1e-6;
+    for(let i=0;i<=N;i++){ const tt=T*i/N; let o=0;
+      for(const c of S.track.channels){ const wt=OPENW[c.name]; if(wt) o+=Math.max(0,sample(c.keys,tt))*wt; }
+      env[i]=o; if(o>mx)mx=o; }
+    const amp=i=>Math.min(1,env[i]/mx)*mid*.85;
+    x.globalAlpha=.22; x.fillStyle=css("--accent-2"); x.beginPath();   // filled body
+    for(let i=0;i<=N;i++){ const px=w*i/N; i?x.lineTo(px,mid-amp(i)):x.moveTo(px,mid-amp(i)); }
+    for(let i=N;i>=0;i--) x.lineTo(w*i/N,mid+amp(i)); x.closePath(); x.fill();
+    x.globalAlpha=.9; x.beginPath();                                   // top + bottom outline
+    for(let i=0;i<=N;i++){ const px=w*i/N; i?x.lineTo(px,mid-amp(i)):x.moveTo(px,mid-amp(i)); } x.stroke();
+    x.beginPath(); for(let i=0;i<=N;i++){ const px=w*i/N; i?x.lineTo(px,mid+amp(i)):x.moveTo(px,mid+amp(i)); } x.stroke();
+  }
   x.globalAlpha=1;
   // playhead
   x.strokeStyle=css("--accent"); x.beginPath(); const hx=w*(S.t/T); x.moveTo(hx,0);x.lineTo(hx,h);x.stroke();

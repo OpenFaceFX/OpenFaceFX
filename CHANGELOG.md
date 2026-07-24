@@ -8,6 +8,13 @@ its `version` field.
 
 ## [Unreleased]
 
+### Fixed
+- **Studio Phonemes waveform** — with no audio loaded, the synthetic waveform
+  summed every viseme channel, which saturated to 1.0 across ~83% of the clip and
+  rendered as a flat band. It now uses a mouth-openness-weighted energy proxy
+  normalised to the clip's own peak, drawn as a filled envelope — a real,
+  varying waveform. (Real-audio waveforms were unaffected.)
+
 ### Added
 - **Studio align-from-file** — an **Align from…** control in the Generate panel
   times a take from a real-audio **ASR/caption alignment** instead of naive/energy
