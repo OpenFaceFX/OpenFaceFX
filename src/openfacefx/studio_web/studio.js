@@ -22,7 +22,7 @@ const S = {
   chan:{},               // name -> {color, visible, idx}
   sel:null,              // selected channel name
   view:"preview",
-  t:0, playing:false, lastTs:0, playClock:0,
+  t:0, playing:false, lastTs:0, playClock:0, muted:false, actx:null, gain:null, audioBuf:null, audioSrc:null,
   presets:[], presetSel:"arkit", presetMap:null,
   actors:[{name:"Untitled", takes:[]}], actorIdx:0, takeIdx:-1,   // actors → takes
   inspectKind:null, node:null, fgNodes:[], solo:null,             // inspector + graph hit-testing
@@ -566,7 +566,7 @@ $("#wav").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
     const audio=await ac.decodeAudioData(ab); const ch=audio.getChannelData(0);
     S.wavBytes=encodeWav(ch,audio.sampleRate); S.wavPeaks=peaks(ch,1600); S.wavSpec=computeSpectrogram(ch,audio.sampleRate);
     $("#wavName").textContent=`${f.name} · ${audio.duration.toFixed(1)}s`;
-    $("#dur").value=audio.duration.toFixed(2); $("#engine").value="energy";
+    $("#dur").value=audio.duration.toFixed(2); $("#engine").value="energy"; refreshAudio();
   }catch(err){ $("#wavName").textContent="couldn't decode audio"; }
 };
 
@@ -582,7 +582,7 @@ async function generateVoice(){
     const ac=new (window.AudioContext||window.webkitAudioContext)();
     const audio=await ac.decodeAudioData(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
     const ch=audio.getChannelData(0);
-    S.wavBytes=bytes; S.wavPeaks=peaks(ch,1600); S.wavSpec=computeSpectrogram(ch,audio.sampleRate);  // reuse the synth WAV as-is
+    S.wavBytes=bytes; S.wavPeaks=peaks(ch,1600); S.wavSpec=computeSpectrogram(ch,audio.sampleRate); refreshAudio();  // reuse the synth WAV as-is
     $("#wavName").textContent="AI voice · “"+text.slice(0,22)+(text.length>22?"…":"")+"” · "+audio.duration.toFixed(1)+"s";
     $("#engine").value="energy";                 // lip-sync from the generated audio
     await runGenerate();                         // re-solve with the energy engine + the new audio
@@ -726,8 +726,8 @@ function clearResultOnly(){ S.track=null; S.segments=[]; S.words=[]; S.duration=
   const list=$("#channelList"); if(list) list.innerHTML='<li class="empty">Generate this take to see its animation channels.</li>';
   $("#chCount").textContent="0"; $("#tpDur").textContent="/ 00:00.000"; buildInspector(); setScrub(); drawAll(); renderEventList(); }
 function loadTake(){ const t=curTake();
-  if(!t){ applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; S.wavSpec=null; $("#wavName").textContent="no audio — timing from text"; clearResultOnly(); updateBatchBtn(); return; }
-  applyParams(t.params); S.wavBytes=t.wavBytes||null; S.wavPeaks=t.wavPeaks||null; S.wavSpec=t.wavSpec||null; updateBatchBtn();
+  if(!t){ applyParams(DEFAULT_PARAMS); S.wavBytes=null; S.wavPeaks=null; S.wavSpec=null; $("#wavName").textContent="no audio — timing from text"; clearResultOnly(); updateBatchBtn(); refreshAudio(); return; }
+  applyParams(t.params); S.wavBytes=t.wavBytes||null; S.wavPeaks=t.wavPeaks||null; S.wavSpec=t.wavSpec||null; updateBatchBtn(); refreshAudio();
   $("#wavName").textContent=t.wavName||"no audio — timing from text";
   if(t.track){ S.track=t.track; S.segments=t.segments||[]; S.words=t.words||[]; S.duration=t.duration; S.t=0; S.sel=null; S.solo=null; S.selKeys=[];
     S.inspectKind=null; S.node=null; S.events=(t.track.events)||[]; ingestChannels(); buildChannelList(); buildInspector();
@@ -1560,7 +1560,7 @@ async function downloadMapping(){
  *  Canvas interactions — seek, select a curve, drag keyframes, inspect nodes
  * ===================================================================== */
 function canvasMetrics(cv,e){ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top,w:r.width,h:r.height}; }
-function seekAtX(x,gw,padL,T){ S.t=Math.min(T,Math.max(0,(x-padL)/gw*T)); S.playClock=S.t; setScrub(); drawAll(); }
+function seekAtX(x,gw,padL,T){ S.t=Math.min(T,Math.max(0,(x-padL)/gw*T)); S.playClock=S.t; setScrub(); audioSeek(); drawAll(); }
 function hitKeyframe(c,g,T,x,y){ if(!c)return -1;
   for(let i=0;i<c.keys.length;i++){ const px=g.padL+g.gw*(c.keys[i][0]/T), py=yAtVal(c.keys[i][1],g);
     if(Math.hypot(x-px,y-py)<7)return i; } return -1; }
@@ -1963,13 +1963,42 @@ function buildExportGrid(){
  * ===================================================================== */
 function fmt(t){ t=Math.max(0,t); const m=Math.floor(t/60), s=Math.floor(t%60), ms=Math.floor((t*1000)%1000);
   return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}.${String(ms).padStart(3,"0")}`; }
+/* ---- Audio playback (Web Audio): play the take's clip (loaded or AI-generated)
+ * in sync with the transport. The audio is the clock while it plays, so the mouth
+ * tracks the real audio. Uses decodeAudioData (same path as the spectrogram) +
+ * an AudioBufferSourceNode — robust + sample-accurate. refreshAudio() on change. */
+function audioCtx(){ if(!S.actx){ S.actx=new (window.AudioContext||window.webkitAudioContext)();
+    S.gain=S.actx.createGain(); S.gain.connect(S.actx.destination); }
+  if(S.gain) S.gain.gain.value=S.muted?0:1; return S.actx; }
+function stopAudioSource(){ if(S.audioSrc){ try{ S.audioSrc.onended=null; S.audioSrc.stop(); }catch(_){ } S.audioSrc=null; } }
+function startAudioAt(off){ stopAudioSource(); if(!S.audioBuf) return;
+  const ctx=audioCtx(); if(ctx.state==="suspended"){ try{ ctx.resume(); }catch(_){ } }
+  const src=ctx.createBufferSource(); src.buffer=S.audioBuf; src.connect(S.gain);
+  const o=Math.max(0,Math.min(off, S.audioBuf.duration-0.001));
+  src.onended=()=>{ if(S.audioSrc===src) S.audioSrc=null; };   // natural end (buffer shorter than take)
+  try{ src.start(0,o); }catch(_){ return; }
+  S.audioSrc=src; S._audioStartCtx=ctx.currentTime; S._audioStartOff=o; }
+function audioPlaying(){ return !!S.audioSrc; }
+function audioPos(){ return S._audioStartOff + (S.actx.currentTime - S._audioStartCtx); }
+async function refreshAudio(){
+  stopAudioSource(); S.audioBuf=null; const btn=$("#tpMute");
+  if(S.wavBytes && S.wavBytes.length){
+    try{ const ctx=audioCtx();
+      S.audioBuf=await ctx.decodeAudioData(S.wavBytes.buffer.slice(S.wavBytes.byteOffset, S.wavBytes.byteOffset+S.wavBytes.byteLength));
+    }catch(_){ S.audioBuf=null; }
+    if(btn){ btn.hidden=!S.audioBuf; btn.textContent=S.muted?"🔇":"🔊"; }
+  } else if(btn) btn.hidden=true;
+}
+function audioSeek(){ if(S.playing && S.audioBuf) startAudioAt(S.t); }   // re-cue playing audio to the new spot
 function setScrub(){ $("#scrub").value=Math.round(1000*(S.duration?S.t/S.duration:0)); }
-$("#scrub").oninput=e=>{ if(!S.duration)return; S.t=S.duration*e.target.value/1000; drawAll(); };
-$("#tpStart").onclick=()=>{S.t=0;setScrub();drawAll();};
-$("#tpEnd").onclick=()=>{S.t=S.duration;setScrub();drawAll();};
+$("#scrub").oninput=e=>{ if(!S.duration)return; S.t=S.duration*e.target.value/1000; audioSeek(); drawAll(); };
+$("#tpStart").onclick=()=>{S.t=0;setScrub();audioSeek();drawAll();};
+$("#tpEnd").onclick=()=>{S.t=S.duration;setScrub();audioSeek();drawAll();};
 $("#tpPlay").onclick=togglePlay; $("#tpPlay").textContent="▶";
+$("#tpMute")&&($("#tpMute").onclick=()=>{ S.muted=!S.muted; if(S.gain)S.gain.gain.value=S.muted?0:1; $("#tpMute").textContent=S.muted?"🔇":"🔊"; });
 function togglePlay(){ if(!S.track)return; S.playing=!S.playing; $("#tpPlay").textContent=S.playing?"⏸":"▶";
-  if(S.playing){ S.lastTs=0; S.playClock=S.t; requestAnimationFrame(loop); } else showFps(null); }
+  if(S.playing){ S.lastTs=0; S.playClock=S.t; if(S.audioBuf) startAudioAt(S.t); requestAnimationFrame(loop); }
+  else { stopAudioSource(); showFps(null); } }
 // spacebar toggles playback (ignored while typing in a field)
 addEventListener("keydown",e=>{ if(e.code!=="Space")return;
   const t=e.target.tagName; if(t==="INPUT"||t==="TEXTAREA"||t==="SELECT")return;
@@ -1984,11 +2013,13 @@ $("#fps").oninput=()=>{ S.fps=parseFloat($("#fps").value)||60; if(!S.playing) sh
 showFps(null);
 
 function loop(ts){ if(!S.playing)return;
-  if(S.lastTs){ const dt=(ts-S.lastTs)/1000; S.playClock+=dt;
+  const aOn=audioPlaying();                                              // audio is the clock while it plays
+  if(S.lastTs){ const dt=(ts-S.lastTs)/1000;
+    S.playClock = aOn ? audioPos() : S.playClock+dt;
     fpsMeter.acc+=dt; fpsMeter.n++;
     if(fpsMeter.acc>=0.4){ showFps(fpsMeter.n/fpsMeter.acc); fpsMeter.acc=0; fpsMeter.n=0; } }
   S.lastTs=ts;
-  if(S.playClock>=S.duration) S.playClock=0;
+  if(S.playClock>=S.duration){ S.playClock=0; if(S.audioBuf && S.playing) startAudioAt(0); }   // loop: restart audio too
   const fps=Math.max(1,S.fps||60);
   S.t=Math.round(S.playClock*fps)/fps;    // quantise the playhead → the fps is real
   setScrub(); drawAll(); requestAnimationFrame(loop); }
