@@ -9,6 +9,14 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Studio: shared 3D preview + model chooser + custom avatars** — the Workspace now
+  shows the **same** model as the Preview tab (the 3D ARKit head is relocated between
+  them instead of the Workspace using a flat 2D face). A **3D head / 2D schematic**
+  selector makes it a choice, and **＋ avatar** loads your own `.glb` at runtime
+  (`Preview3D.loadModel`). The preview morph mapping is now a per-mesh resolver that
+  matches ARKit channel names across naming schemes (facecap `_L/_R`, ARKit `Left/Right`,
+  camel/Pascal case), so a **Microsoft Rocketbox** avatar (exported to glTF) — or any
+  ARKit-blendshape head — is driven correctly, not just the built-in head.
 - **Unity runtime integration** (`integrations/unity/com.openfacefx.runtime`) — a
   dependency-free UPM package that plays OpenFaceFX takes on Unity characters,
   streaming ARKit blendshape weights (and optional head/eye bone pose) onto a
