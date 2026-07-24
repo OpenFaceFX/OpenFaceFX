@@ -203,6 +203,15 @@ function renderSetup(){
   const opts = Object.entries(PROVIDERS).map(([k,p])=>`<option value="${k}">${p.label}</option>`).join("");
   MOUNT.innerHTML = `
     <div class="assist-msg">
+      <b>AI director for your take.</b> Describe what you want in plain language and it makes real,
+      validated edits — clean the transcript, fix name/brand pronunciations, direct emotion, and set
+      the talking style &amp; gestures — then regenerates. It configures the deterministic pipeline; it
+      never renders the animation itself.
+      <div class="assist-help" style="margin-top:8px">
+        <div class="assist-help-row">Runs on <b>your own LLM key</b> — Anthropic, OpenAI, Gemini, or a local model (Ollama / vLLM / LM Studio) for fully offline use.</div>
+      </div>
+    </div>
+    <div class="assist-msg">
       <b>Bring your own key.</b> Your provider API key is encrypted in your browser with a master
       password (PBKDF2-SHA256 · 600k → AES-256-GCM). Only ciphertext is stored — the key and
       password never leave this machine.
@@ -272,6 +281,11 @@ function renderConsole(){
   $$("#assistant .assist-actions [data-act]")?.forEach; // no-op guard
   MOUNT.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>runAction(b.dataset.act, b));
   $("#assistForm").onsubmit=e=>{ e.preventDefault(); const n=$("#assistNote").value.trim(); if(n){ $("#assistNote").value=""; runAction("direct",null,n); } };
+  // seed the log with a "what this does" card so the actions aren't a guessing game
+  const rows=Object.entries(ACTIONS).map(([k,a])=>`<div class="assist-help-row"><b>${a.label}</b> — ${esc(a.hint)}</div>`).join("");
+  log(`<b>AI director.</b> Describe what you want and it turns that into <b>real edits on the current take</b> — it never replaces the pipeline, it sets the inputs (transcript, pronunciation, emotion, style) and regenerates, so results stay deterministic.
+    <div class="assist-help">${rows}</div>
+    <span class="dim">Type a free-form note below (e.g. “tired, trailing off, slight head shake”) → <b>Direct the performance</b>. <b>Direct emotion</b> and <b>Pronounce</b> need a generated take first. Running on ${esc(e.label)}${e.model?" · "+esc(e.model):""} — nothing is sent until you click an action.</span>`, "intro");
 }
 
 function log(html, cls=""){ const el=$("#assistLog"); if(!el) return;

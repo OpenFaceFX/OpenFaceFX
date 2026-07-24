@@ -329,8 +329,12 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .assistant { flex:1; display:flex; flex-direction:column; gap:12px; min-height:0; }
 .pill { font-size:11px; color:var(--fg-dim); border:1px solid var(--line); border-radius:100px; padding:2px 9px; }
 .pill.ok { color:var(--good); border-color:color-mix(in srgb,var(--good) 40%,var(--line)); }
-.assist-msg { border:1px solid var(--line); border-radius:var(--r); padding:12px 14px; background:var(--panel); }
+.assist-msg { border:1px solid var(--line); border-radius:var(--r); padding:12px 14px; background:var(--panel); font-size:13px; line-height:1.5; }
 .assist-msg.user { background:var(--panel-2); }
+.assist-msg.intro { background:color-mix(in srgb,var(--accent) 6%,var(--panel)); border-color:color-mix(in srgb,var(--accent) 30%,var(--line)); }
+.assist-help { display:flex; flex-direction:column; gap:5px; margin:9px 0 2px; }
+.assist-help-row { padding:6px 9px; border-radius:var(--r-sm); background:var(--panel-2); border:1px solid var(--line); font-size:12.5px; }
+.assist-help-row b { color:var(--accent); }
 .assist-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .assist-input { display:flex; gap:8px; }
 .assist-input textarea { min-height:44px; }
