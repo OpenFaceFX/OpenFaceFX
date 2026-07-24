@@ -674,7 +674,7 @@ function renderOutputInspector(box,target){
       ${custom?'<button class="btn sm danger" id="fgDel">🗑 Delete</button>':'<button class="btn sm" id="fgResetOut" title="Restore this output’s default visemes">↺ Default</button>'}
     </div>
     <p class="insp-tip dim">${custom
-      ? 'This is a <b>custom output</b>. Type any <b>Value</b> to set a constant (overrides the visemes), or edit the weights to drive it. It exports to Live&nbsp;Link / A2F when the rig is <b>arkit</b>.'
+      ? 'This is a <b>custom output</b>. Its value is normally the weighted sum of the visemes below (so it moves as speech plays). Type a <b>Value</b> to pin the rig target to a <b>fixed constant</b> for the whole take instead (overrides the visemes); <b>↺</b> reverts to viseme-driven. Exports to Live&nbsp;Link / A2F on <b>arkit</b>.'
       : 'Its value is driven by the visemes. <b>Clone</b> it to get a custom output whose <b>Value</b> you can set directly.'}</p>`;
   box.querySelectorAll(".fg-w").forEach(inp=>inp.onchange=()=>{
     const w=Math.max(0,Math.min(1,parseFloat(inp.value)||0)); inp.value=w.toFixed(2);
@@ -682,9 +682,17 @@ function renderOutputInspector(box,target){
   box.querySelectorAll(".fg-x").forEach(b=>b.onclick=()=>{ fgRemoveEdge(b.dataset.v,target); fgReselect(target); });
   const add=box.querySelector(".fg-add"); if(add) add.onchange=()=>{ if(add.value){ fgSetEdge(add.value,target,1.0); fgReselect(target); } };
   const nm=box.querySelector(".fg-name"); if(nm&&custom) nm.onchange=()=>{ const v=nm.value.trim(); if(v&&v!==target){ fgRename(target,v); fgReselect(v); } };
-  const val=box.querySelector(".fg-val"); if(val) val.onchange=()=>{ const v=Math.max(0,Math.min(1,parseFloat(val.value)||0));
-    S.fgConst[target]=v; fgMark(); fgReselect(target); };
-  const clr=box.querySelector(".fg-val-clr"); if(clr) clr.onclick=()=>{ delete S.fgConst[target]; fgMark(); fgReselect(target); };
+  const val=box.querySelector(".fg-val"), clr=box.querySelector(".fg-val-clr");
+  // Live-update the constant WITHOUT rebuilding the inspector (that stole focus on
+  // every arrow-key step). Redraw only the graph; sync the muted/response state via
+  // direct DOM on the first override so the input keeps focus.
+  if(val) val.oninput=()=>{ const first=!(target in S.fgConst);
+    S.fgConst[target]=Math.max(0,Math.min(1,parseFloat(val.value)||0)); fgMark();
+    if(first){ if(clr) clr.disabled=false;
+      box.querySelectorAll(".insp-row.edge").forEach(r=>{ r.classList.add("muted"); r.querySelectorAll("input,button").forEach(el=>el.disabled=true); });
+      const rr=box.querySelector(".fg-link"); const row=rr&&rr.closest(".insp-row"); if(row) row.style.display="none"; } };
+  if(val) val.onchange=()=>{ val.value=Math.max(0,Math.min(1,parseFloat(val.value)||0)).toFixed(2); };  // tidy the display on blur/step, no rebuild
+  if(clr) clr.onclick=()=>{ delete S.fgConst[target]; fgMark(); fgReselect(target); };   // clearing rebuilds to restore edges/response
   const lk=box.querySelector(".fg-link");
   if(lk){ lk.onchange=()=>{ if(lk.value==="linear")delete S.fgLink[target]; else S.fgLink[target]=lk.value; fgMark(); fgReselect(target); };
     drawLinkPrev(box.querySelector(".fg-link-prev"), lk.value); }
