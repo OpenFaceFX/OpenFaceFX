@@ -228,7 +228,13 @@ async function boot(){
     await pyodide.loadPackage(["micropip","numpy"]); prog(0.75);
     setStatus(`installing openfacefx ${OFFX_VERSION} from PyPI…`);
     const mp=pyodide.pyimport("micropip");
-    await mp.install(`openfacefx==${OFFX_VERSION}`); prog(0.95);
+    try{ await mp.install(`openfacefx==${OFFX_VERSION}`); }
+    catch(e){   // PyPI CDN can lag right after a release; retry then fall back so it still boots
+      let ok=false;
+      for(let i=0;i<3 && !ok;i++){ await new Promise(r=>setTimeout(r,3000)); try{ await mp.install(`openfacefx==${OFFX_VERSION}`); ok=true; }catch(_){ } }
+      if(!ok) await mp.install("openfacefx");
+    }
+    prog(0.95);
     await pyodide.runPythonAsync(`
 import json, openfacefx as offx
 def run_offx(text, has_wav, dur):

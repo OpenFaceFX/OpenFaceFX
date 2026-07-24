@@ -466,9 +466,22 @@ async function bootPyodide(){
   boot.set("Starting CPython…",0.28); S.pyodide=await loadPyodide();
   boot.set("Loading numpy (wasm)…",0.5); await S.pyodide.loadPackage(["micropip","numpy"]);
   boot.set(`Installing openfacefx ${OFFX_VERSION}…`,0.72);
-  const mp=S.pyodide.pyimport("micropip"); await mp.install(`openfacefx==${OFFX_VERSION}`);
+  const mp=S.pyodide.pyimport("micropip");
+  try{ await mp.install(`openfacefx==${OFFX_VERSION}`); }
+  catch(e){
+    // PyPI's JSON API is CDN-cached per-edge, so right after a release the just-pinned
+    // version isn't resolvable on every edge yet → micropip hard-fails. Retry a few
+    // times through the lag, then fall back to whatever IS available so the Studio
+    // still boots (a later reload picks up the pinned version).
+    let ok=false;
+    for(let i=0;i<3 && !ok;i++){ boot.set(`Fetching openfacefx ${OFFX_VERSION}… (retry ${i+1}/3)`,0.74);
+      await new Promise(r=>setTimeout(r,3000));
+      try{ await mp.install(`openfacefx==${OFFX_VERSION}`); ok=true; }catch(_){ } }
+    if(!ok){ boot.set("Installing openfacefx (latest available)…",0.8); await mp.install("openfacefx"); }
+  }
   boot.set("Wiring the studio bridge…",0.9); await S.pyodide.runPythonAsync(PY_BRIDGE);
-  boot.set("Ready.",1); setRuntime("browser",`browser · openfacefx ${OFFX_VERSION}`);
+  let ver=OFFX_VERSION; try{ ver=await S.pyodide.runPythonAsync("import openfacefx as _o; _o.__version__"); }catch(_){ }
+  boot.set("Ready.",1); setRuntime("browser",`browser · openfacefx ${ver}`);
 }
 
 const Pipe = {
