@@ -27,10 +27,18 @@ its `version` field.
   blendshape name matching lines an `arkit` take up with **Microsoft Rocketbox**
   ARKit avatars (and most ARKit rigs) with no manual mapping. Editor importer +
   "Convert to OffX Clip" menu + a Rocketbox sample. Requires Unity 2021.3+.
-- **Studio unified Workspace** — a new **Workspace** tab showing the neutral face,
+- **Studio dockable Workspace** — a **Workspace** tab showing the neutral face,
   Face Graph, animation curves and the audio spectrogram at once on a single
-  playhead (the FaceFX single-screen layout), with a **curve-select rail** (live
-  value per channel, click to select + solo) and a **node properties** readout.
+  playhead, as a **resizable dock**: 2×2 panes with draggable splitters, and each
+  pane's dropdown puts any panel in any section (layout persists). Includes a
+  **curve-select rail** (live value per channel, click to select + solo), a
+  **node properties** readout, and full curve editing in-pane.
+- **Studio: opt-in curve simplify** — a **⌇ simplify** button RDP-thins the
+  selected (or all visible) channel's keyframes for cleaner, FaceFX-sparse curves.
+- **Studio: IPA phonemes + word grouping** — the Phonemes strip is two-tier,
+  showing phonemes as **IPA** over the **words** they belong to (ARPABET internally;
+  IPA is display-only, toggleable). The spectrogram appears once a voice clip is
+  loaded; the no-audio state is now labelled.
 - **Studio Phonemes-bar editor** — drag a phoneme boundary on the Phonemes strip
   to fine-tune its timing; the viseme curves re-solve from the edited segments
   (gesture/emotion/pose channels are preserved). Undo captures the edit whole. New
