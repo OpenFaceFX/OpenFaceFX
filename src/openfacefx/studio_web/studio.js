@@ -766,7 +766,7 @@ function buildChannelList(){
   }
 }
 function selChannel(name){ if(name!==S.sel) S.selKeys=[]; S.sel=name; S.inspectKind="channel"; S.node=null; buildChannelList(); buildInspector();
-  if(S.view==="curves")drawCurves(); }
+  if(S.view==="workspace")drawWorkspace(); else if(S.view==="curves")drawCurves(); }
 
 function buildInspector(){
   const box=$("#inspector"); if(!box)return;
@@ -1463,7 +1463,12 @@ function _editRestore(e){ S.track.channels=e.c; if(e.s)S.segments=e.s;
   ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons(); }
 function snapshotUndo(){ if(!S.track)return; S.undo.push(_editSnap());
   if(S.undo.length>60) S.undo.shift(); S.redo.length=0; refreshUndoButtons(); }
-function afterEdit(){ markEdited(); buildChannelList(); buildInspector(); drawCurves(); drawPreview(); updateInspVal(); refreshUndoButtons(); }
+/* redraw the curve canvas for whichever view is active (the focused Curves tab
+ * or the Workspace), so curve editing works in both. */
+function redrawCurves(){ if(S.view==="workspace") drawCurves("ws_curves"); else drawCurves(); }
+function afterEdit(){ markEdited(); buildChannelList(); buildInspector();
+  if(S.view==="workspace") drawWorkspace(); else drawCurves();
+  drawPreview(); updateInspVal(); refreshUndoButtons(); }
 function refreshUndoButtons(){ const u=$("#cvUndo"),r=$("#cvRedo"); if(u)u.disabled=!S.undo.length; if(r)r.disabled=!S.redo.length; }
 function undoEdit(){ if(!S.undo.length||!S.track)return; S.redo.push(_editSnap()); _editRestore(S.undo.pop()); }
 function redoEdit(){ if(!S.redo.length||!S.track)return; S.undo.push(_editSnap()); _editRestore(S.redo.pop()); }
@@ -1509,51 +1514,55 @@ function delKeyAtPlayhead(){ if(!S.track||!S.sel)return; const c=chan(S.sel); if
   snapshotUndo(); let bi=0,bd=1e9; for(let i=0;i<c.keys.length;i++){ const d=Math.abs(c.keys[i][0]-S.t); if(d<bd){bd=d;bi=i;} }
   c.keys.splice(bi,1); markChannelOwned(S.sel); afterEdit(); }
 /* box-select: keep the selected channel's keys inside the marquee rectangle */
-function finishMarquee(){ const c=chan(S.sel); if(!c||!marquee){ S.selKeys=[]; drawCurves(); return; }
+function finishMarquee(){ const c=chan(S.sel); if(!c||!marquee){ S.selKeys=[]; redrawCurves(); return; }
   const g=marquee.g, T=marquee.T, x0=Math.min(marquee.x0,marquee.x1), x1=Math.max(marquee.x0,marquee.x1),
     y0=Math.min(marquee.y0,marquee.y1), y1=Math.max(marquee.y0,marquee.y1);
   S.selKeys=c.keys.filter(k=>{ const px=g.padL+g.gw*(k[0]/T), py=yAtVal(k[1],g); return px>=x0&&px<=x1&&py>=y0&&py<=y1; });
-  drawCurves(); }
+  redrawCurves(); }
 function deleteSelKeys(){ const c=chan(S.sel); if(!c||!S.selKeys.length)return; snapshotUndo();
   const del=new Set(S.selKeys); let keys=c.keys.filter(k=>!del.has(k)); if(!keys.length) keys=[c.keys[0]];   // a channel keeps ≥1 key
   c.keys=keys; S.selKeys=[]; markChannelOwned(c.name); afterEdit(); }
 let curveDrag=null, marquee=null;   // marquee = a box-select drag on empty canvas
 const clampV=(name,v)=>SIGNED_CH.test(name)?Math.max(-90,Math.min(90,v)):Math.max(0,Math.min(1,v));
+/* Curve keyframe editor — drag dots, alt/right-click delete, double-click add,
+ * box-select. Bound to BOTH the focused Curves canvas and the Workspace's
+ * #ws_curves so editing works in either; redraws are view-aware (redrawCurves). */
+function wireCurveEditor(cv){
+  if(!cv) return; cv.style.cursor="crosshair";
+  cv.addEventListener("pointerdown",e=>{ if(!S.track)return; const {x,y,w,h}=canvasMetrics(cv,e); const g=curveGeom(w,h); const T=Math.max(.001,S.duration);
+    if(S.sel){ const c=chan(S.sel); const ki=hitKeyframe(c,g,T,x,y);
+      if(ki>=0){ const k=c.keys[ki];
+        if(e.altKey||e.button===2){    // alt/right-click deletes — the selection if this key is in it, else just this key
+          if(S.selKeys.length>1 && S.selKeys.includes(k)) deleteSelKeys(); else if(c.keys.length>1){ snapshotUndo(); c.keys.splice(ki,1); S.selKeys=[]; markChannelOwned(c.name); afterEdit(); } return; }
+        if(S.selKeys.length>1 && S.selKeys.includes(k)){   // grab the whole selection
+          snapshotUndo(); curveDrag={multi:true,c,g,T,ox:x,oy:y,orig:S.selKeys.map(kk=>({k:kk,t:kk[0],v:kk[1]}))}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; return; }
+        S.selKeys=[]; snapshotUndo(); curveDrag={ki,c,g,T}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; return; } }
+    // empty canvas: start a marquee (resolves to a plain seek if the pointer doesn't move)
+    marquee={x0:x,y0:y,x1:x,y1:y,g,T,moved:false}; try{cv.setPointerCapture(e.pointerId);}catch(_){} });
+  cv.addEventListener("pointermove",e=>{ const {x,y}=canvasMetrics(cv,e);
+    if(marquee){ marquee.x1=x; marquee.y1=y; if(!marquee.moved && Math.hypot(x-marquee.x0,y-marquee.y0)>4) marquee.moved=true; if(marquee.moved) redrawCurves(); return; }
+    if(!curveDrag)return; const {c,g,T}=curveDrag;
+    if(curveDrag.multi){ const dt=(x-curveDrag.ox)/g.gw*T, dv=valAtY(y,g)-valAtY(curveDrag.oy,g);
+      for(const o of curveDrag.orig){ o.k[0]=Math.max(0,Math.min(T,o.t+dt)); o.k[1]=clampV(c.name,o.v+dv); }
+      c.keys.sort((a,b)=>a[0]-b[0]); markEdited(); markChannelOwned(c.name); redrawCurves(); drawPreview(); updateInspVal(); return; }
+    const ki=curveDrag.ki, k=c.keys[ki]; k[1]=clampV(c.name,valAtY(y,g));
+    const lo=ki>0?c.keys[ki-1][0]:0, hi=ki<c.keys.length-1?c.keys[ki+1][0]:T;
+    k[0]=Math.min(hi,Math.max(lo,(x-g.padL)/g.gw*T));
+    markEdited(); markChannelOwned(c.name); redrawCurves(); drawPreview(); updateInspVal(); });
+  const end=e=>{
+    if(marquee){ if(marquee.moved) finishMarquee(); else { const near=nearestChannel(marquee.g,marquee.T,marquee.x0,marquee.y0); if(near)selChannel(near); seekAtX(marquee.x0,marquee.g.gw,marquee.g.padL,marquee.T); }
+      try{cv.releasePointerCapture(e.pointerId);}catch(_){} marquee=null; return; }
+    if(curveDrag){ try{cv.releasePointerCapture(e.pointerId);}catch(_){}} curveDrag=null; cv.style.cursor="crosshair"; };
+  cv.addEventListener("pointerup",end); cv.addEventListener("pointercancel",end);
+  cv.addEventListener("contextmenu",e=>e.preventDefault());   // right-click is used to delete a key
+  cv.addEventListener("dblclick",e=>{ if(!S.track)return; const {x,y,w,h}=canvasMetrics(cv,e); const g=curveGeom(w,h); const T=Math.max(.001,S.duration);
+    let name=S.sel; if(!name||!chan(name)){ name=nearestChannel(g,T,x,y); if(name)selChannel(name); }
+    if(!name)return; const t=Math.min(T,Math.max(0,(x-g.padL)/g.gw*T)); const nv=valAtY(y,g);
+    const v=SIGNED_CH.test(name)?Math.max(-90,Math.min(90,nv)):Math.max(0,Math.min(1,nv));
+    snapshotUndo(); setChannelAt(name,v,t); afterEdit(); });     // double-click adds a key
+}
 function wireCanvases(){
-  const cv=$("#curves");
-  if(cv){ cv.style.cursor="crosshair";
-    cv.addEventListener("pointerdown",e=>{ if(!S.track)return; const {x,y,w,h}=canvasMetrics(cv,e); const g=curveGeom(w,h); const T=Math.max(.001,S.duration);
-      if(S.sel){ const c=chan(S.sel); const ki=hitKeyframe(c,g,T,x,y);
-        if(ki>=0){ const k=c.keys[ki];
-          if(e.altKey||e.button===2){    // alt/right-click deletes — the selection if this key is in it, else just this key
-            if(S.selKeys.length>1 && S.selKeys.includes(k)) deleteSelKeys(); else if(c.keys.length>1){ snapshotUndo(); c.keys.splice(ki,1); S.selKeys=[]; markChannelOwned(c.name); afterEdit(); } return; }
-          if(S.selKeys.length>1 && S.selKeys.includes(k)){   // grab the whole selection
-            snapshotUndo(); curveDrag={multi:true,c,g,T,ox:x,oy:y,orig:S.selKeys.map(kk=>({k:kk,t:kk[0],v:kk[1]}))}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; return; }
-          S.selKeys=[]; snapshotUndo(); curveDrag={ki,c,g,T}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; return; } }
-      // empty canvas: start a marquee (resolves to a plain seek if the pointer doesn't move)
-      marquee={x0:x,y0:y,x1:x,y1:y,g,T,moved:false}; try{cv.setPointerCapture(e.pointerId);}catch(_){} });
-    cv.addEventListener("pointermove",e=>{ const {x,y}=canvasMetrics(cv,e);
-      if(marquee){ marquee.x1=x; marquee.y1=y; if(!marquee.moved && Math.hypot(x-marquee.x0,y-marquee.y0)>4) marquee.moved=true; if(marquee.moved) drawCurves(); return; }
-      if(!curveDrag)return; const {c,g,T}=curveDrag;
-      if(curveDrag.multi){ const dt=(x-curveDrag.ox)/g.gw*T, dv=valAtY(y,g)-valAtY(curveDrag.oy,g);
-        for(const o of curveDrag.orig){ o.k[0]=Math.max(0,Math.min(T,o.t+dt)); o.k[1]=clampV(c.name,o.v+dv); }
-        c.keys.sort((a,b)=>a[0]-b[0]); markEdited(); markChannelOwned(c.name); drawCurves(); drawPreview(); updateInspVal(); return; }
-      const ki=curveDrag.ki, k=c.keys[ki]; k[1]=clampV(c.name,valAtY(y,g));
-      const lo=ki>0?c.keys[ki-1][0]:0, hi=ki<c.keys.length-1?c.keys[ki+1][0]:T;
-      k[0]=Math.min(hi,Math.max(lo,(x-g.padL)/g.gw*T));
-      markEdited(); markChannelOwned(c.name); drawCurves(); drawPreview(); updateInspVal(); });
-    const end=e=>{
-      if(marquee){ if(marquee.moved) finishMarquee(); else { const near=nearestChannel(marquee.g,marquee.T,marquee.x0,marquee.y0); if(near)selChannel(near); seekAtX(marquee.x0,marquee.g.gw,marquee.g.padL,marquee.T); }
-        try{cv.releasePointerCapture(e.pointerId);}catch(_){} marquee=null; return; }
-      if(curveDrag){ try{cv.releasePointerCapture(e.pointerId);}catch(_){}} curveDrag=null; cv.style.cursor="crosshair"; };
-    cv.addEventListener("pointerup",end); cv.addEventListener("pointercancel",end);
-    cv.addEventListener("contextmenu",e=>e.preventDefault());   // right-click is used to delete a key
-    cv.addEventListener("dblclick",e=>{ if(!S.track)return; const {x,y,w,h}=canvasMetrics(cv,e); const g=curveGeom(w,h); const T=Math.max(.001,S.duration);
-      let name=S.sel; if(!name||!chan(name)){ name=nearestChannel(g,T,x,y); if(name)selChannel(name); }
-      if(!name)return; const t=Math.min(T,Math.max(0,(x-g.padL)/g.gw*T)); const nv=valAtY(y,g);
-      const v=SIGNED_CH.test(name)?Math.max(-90,Math.min(90,nv)):Math.max(0,Math.min(1,nv));
-      snapshotUndo(); setChannelAt(name,v,t); afterEdit(); });     // double-click adds a key
-  }
+  wireCurveEditor($("#curves")); wireCurveEditor($("#ws_curves"));
   { const c=$("#wave"); if(c){ c.style.cursor="crosshair";
     c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); seekAtX(x,w,0,Math.max(.001,S.duration)); }); } }
   // Phonemes bar: drag a boundary between two phonemes to re-time; elsewhere it seeks.
@@ -1586,8 +1595,7 @@ function wireCanvases(){
       if(hit){ S.inspectKind="node"; S.node=hit; S.sel=null; S.track&&buildChannelList(); buildInspector(); drawWorkspace(); } }); }
   for(const id of ["#ws_wave","#ws_phonStrip"]){ const c=$(id); if(!c)continue; c.style.cursor="crosshair";
     c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); seekAtX(x,w,0,Math.max(.001,S.duration)); }); }
-  { const c=$("#ws_curves"); if(c){ c.style.cursor="crosshair";
-    c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); seekAtX(x,w-16,8,Math.max(.001,S.duration)); }); } }
+  // #ws_curves is a full curve editor (wireCurveEditor above) — plain clicks still seek via its marquee path
   // curve-edit toolbar + keyboard
   $("#cvUndo")&&($("#cvUndo").onclick=undoEdit);
   $("#cvRedo")&&($("#cvRedo").onclick=redoEdit);
@@ -1606,8 +1614,8 @@ function wireCanvases(){
       if(k==="z"){ e.preventDefault(); e.shiftKey?redoEdit():undoEdit(); }
       else if(k==="y"){ e.preventDefault(); redoEdit(); }
       return; }
-    if(S.view==="curves" && (e.key==="Delete"||e.key==="Backspace") && S.selKeys.length){ e.preventDefault(); deleteSelKeys(); }
-    else if(e.key==="Escape" && S.selKeys.length){ S.selKeys=[]; drawCurves(); } });
+    if((S.view==="curves"||S.view==="workspace") && (e.key==="Delete"||e.key==="Backspace") && S.selKeys.length){ e.preventDefault(); deleteSelKeys(); }
+    else if(e.key==="Escape" && S.selKeys.length){ S.selKeys=[]; redrawCurves(); } });
 }
 
 /* ===================================================================== *
