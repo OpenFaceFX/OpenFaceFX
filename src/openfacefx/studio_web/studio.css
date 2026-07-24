@@ -415,6 +415,42 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 @media (prefers-reduced-motion:reduce){ *{transition:none!important;} }
 
+/* ---- Unified Workspace (FaceFX single-screen layout) ----------------- */
+.view[data-view="workspace"]{ display:flex; flex-direction:column; height:100%; min-height:0; }
+.view[data-view="workspace"].active{ display:flex; }
+.ws-grid{ display:grid; gap:10px; flex:1 1 auto; min-height:0;
+  grid-template-columns:minmax(180px,1fr) minmax(280px,1.55fr);
+  grid-template-rows:minmax(170px,26vh) minmax(150px,1fr) 156px;
+  grid-template-areas:"face graph" "curve curve" "phon phon"; }
+.ws-face-cell{ grid-area:face; } .ws-graph-cell{ grid-area:graph; }
+.ws-curve-cell{ grid-area:curve; } .ws-phon-cell{ grid-area:phon; }
+.ws-cell{ display:flex; flex-direction:column; min-height:0; min-width:0; gap:6px;
+  background:var(--panel-2); border:1px solid var(--line); border-radius:9px; padding:8px 9px; }
+.ws-cap{ flex:0 0 auto; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--fg-mute); }
+.ws-face{ flex:1 1 auto; min-height:0; width:100%; }
+.ws-canvas{ flex:1 1 auto; min-height:0; width:100%; display:block; border-radius:5px; }
+.ws-curvewrap{ flex:1 1 auto; min-height:0; display:flex; gap:8px; }
+.ws-curvewrap .ws-canvas{ flex:1 1 auto; }
+.ws-rail{ flex:0 0 138px; overflow-y:auto; margin:0; padding:0; list-style:none; font-size:11px; }
+.ws-rc{ display:flex; align-items:center; gap:5px; padding:2px 4px; border-radius:4px; cursor:pointer; }
+.ws-rc:hover{ background:var(--elev); }
+.ws-rc.sel{ background:var(--elev); outline:1px solid var(--accent); }
+.ws-rc.off{ opacity:.42; }
+.ws-rc .sw{ width:9px; height:9px; border-radius:2px; flex:0 0 auto; }
+.ws-rc .nm{ flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ws-rc .lvbar{ flex:0 0 32px; height:6px; background:var(--panel); border-radius:3px; overflow:hidden; }
+.ws-rc .lvbar>i{ display:block; height:100%; width:0; transition:width .05s linear; }
+.ws-rc .lvn{ flex:0 0 28px; text-align:right; color:var(--fg-mute); }
+.ws-phon-cell .ws-wave{ flex:2 1 0; } .ws-phon-cell .ws-strip{ flex:1 1 0; }
+.ws-props{ flex:0 0 auto; display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center;
+  font-size:12px; padding-top:5px; margin-top:2px; border-top:1px solid var(--line); }
+.ws-props .wp{ color:var(--fg-mute); } .ws-props b{ color:var(--fg); }
+.ws-props .badge{ background:var(--accent); color:#141414; border-radius:3px; padding:0 5px; font-size:10px; letter-spacing:.03em; }
+@media (max-width:820px){
+  .ws-grid{ grid-template-columns:1fr; grid-template-areas:"face" "graph" "curve" "phon";
+    grid-template-rows:190px 200px 240px 160px; overflow-y:auto; }
+}
+
 /* ---- responsive: collapse rails on narrow ---------------------------- */
 @media (max-width:1100px){ :root{ --rail-w:250px; } }
 @media (max-width:860px){

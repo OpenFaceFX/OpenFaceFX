@@ -894,12 +894,14 @@ function updateInspVal(){ if(S.inspectKind!=="channel"||!S.sel)return; const el=
 $$("#tabs .tab").forEach(t=>t.onclick=()=>{
   $$("#tabs .tab").forEach(x=>x.classList.remove("active")); t.classList.add("active");
   $$(".view").forEach(v=>v.classList.remove("active"));
-  S.view=t.dataset.view; $(`.view[data-view="${S.view}"]`).classList.add("active"); drawAll();
+  S.view=t.dataset.view; $(`.view[data-view="${S.view}"]`).classList.add("active");
+  if(S.view==="workspace"){ const r=$("#ws_rail"); if(r)r._key=null; }   // force a rail rebuild on entry
+  drawAll();
   if(S.view==="events") renderEventList();
   if(S.view==="mapping") renderMapping();
   if(S.view==="preview" && window.Preview3D&&window.Preview3D.ready) window.Preview3D.resize();
 });
-function drawAll(){ drawPreview(); if(S.view==="curves"){drawCurves(); drawCurveStrip();} if(S.view==="phonemes")drawPhonemes(); if(S.view==="facegraph")drawFaceGraph(); if(S.view==="events"){drawEvents(); drawEventStrip();} updateInspVal(); }
+function drawAll(){ drawPreview(); if(S.view==="curves"){drawCurves(); drawCurveStrip();} if(S.view==="phonemes")drawPhonemes(); if(S.view==="facegraph")drawFaceGraph(); if(S.view==="events"){drawEvents(); drawEventStrip();} if(S.view==="workspace")drawWorkspace(); updateInspVal(); }
 
 /* linear-sample a channel [[t,v]...] at time t */
 function sample(keys,t){ if(!keys||!keys.length)return 0;
@@ -1011,18 +1013,20 @@ function drawSchematic(){
     const v=Math.max(0,sample(c.keys,S.t)); if(v<1e-3)continue; W+=v; w+=v*s[0]; h+=v*s[1]; r+=v*s[2]; }
   if(W<1e-3){[w,h,r]=SHAPES.sil;} else {w/=W;h/=W;r/=W;}
   const cx=130,cy=150,rx=Math.max(9,w*130),ry=Math.max(3,h*95),k=.55*ry+r*.25*rx;
-  $("#mouth").setAttribute("d",
-    `M ${cx-rx} ${cy} C ${cx-rx} ${cy-k}, ${cx-rx*(1-r*.3)} ${cy-ry}, ${cx} ${cy-ry}`+
+  const mouthD=`M ${cx-rx} ${cy} C ${cx-rx} ${cy-k}, ${cx-rx*(1-r*.3)} ${cy-ry}, ${cx} ${cy-ry}`+
     ` C ${cx+rx*(1-r*.3)} ${cy-ry}, ${cx+rx} ${cy-k}, ${cx+rx} ${cy}`+
     ` C ${cx+rx} ${cy+k}, ${cx+rx*(1-r*.3)} ${cy+ry}, ${cx} ${cy+ry}`+
-    ` C ${cx-rx*(1-r*.3)} ${cy+ry}, ${cx-rx} ${cy+k}, ${cx-rx} ${cy} Z`);
+    ` C ${cx-rx*(1-r*.3)} ${cy+ry}, ${cx-rx} ${cy+k}, ${cx-rx} ${cy} Z`;
   // eyes: blink channels close the lids
   const bl=Math.max(sampleName("blink_L"),sampleName("blink")), br=Math.max(sampleName("blink_R"),sampleName("blink"));
-  $("#eyeL").setAttribute("ry",Math.max(1,9*(1-bl))); $("#eyeR").setAttribute("ry",Math.max(1,9*(1-br)));
-  // brows: browUp raises
-  const bu=Math.max(sampleName("browUp"),sampleName("browInnerUp"))*8;
-  $("#browL").innerHTML=`<rect x="78" y="${66-bu}" width="32" height="3.4" rx="2" fill="#2b3745"/>`;
-  $("#browR").innerHTML=`<rect x="150" y="${66-bu}" width="32" height="3.4" rx="2" fill="#2b3745"/>`;
+  const eyeLry=Math.max(1,9*(1-bl)), eyeRry=Math.max(1,9*(1-br));
+  const bu=Math.max(sampleName("browUp"),sampleName("browInnerUp"))*8;   // brows: browUp raises
+  const browLh=`<rect x="78" y="${66-bu}" width="32" height="3.4" rx="2" fill="#2b3745"/>`;
+  const browRh=`<rect x="150" y="${66-bu}" width="32" height="3.4" rx="2" fill="#2b3745"/>`;
+  const setA=(id,a,v)=>{ const e=$("#"+id); if(e)e.setAttribute(a,v); const e2=$("#ws_"+id); if(e2)e2.setAttribute(a,v); };
+  const setH=(id,v)=>{ const e=$("#"+id); if(e)e.innerHTML=v; const e2=$("#ws_"+id); if(e2)e2.innerHTML=v; };
+  setA("mouth","d",mouthD); setA("eyeL","ry",eyeLry); setA("eyeR","ry",eyeRry);   // mirror into the Workspace SVG too
+  setH("browL",browLh); setH("browR",browRh);
   $("#tcRead").textContent=fmt(S.t); $("#tpTime").textContent=fmt(S.t);
 }
 function sampleName(n){ const c=chan(n); return c?Math.max(0,sample(c.keys,S.t)):0; }
@@ -1050,8 +1054,8 @@ function strokeSmooth(x,pts){ if(pts.length<2)return; x.beginPath(); x.moveTo(pt
   for(let i=0;i<pts.length-1;i++){ const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
     x.bezierCurveTo(p1[0]+(p2[0]-p0[0])/6,p1[1]+(p2[1]-p0[1])/6,p2[0]-(p3[0]-p1[0])/6,p2[1]-(p3[1]-p1[1])/6,p2[0],p2[1]); }
   x.stroke(); }
-function drawCurves(){
-  const cv=$("#curves"); if(!S.track)return; const {x,w,h}=fitCanvas(cv);
+function drawCurves(cid){
+  const cv=$("#"+(cid||"curves")); if(!cv||!S.track)return; const {x,w,h}=fitCanvas(cv);
   x.clearRect(0,0,w,h); const padL=8,padR=8,padT=8,padB=18, gw=w-padL-padR, gh=h-padT-padB, g={padL,padT,gw,gh};
   const T=Math.max(0.001,S.duration);
   CURVE_VR=curveValueRange(); const v0=CURVE_VR[0], v1=CURVE_VR[1];
@@ -1176,8 +1180,8 @@ async function ensureSpec(){
   }catch(_){ /* leave spec null → waveform fallback */ }
   finally{ S._specBusy=false; }
 }
-function drawPhonemes(){
-  const cv=$("#wave"); if(!S.track)return; const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h);
+function drawPhonemes(waveCid,stripCid){
+  const cv=$("#"+(waveCid||"wave")); if(!cv||!S.track)return; const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h);
   const T=Math.max(.001,S.duration); const mid=h/2;
   x.fillStyle=css("--panel-2"); x.fillRect(0,0,w,h);
   if(S.wavBytes&&!S.wavSpec) ensureSpec();                      // lazily build the STFT from the take's audio
@@ -1210,16 +1214,70 @@ function drawPhonemes(){
   x.globalAlpha=1;
   // playhead
   x.strokeStyle=css("--accent"); x.beginPath(); const hx=w*(S.t/T); x.moveTo(hx,0);x.lineTo(hx,h);x.stroke();
-  drawStrip();
+  drawStrip(stripCid);
 }
-function drawStrip(){
-  const cv=$("#phonStrip"); const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h);
+function drawStrip(cid){
+  const cv=$("#"+(cid||"phonStrip")); if(!cv)return; const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h);
   const T=Math.max(.001,S.duration); x.font="11px "+css("--font-mono"); x.textBaseline="middle";
   for(const s of S.segments){ const a=w*(s.start/T), b=w*(s.end/T); const sil=(s.phoneme||"").toLowerCase()==="sil"||s.phoneme==="_";
     x.fillStyle=sil?css("--panel-2"):css("--elev"); x.fillRect(a+1,4,Math.max(1,b-a-2),h-8);
     x.strokeStyle=css("--line"); x.strokeRect(a+1,4,Math.max(1,b-a-2),h-8);
     if(b-a>14){ x.fillStyle=sil?css("--fg-mute"):css("--fg"); x.fillText(s.phoneme,a+5,h/2); } }
   x.strokeStyle=css("--accent"); x.beginPath(); const hx=w*(S.t/T); x.moveTo(hx,0);x.lineTo(hx,h);x.stroke();
+}
+
+/* ---- Unified Workspace: every view live on one playhead (FaceFX layout) ---- */
+function drawWorkspace(){
+  if(!S.track) return;
+  drawSchematic();                                 // mirrors into the ws_ SVG face
+  drawFaceGraph("ws_facegraph");                    // async; sets S.fgNodes to ws coords for hit-testing
+  drawCurves("ws_curves");
+  drawPhonemes("ws_wave","ws_phonStrip");
+  buildRail(); updateWsProps();
+}
+/* live curve-select rail — one row per channel with a colour swatch + value bar */
+function buildRail(){
+  const rail=$("#ws_rail"); if(!rail||!S.track) return;
+  const key=S.track.channels.map(c=>c.name).join(",")+"|"+S.sel+"|"+S.solo;
+  if(rail._key!==key){                              // rebuild only when the set/selection changes
+    rail._key=key; rail.innerHTML="";
+    for(const c of S.track.channels){ const m=S.chan[c.name]; if(!m)continue;
+      const li=document.createElement("li");
+      li.className="ws-rc"+(S.sel===c.name?" sel":"")+(S.solo===c.name?" solo":"")+(m.visible?"":" off");
+      li.innerHTML=`<span class="sw" style="background:${m.color}"></span><span class="nm">${esc(c.name)}</span>`+
+        `<span class="lvbar"><i style="background:${m.color}"></i></span><span class="lvn mono"></span>`;
+      li.onclick=()=>{ selChannel(c.name);           // select + toggle solo-isolate from the rail
+        if(S.solo===c.name){ for(const k in S.chan)S.chan[k].visible=true; S.solo=null; }
+        else { for(const k in S.chan)S.chan[k].visible=(k===c.name); S.solo=c.name; }
+        buildChannelList(); rail._key=null; drawWorkspace(); };
+      rail.appendChild(li);
+    }
+  }
+  updateRailLive();
+}
+function updateRailLive(){                           // per-frame value bars + numbers, no DOM rebuild
+  const rail=$("#ws_rail"); if(!rail||!S.track)return; let i=0;
+  for(const c of S.track.channels){ const li=rail.children[i++]; if(!li)continue;
+    const v=sample(c.keys,S.t), bar=li.querySelector(".lvbar>i"), n=li.querySelector(".lvn");
+    if(bar) bar.style.width=Math.max(0,Math.min(1,Math.abs(v)))*100+"%";
+    if(n) n.textContent=v.toFixed(2); }
+}
+function updateWsProps(){
+  const box=$("#ws_props"); if(!box)return;
+  if(S.inspectKind==="node" && S.node){ const n=S.node;
+    if(n.kind==="out"){ const inc=fgIncoming(n.label), live=(typeof fgOutVal==="function")?fgOutVal(n.label):0;
+      box.innerHTML=`<b>${esc(n.label)}</b> <span class="dim">rig output</span>`+
+        `<span class="wp">driven by <b>${inc.length}</b> viseme(s)</span>`+
+        `<span class="wp">live <b class="mono">${(+live).toFixed(2)}</b></span>`+
+        (isCustomOut(n.label)?`<span class="badge">custom</span>`:``); }
+    else box.innerHTML=`<b>${esc(n.label)}</b> <span class="dim">viseme input</span>`+
+        `<span class="wp">drives <b>${(n.data||[]).length}</b></span>`+
+        `<span class="wp">live <b class="mono">${nodeLiveIn(n.label).toFixed(2)}</b></span>`;
+  } else if(S.sel && chan(S.sel)){ const c=chan(S.sel);
+    box.innerHTML=`<b>${esc(c.name)}</b> <span class="dim">curve</span>`+
+      `<span class="wp"><b>${c.keys.length}</b> keys</span>`+
+      `<span class="wp">value <b class="mono">${sample(c.keys,S.t).toFixed(3)}</b></span>`;
+  } else box.innerHTML=`<span class="dim">Click a rig node or a curve in the rail to see its properties.</span>`;
 }
 
 /* ---- Face Graph (input visemes -> preset targets via link fns) ------ */
@@ -1246,8 +1304,8 @@ async function fgResetOutput(target){
   S.fgCustom=(S.customOuts.length||Object.keys(S.fgConst).length||Object.keys(S.fgLink).length)?true:false;
   fgReselect(target);
 }
-async function drawFaceGraph(){
-  const cv=$("#facegraph"); const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h); x.fillStyle=css("--panel-2"); x.fillRect(0,0,w,h);
+async function drawFaceGraph(cid){
+  const cv=$("#"+(cid||"facegraph")); if(!cv)return; const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h); x.fillStyle=css("--panel-2"); x.fillRect(0,0,w,h);
   if(!S.presetMap){ S.presetMap=await Pipe.presetMap(S.presetSel); }
   const inputs=Object.keys(S.presetMap); const outs=[...new Set(Object.values(S.presetMap).flat().map(p=>p[0]))];
   const colL=w*.26, colR=w*.74, iy=h/(inputs.length+1), oy=h/(outs.length+1);
@@ -1492,6 +1550,15 @@ function wireCanvases(){
     fg.addEventListener("pointerdown",e=>{ const {x,y}=canvasMetrics(fg,e);
       const hit=(S.fgNodes||[]).find(n=>Math.abs(x-n.x)<=n.w/2+3 && Math.abs(y-n.y)<=n.h/2+3);
       if(hit){ S.inspectKind="node"; S.node=hit; S.sel=null; buildChannelList&&(S.track&&buildChannelList()); buildInspector(); drawFaceGraph(); } }); }
+  // Workspace: node-select on the graph, seek on the strips/curves (detailed editing stays in the focused tabs)
+  const wfg=$("#ws_facegraph"); if(wfg){ wfg.style.cursor="pointer";
+    wfg.addEventListener("pointerdown",e=>{ const {x,y}=canvasMetrics(wfg,e);
+      const hit=(S.fgNodes||[]).find(n=>Math.abs(x-n.x)<=n.w/2+3 && Math.abs(y-n.y)<=n.h/2+3);
+      if(hit){ S.inspectKind="node"; S.node=hit; S.sel=null; S.track&&buildChannelList(); buildInspector(); drawWorkspace(); } }); }
+  for(const id of ["#ws_wave","#ws_phonStrip"]){ const c=$(id); if(!c)continue; c.style.cursor="crosshair";
+    c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); seekAtX(x,w,0,Math.max(.001,S.duration)); }); }
+  { const c=$("#ws_curves"); if(c){ c.style.cursor="crosshair";
+    c.addEventListener("pointerdown",e=>{ if(!S.duration)return; const {x,w}=canvasMetrics(c,e); seekAtX(x,w-16,8,Math.max(.001,S.duration)); }); } }
   // curve-edit toolbar + keyboard
   $("#cvUndo")&&($("#cvUndo").onclick=undoEdit);
   $("#cvRedo")&&($("#cvRedo").onclick=redoEdit);
