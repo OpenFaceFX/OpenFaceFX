@@ -83,7 +83,7 @@ def test_studio_style_dropdown_options_are_real_presets():
     # and did nothing. Every non-empty option must resolve to a real preset.
     import re, pathlib
     html = (pathlib.Path(__file__).resolve().parent.parent
-            / "src" / "openfacefx" / "studio_web" / "index.html").read_text()
+            / "src" / "openfacefx" / "studio_web" / "index.html").read_text(encoding="utf-8")
     sel = re.search(r'<select id="style">(.*?)</select>', html, re.S)
     assert sel, "no #style dropdown found in the Studio index.html"
     values = re.findall(r'<option value="([^"]*)"', sel.group(1))
