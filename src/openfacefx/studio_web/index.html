@@ -214,32 +214,24 @@
         </div>
       </section>
 
-      <!-- Workspace: every view live at once, one playhead (FaceFX unified layout) -->
+      <!-- Workspace: a resizable dock of relocatable panels, all live on one playhead -->
       <section class="view" data-view="workspace">
-        <div class="ws-grid">
-          <div class="ws-cell ws-face-cell">
-            <div class="ws-cap">Preview</div>
-            <div id="wsFaceMount" class="ws-facemount"></div>   <!-- the shared preview stage is moved in here -->
-          </div>
-          <div class="ws-cell ws-graph-cell">
-            <div class="ws-cap">Face Graph</div>
-            <canvas id="ws_facegraph" class="ws-canvas"></canvas>
-            <div class="ws-props" id="ws_props"></div>
-          </div>
-          <div class="ws-cell ws-curve-cell">
-            <div class="ws-cap">Curves</div>
-            <div class="ws-curvewrap">
-              <ul id="ws_rail" class="ws-rail" aria-label="curve select"></ul>
-              <canvas id="ws_curves" class="ws-canvas"></canvas>
-            </div>
-          </div>
-          <div class="ws-cell ws-phon-cell">
-            <div class="ws-cap">Phonemes &amp; spectrogram</div>
-            <canvas id="ws_wave" class="ws-canvas ws-wave"></canvas>
-            <canvas id="ws_phonStrip" class="ws-canvas ws-strip"></canvas>
-          </div>
+        <div class="ws-dock" id="wsDock">
+          <div class="ws-pane" data-pane="0"><div class="ws-pane-head"><select class="ws-pane-pick" data-pane="0" title="Which panel to show here"></select></div><div class="ws-pane-body"></div></div>
+          <div class="ws-pane" data-pane="1"><div class="ws-pane-head"><select class="ws-pane-pick" data-pane="1" title="Which panel to show here"></select></div><div class="ws-pane-body"></div></div>
+          <div class="ws-pane" data-pane="2"><div class="ws-pane-head"><select class="ws-pane-pick" data-pane="2" title="Which panel to show here"></select></div><div class="ws-pane-body"></div></div>
+          <div class="ws-pane" data-pane="3"><div class="ws-pane-head"><select class="ws-pane-pick" data-pane="3" title="Which panel to show here"></select></div><div class="ws-pane-body"></div></div>
+          <div class="ws-split ws-split-v" id="wsSplitV" title="Drag to resize columns"></div>
+          <div class="ws-split ws-split-h" id="wsSplitH" title="Drag to resize rows"></div>
         </div>
-        <p class="view-note dim">The FaceFX-style <b>unified workspace</b> — the neutral face, <b>Face&nbsp;Graph</b>, animation <b>curves</b> and the audio <b>spectrogram</b>, all live on a single playhead. Click a curve in the rail to select &amp; solo it · <b>drag a keyframe dot</b> to edit it (double-click to add, alt/right-click to delete, drag empty space to box-select) · click a rig-output node to inspect it · click the strip to seek.</p>
+        <!-- the relocatable panels; JS moves each into a pane body on entry (canvas IDs stay stable) -->
+        <div id="wsModules" hidden>
+          <div class="ws-mod" id="mod-preview" data-mod="preview" data-label="Preview"><div id="wsFaceMount" class="ws-facemount"></div></div>
+          <div class="ws-mod" id="mod-facegraph" data-mod="facegraph" data-label="Face Graph"><canvas id="ws_facegraph" class="ws-canvas"></canvas><div class="ws-props" id="ws_props"></div></div>
+          <div class="ws-mod" id="mod-curves" data-mod="curves" data-label="Curves"><div class="ws-curvewrap"><ul id="ws_rail" class="ws-rail" aria-label="curve select"></ul><canvas id="ws_curves" class="ws-canvas"></canvas></div></div>
+          <div class="ws-mod" id="mod-phonemes" data-mod="phonemes" data-label="Phonemes"><canvas id="ws_wave" class="ws-canvas ws-wave"></canvas><canvas id="ws_phonStrip" class="ws-canvas ws-strip"></canvas></div>
+        </div>
+        <p class="view-note dim">A resizable <b>dock</b> — drag the dividers to resize the sections, and use each pane's dropdown to put any panel (Preview · Face&nbsp;Graph · Curves · Phonemes) in any section. All live on one playhead: drag a curve's keyframe to edit · click a rig node to inspect · click the strip to seek. Layout is remembered.</p>
       </section>
 
       <!-- Phonemes -->

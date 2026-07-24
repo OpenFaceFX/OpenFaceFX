@@ -18,7 +18,7 @@ const CURVE_COLORS = ["#f4b942","#4cc2ff","#e06c9f","#5ad19a","#b78cff","#ff8f6b
 const S = {
   runtime:null, pyodide:null, native:false,
   track:null, segments:[], words:[], duration:0, fps:60,
-  wavBytes:null, wavPeaks:null, wavSpec:null, previewMode:"3d", ipa:true,
+  wavBytes:null, wavPeaks:null, wavSpec:null, previewMode:"3d", ipa:true, dock:null,
   chan:{},               // name -> {color, visible, idx}
   sel:null,              // selected channel name
   view:"preview",
@@ -70,6 +70,7 @@ window.StudioBridge = {
     customOuts:(S.customOuts&&S.customOuts.length)?S.customOuts:undefined, fgConst:Object.keys(S.fgConst||{}).length?S.fgConst:undefined,
     fgLink:Object.keys(S.fgLink||{}).length?S.fgLink:undefined,
     poses:(S.poses&&S.poses.length)?S.poses:undefined,               // saved expression presets
+    dock:S.dock||undefined,                                          // workspace dock layout (panes + splits)
     actors:S.actors.map(a=>({ name:a.name, takes:a.takes.map(t=>({
       name:t.name, params:t.params, wavName:t.wavName, colors:t.colors||undefined, cmudict:t.cmudict||undefined,
       track:t.track, segments:t.segments, words:t.words||undefined, duration:t.duration,
@@ -90,6 +91,7 @@ window.StudioBridge = {
     S.customOuts=Array.isArray(w.customOuts)?w.customOuts:[]; S.fgConst=(w.fgConst&&typeof w.fgConst==="object")?w.fgConst:{};
     S.fgLink=(w.fgLink&&typeof w.fgLink==="object")?w.fgLink:{};
     S.poses=Array.isArray(w.poses)?w.poses:[]; refreshPoseSelect();
+    if(w.dock&&Array.isArray(w.dock.order)&&w.dock.order.length===4){ S.dock=w.dock; const d=$("#wsDock"); if(d)d._init=false; }  // re-init the dock next entry
     loadTake(); refreshIO(); return true; },
 };
 
@@ -904,6 +906,7 @@ $$("#tabs .tab").forEach(t=>t.onclick=()=>{
   $$("#tabs .tab").forEach(x=>x.classList.remove("active")); t.classList.add("active");
   $$(".view").forEach(v=>v.classList.remove("active"));
   S.view=t.dataset.view; $(`.view[data-view="${S.view}"]`).classList.add("active");
+  if(S.view==="workspace") initDock();               // place modules into panes before mounting/drawing
   mountPreview(S.view);                              // move the shared preview into Preview / Workspace
   if(S.view==="workspace"){ const r=$("#ws_rail"); if(r)r._key=null;   // force a rail rebuild on entry
     // the grid's minmax(0,fr) tracks resolve to ~0 on the first tick — fitCanvas would
@@ -1330,6 +1333,55 @@ function updateWsProps(){
       `<span class="wp"><b>${c.keys.length}</b> keys</span>`+
       `<span class="wp">value <b class="mono">${sample(c.keys,S.t).toFixed(3)}</b></span>`;
   } else box.innerHTML=`<span class="dim">Click a rig node or a curve in the rail to see its properties.</span>`;
+}
+
+/* ---- Workspace dock: relocatable panels in a resizable 2×2 grid -------- *
+ * Each pane hosts one movable module; a picker swaps which module is where,
+ * splitters resize the columns/rows. Reuses the module canvases (ids unchanged),
+ * so all draw + edit code keeps working wherever a module lands. */
+const WS_MODS={preview:"Preview",facegraph:"Face Graph",curves:"Curves",phonemes:"Phonemes"};
+function initDock(){
+  const dock=$("#wsDock"); if(!dock||dock._init) return;
+  if(!S.dock){ let saved=null; try{ saved=JSON.parse(localStorage.getItem("offx_dock")||"null"); }catch(_){}
+    S.dock = (saved&&Array.isArray(saved.order)&&saved.order.length===4) ? saved
+      : {order:["preview","facegraph","curves","phonemes"], col:0.42, row:0.52}; }
+  $$(".ws-pane-pick").forEach(sel=>{ sel.innerHTML=Object.entries(WS_MODS).map(([k,v])=>`<option value="${k}">${v}</option>`).join("");
+    sel.onchange=()=>dockPick(+sel.dataset.pane, sel.value); });
+  placeDockModules(); applyDockLayout(); wireSplitters(); dock._init=true;
+}
+function _paneBody(i){ return $(`.ws-pane[data-pane="${i}"] .ws-pane-body`); }
+function placeDockModules(){
+  for(let i=0;i<4;i++){ const mod=S.dock.order[i], el=$("#mod-"+mod), body=_paneBody(i);
+    if(el&&body&&el.parentElement!==body) body.appendChild(el);
+    const sel=$(`.ws-pane-pick[data-pane="${i}"]`); if(sel) sel.value=mod; }
+}
+function dockPick(pane,mod){
+  const cur=S.dock.order[pane]; if(cur===mod) return;
+  const other=S.dock.order.indexOf(mod);            // swap so every module stays visible exactly once
+  if(other>=0) S.dock.order[other]=cur;
+  S.dock.order[pane]=mod; placeDockModules(); saveDock(); relayoutPreview();
+  if($("#ws_rail")) $("#ws_rail")._key=null; drawWorkspace();
+}
+function applyDockLayout(){ const d=$("#wsDock"); if(!d||!S.dock) return;
+  const c=S.dock.col, r=S.dock.row;
+  d.style.gridTemplateColumns=c+"fr "+(1-c)+"fr"; d.style.gridTemplateRows=r+"fr "+(1-r)+"fr";
+  const v=$("#wsSplitV"), h=$("#wsSplitH"); if(v)v.style.left=(c*100)+"%"; if(h)h.style.top=(r*100)+"%";
+}
+function relayoutPreview(){ const p=window.Preview3D; if(p&&p.ready) requestAnimationFrame(()=>{ p.resize(); p.reframe&&p.reframe(); }); }
+function saveDock(){ try{ localStorage.setItem("offx_dock",JSON.stringify(S.dock)); }catch(_){} }
+function wireSplitters(){
+  const dock=$("#wsDock"); if(!dock) return;
+  const drag=(el,axis)=>{ if(!el)return;
+    el.addEventListener("pointerdown",e=>{ e.preventDefault(); el.classList.add("drag"); try{el.setPointerCapture(e.pointerId);}catch(_){}
+      const move=ev=>{ const b=dock.getBoundingClientRect();
+        let f=axis==="v"?(ev.clientX-b.left)/b.width:(ev.clientY-b.top)/b.height;
+        f=Math.max(0.15,Math.min(0.85,f)); if(axis==="v")S.dock.col=f; else S.dock.row=f; applyDockLayout(); };
+      const up=ev=>{ el.classList.remove("drag"); try{el.releasePointerCapture(e.pointerId);}catch(_){}
+        el.removeEventListener("pointermove",move); el.removeEventListener("pointerup",up); el.removeEventListener("pointercancel",up);
+        saveDock(); relayoutPreview(); drawWorkspace(); };
+      el.addEventListener("pointermove",move); el.addEventListener("pointerup",up); el.addEventListener("pointercancel",up); });
+  };
+  drag($("#wsSplitV"),"v"); drag($("#wsSplitH"),"h");
 }
 
 /* ---- Face Graph (input visemes -> preset targets via link fns) ------ */
