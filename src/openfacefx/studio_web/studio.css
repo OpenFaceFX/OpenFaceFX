@@ -424,22 +424,27 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 @media (prefers-reduced-motion:reduce){ *{transition:none!important;} }
 
-/* ---- Unified Workspace (FaceFX single-screen layout) ----------------- */
-.view[data-view="workspace"]{ display:flex; flex-direction:column; height:100%; min-height:0; }
-.view[data-view="workspace"].active{ display:flex; }
-.ws-grid{ display:grid; gap:10px; flex:1 1 auto; min-height:0;
-  grid-template-columns:minmax(180px,1fr) minmax(280px,1.55fr);
-  grid-template-rows:minmax(170px,26vh) minmax(150px,1fr) 156px;
+/* ---- Unified Workspace (FaceFX single-screen layout) ----------------- *
+ * The whole thing must fit the views box exactly — never scroll or overlap.
+ * Every grid track is minmax(0,fr) so the panels SCALE DOWN to the parent
+ * viewbox instead of holding a fixed min height and bleeding out. */
+.view[data-view="workspace"]{ display:none; }
+.view[data-view="workspace"].active{ display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+.view[data-view="workspace"] .view-note{ flex:0 0 auto; }
+.ws-grid{ display:grid; gap:10px; flex:1 1 auto; min-height:0; min-width:0;
+  grid-template-columns:minmax(0,1fr) minmax(0,1.55fr);
+  grid-template-rows:minmax(0,1.05fr) minmax(0,1.5fr) minmax(0,0.72fr);
   grid-template-areas:"face graph" "curve curve" "phon phon"; }
 .ws-face-cell{ grid-area:face; } .ws-graph-cell{ grid-area:graph; }
 .ws-curve-cell{ grid-area:curve; } .ws-phon-cell{ grid-area:phon; }
-.ws-cell{ display:flex; flex-direction:column; min-height:0; min-width:0; gap:6px;
+.ws-cell{ display:flex; flex-direction:column; min-height:0; min-width:0; gap:6px; overflow:hidden;
   background:var(--panel-2); border:1px solid var(--line); border-radius:9px; padding:8px 9px; }
 .ws-cap{ flex:0 0 auto; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--fg-mute); }
-.ws-face{ flex:1 1 auto; min-height:0; width:100%; }
+.ws-facewrap{ flex:1 1 auto; min-height:0; position:relative; }
+.ws-face{ position:absolute; inset:0; width:100%; height:100%; }   /* viewBox scales to fit, centered */
 .ws-canvas{ flex:1 1 auto; min-height:0; width:100%; display:block; border-radius:5px; }
-.ws-curvewrap{ flex:1 1 auto; min-height:0; display:flex; gap:8px; }
-.ws-curvewrap .ws-canvas{ flex:1 1 auto; }
+.ws-curvewrap{ flex:1 1 auto; min-height:0; min-width:0; display:flex; gap:8px; }
+.ws-curvewrap .ws-canvas{ flex:1 1 auto; min-width:0; }
 .ws-rail{ flex:0 0 138px; overflow-y:auto; margin:0; padding:0; list-style:none; font-size:11px; }
 .ws-rc{ display:flex; align-items:center; gap:5px; padding:2px 4px; border-radius:4px; cursor:pointer; }
 .ws-rc:hover{ background:var(--elev); }

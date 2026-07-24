@@ -904,7 +904,10 @@ $$("#tabs .tab").forEach(t=>t.onclick=()=>{
   $$("#tabs .tab").forEach(x=>x.classList.remove("active")); t.classList.add("active");
   $$(".view").forEach(v=>v.classList.remove("active"));
   S.view=t.dataset.view; $(`.view[data-view="${S.view}"]`).classList.add("active");
-  if(S.view==="workspace"){ const r=$("#ws_rail"); if(r)r._key=null; }   // force a rail rebuild on entry
+  if(S.view==="workspace"){ const r=$("#ws_rail"); if(r)r._key=null;   // force a rail rebuild on entry
+    // the grid's minmax(0,fr) tracks resolve to ~0 on the first tick — fitCanvas would
+    // grab a 0-height buffer. Redraw after layout settles so every panel sizes correctly.
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{ if(S.view==="workspace") drawWorkspace(); })); }
   drawAll();
   if(S.view==="events") renderEventList();
   if(S.view==="mapping") renderMapping();
