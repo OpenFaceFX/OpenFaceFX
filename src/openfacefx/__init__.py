@@ -103,7 +103,7 @@ from .aligners import (from_whisper_json, from_whisperx, from_gentle,
                       from_gentle_phones)
 from .aligners_acoustic import from_allosaurus, from_phone_timestamps
 
-__version__ = "0.22.0"
+__version__ = "0.23.0"
 
 __all__ = [
     "G2P", "PhonemeSegment", "NaiveAligner", "load_mfa_textgrid",

@@ -8,6 +8,8 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-25
+
 ### Added
 - **`openfacefx.tts` — built-in speech synthesis** — a pure-numpy formant/source-filter
   synthesizer (`synthesize`, `synth_wav_bytes`, `to_wav_bytes`) turns a transcript into a
