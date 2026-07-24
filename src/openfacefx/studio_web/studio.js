@@ -1045,15 +1045,20 @@ async function drawFaceGraph(){
   x.globalAlpha=1;
   S.fgNodes=[]; x.font="12px "+css("--font-mono");
   const node=(px,py,label,fill,kind,data,glow)=>{ const tw=x.measureText(label).width, bw=Math.max(46,tw+18);
-    const sel=label===selLabel, hot=glow>0.03;
+    const sel=label===selLabel, hot=glow>0.03; const x0=px-bw/2, y0=py-11, H=22;
     if(hot){ x.shadowColor=acc; x.shadowBlur=4+glow*13; }
-    x.fillStyle=hot?"color-mix(in srgb,"+acc+" "+Math.round(18+glow*62)+"%,"+fill+")":fill;
+    x.fillStyle=hot?"color-mix(in srgb,"+acc+" "+Math.round(10+glow*22)+"%,"+fill+")":fill;
     x.strokeStyle=sel?acc:(hot?acc:css("--line-2")); x.lineWidth=sel?2:(hot?1.4:1);
-    roundRect(x,px-bw/2,py-11,bw,22,6); x.fill(); x.shadowBlur=0; x.stroke();
-    x.fillStyle=hot?css("--fg"):css("--fg"); x.textAlign="center"; x.textBaseline="middle"; x.fillText(label,px,py);
+    roundRect(x,x0,y0,bw,H,6); x.fill(); x.shadowBlur=0; x.stroke();
+    // live level meter: the box fills from the bottom by the signal, with a bright
+    // surface line — a per-node VU meter that tracks the sound/movement (#22-24).
+    if(glow>0.015){ x.save(); roundRect(x,x0,y0,bw,H,6); x.clip();
+      const fh=Math.min(H,glow*H); x.fillStyle="color-mix(in srgb,"+acc+" 50%, transparent)"; x.fillRect(x0,y0+H-fh,bw,fh);
+      x.fillStyle=acc; x.fillRect(x0,y0+H-fh-0.75,bw,1.5); x.restore(); }
+    x.fillStyle=css("--fg"); x.textAlign="center"; x.textBaseline="middle"; x.fillText(label,px,py);
     if(glow>0.06){ x.fillStyle=acc; x.font="9px "+css("--font-mono"); x.textAlign=kind==="in"?"right":"left";
-      x.fillText(glow.toFixed(2), kind==="in"?px-bw/2-5:px+bw/2+5, py); x.font="12px "+css("--font-mono"); x.textAlign="center"; }
-    S.fgNodes.push({x:px,y:py,w:bw,h:22,label,kind,data}); };
+      x.fillText(glow.toFixed(2), kind==="in"?x0-5:x0+bw+5, py); x.font="12px "+css("--font-mono"); x.textAlign="center"; }
+    S.fgNodes.push({x:px,y:py,w:bw,h:H,label,kind,data}); };
   for(const [n,[px,py]] of Object.entries(inPos)) node(px,py,n,css("--elev"),"in",S.presetMap[n],inVal[n]||0);
   for(const [n,[px,py]] of Object.entries(outPos)){
     const incoming=Object.entries(S.presetMap).filter(([,tg])=>tg.some(p=>p[0]===n)).map(([inp,tg])=>[inp,tg.find(p=>p[0]===n)[1]]);
