@@ -18,7 +18,7 @@ const CURVE_COLORS = ["#f4b942","#4cc2ff","#e06c9f","#5ad19a","#b78cff","#ff8f6b
 const S = {
   runtime:null, pyodide:null, native:false,
   track:null, segments:[], words:[], duration:0, fps:60,
-  wavBytes:null, wavPeaks:null, wavSpec:null, previewMode:"3d",
+  wavBytes:null, wavPeaks:null, wavSpec:null, previewMode:"3d", ipa:true,
   chan:{},               // name -> {color, visible, idx}
   sel:null,              // selected channel name
   view:"preview",
@@ -1097,7 +1097,8 @@ function drawCurves(cid){
   // curves
   const smooth=$("#curvesSmooth").checked;
   for(const c of S.track.channels){ const m=S.chan[c.name]; if(!m.visible)continue;
-    x.strokeStyle=m.color; x.lineWidth=(c.name===S.sel)?2.4:1.5; x.globalAlpha=(S.sel&&c.name!==S.sel)?.5:1;
+    x.strokeStyle=m.color; x.lineWidth=(c.name===S.sel)?2.6:1.8; x.globalAlpha=(S.sel&&c.name!==S.sel)?.55:1;
+    x.lineJoin="round"; x.lineCap="round";
     if(smooth && c.keys.length>=2) strokeSmooth(x, c.keys.map(k=>[X(k[0]),Y(k[1])]));
     else { x.beginPath(); const N=Math.max(2,Math.floor(gw));
       for(let i=0;i<=N;i++){ const tt=T*i/N, px=padL+gw*i/N, py=Y(sample(c.keys,tt)); i?x.lineTo(px,py):x.moveTo(px,py); }
@@ -1131,12 +1132,28 @@ function drawCurveStrip(cid){
   for(const s of S.segments){ const a=X(s.start), b=X(s.end); const sil=(s.phoneme||"").toLowerCase()==="sil"||s.phoneme==="_";
     x.fillStyle=sil?css("--panel-2"):css("--elev"); x.fillRect(a+1,2,Math.max(1,b-a-2),rowH-4);
     x.strokeStyle=css("--line"); x.strokeRect(a+1,2,Math.max(1,b-a-2),rowH-4);
-    if(b-a>12&&!sil){ x.fillStyle=css("--fg-dim"); x.fillText(s.phoneme,a+4,2+(rowH-4)/2); } }
+    if(b-a>10&&!sil){ const lbl=phLabel(s.phoneme); if(lbl){ x.fillStyle=css("--fg-dim"); x.fillText(lbl,a+4,2+(rowH-4)/2); } } }
   if(hasWords) for(const wd of S.words){ const a=X(wd[1]), b=X(wd[2]);
     x.fillStyle="color-mix(in srgb,"+css("--accent-2")+" 15%,"+css("--elev")+")"; x.fillRect(a+1,rowH+2,Math.max(1,b-a-2),rowH-4);
     x.strokeStyle=css("--line"); x.strokeRect(a+1,rowH+2,Math.max(1,b-a-2),rowH-4);
     if(b-a>16){ x.fillStyle=css("--fg"); x.fillText(wd[0],a+4,rowH+2+(rowH-4)/2); } }
   x.strokeStyle=css("--accent"); x.beginPath(); const hx=X(S.t); x.moveTo(hx,0);x.lineTo(hx,h);x.stroke();
+}
+
+/* ARPABET (CMUdict, what the backend emits) → IPA for display only. The stored
+ * phonemes stay ARPABET — this just shows the friendlier phonetic glyphs FaceFX
+ * uses instead of AH0/OW1/EH1. Toggle with S.ipa. */
+const ARPA_IPA={AA:'ɑ',AE:'æ',AH:'ʌ',AO:'ɔ',AW:'aʊ',AY:'aɪ',B:'b',CH:'tʃ',D:'d',DH:'ð',
+  EH:'ɛ',ER:'ɝ',EY:'eɪ',F:'f',G:'ɡ',HH:'h',IH:'ɪ',IY:'i',JH:'dʒ',K:'k',L:'l',M:'m',N:'n',
+  NG:'ŋ',OW:'oʊ',OY:'ɔɪ',P:'p',R:'ɹ',S:'s',SH:'ʃ',T:'t',TH:'θ',UH:'ʊ',UW:'u',V:'v',W:'w',Y:'j',Z:'z',ZH:'ʒ'};
+function phLabel(ph){
+  if(!ph) return ""; const low=ph.toLowerCase(); if(low==="sil"||low==="_") return "";   // silence: blank cell
+  if(!S.ipa) return ph;                                                    // ARPABET as-is
+  const m=ph.toUpperCase().match(/^([A-Z]+)(\d?)$/); if(!m) return ph;     // unknown (e.g. JP) → leave alone
+  const base=m[1], st=m[2];
+  if(base==="AH"&&st==="0") return "ə";                                    // schwa
+  if(base==="ER"&&st==="0") return "ɚ";                                    // r-coloured schwa
+  return ARPA_IPA[base]||ph;
 }
 
 /* ---- Phonemes (waveform + strip) ------------------------------------ */
@@ -1157,33 +1174,31 @@ function fftInPlace(re,im){ const n=re.length;                 // iterative radi
         re[b]=re[a]-vr; im[b]=im[a]-vi; re[a]+=vr; im[a]+=vi;
         const ncr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=ncr; } } }
 }
-function computeSpectrogram(samples,sr,cols=260,bins=48){
+function computeSpectrogram(samples,sr,cols=480,bins=120){
   const win=1024; const N=samples.length; if(!N||N<win||!sr) return null;
   const hann=new Float32Array(win); for(let i=0;i<win;i++)hann[i]=0.5-0.5*Math.cos(2*Math.PI*i/(win-1));
   const hop=Math.max(1,Math.floor((N-win)/(cols-1)));
-  const nyq=sr/2; const topBin=Math.max(bins,Math.min(win>>1,Math.floor(5000/nyq*(win>>1))));  // ~0-5kHz
+  const nyq=sr/2; const topBin=Math.max(bins,Math.min(win>>1,Math.floor(6000/nyq*(win>>1))));  // ~0-6kHz
   const re=new Float32Array(win), im=new Float32Array(win);
-  const mag=new Float32Array(cols*bins); let gmax=1e-9;
+  const mag=new Float32Array(cols*bins); let dbMax=-1e9;
   for(let c=0;c<cols;c++){ const off=c*hop;
     for(let i=0;i<win;i++){ re[i]=(samples[off+i]||0)*hann[i]; im[i]=0; }
     fftInPlace(re,im);
     for(let b=0;b<bins;b++){ const lo=Math.floor(b*topBin/bins), hi=Math.max(lo+1,Math.floor((b+1)*topBin/bins));
       let s=0; for(let k=lo;k<hi;k++) s+=Math.hypot(re[k],im[k]);
-      const v=Math.log10(1+s/(hi-lo)); mag[c*bins+b]=v; if(v>gmax)gmax=v; } }
-  const data=new Uint8Array(cols*bins); for(let i=0;i<mag.length;i++) data[i]=Math.round(255*Math.min(1,mag[i]/gmax));
+      const db=20*Math.log10(s/(hi-lo)+1e-7); mag[c*bins+b]=db; if(db>dbMax)dbMax=db; } }   // proper dB magnitude
+  const DR=72, floor=dbMax-DR, data=new Uint8Array(cols*bins);    // 72 dB dynamic range, floor at the noise
+  for(let i=0;i<mag.length;i++){ let v=(mag[i]-floor)/DR; v=v<0?0:v>1?1:v; data[i]=Math.round(255*Math.pow(v,0.82)); }
   return {cols,bins,data};
 }
 function parseColor(s){ s=(s||"").trim();
   if(s[0]==="#"){ const n=s.length===4?("#"+s[1]+s[1]+s[2]+s[2]+s[3]+s[3]):s;
     return [parseInt(n.slice(1,3),16),parseInt(n.slice(3,5),16),parseInt(n.slice(5,7),16)]; }
   const m=s.match(/[\d.]+/g); return m&&m.length>=3?[+m[0],+m[1],+m[2]]:[130,130,130]; }
-function specLUT(){                                            // 256-entry heatmap from theme colours
-  const stops=[[parseColor(css("--panel-2")),0],[parseColor(css("--accent-2")),.5],[parseColor(css("--accent")),.82],[parseColor(css("--fg")),1]];
-  const lut=new Array(256);
-  for(let i=0;i<256;i++){ const t=i/255; let a=stops[0],b=stops[stops.length-1];
-    for(let s=0;s<stops.length-1;s++){ if(t>=stops[s][1]&&t<=stops[s+1][1]){ a=stops[s];b=stops[s+1];break; } }
-    const f=(b[1]-a[1])?(t-a[1])/(b[1]-a[1]):0;
-    lut[i]=[a[0][0]+(b[0][0]-a[0][0])*f|0, a[0][1]+(b[0][1]-a[0][1])*f|0, a[0][2]+(b[0][2]-a[0][2])*f|0]; }
+function specLUT(){                                            // clean grayscale ramp (panel bg → fg), like FaceFX; theme-aware
+  const lo=parseColor(css("--panel-2")), hi=parseColor(css("--fg")); const lut=new Array(256);
+  for(let i=0;i<256;i++){ const t=i/255;
+    lut[i]=[lo[0]+(hi[0]-lo[0])*t|0, lo[1]+(hi[1]-lo[1])*t|0, lo[2]+(hi[2]-lo[2])*t|0]; }
   return lut;
 }
 function drawSpectrogram(x,w,h,spec){
@@ -1213,11 +1228,7 @@ function drawPhonemes(waveCid,stripCid){
   const T=Math.max(.001,S.duration); const mid=h/2;
   x.fillStyle=css("--panel-2"); x.fillRect(0,0,w,h);
   if(S.wavBytes&&!S.wavSpec) ensureSpec();                      // lazily build the STFT from the take's audio
-  if(S.wavSpec){                                                // FaceFX-style spectrogram of the loaded audio
-    drawSpectrogram(x,w,h,S.wavSpec);
-    if(S.wavPeaks){ x.strokeStyle=css("--fg"); x.globalAlpha=.16; x.beginPath();   // faint amplitude outline on top
-      for(let i=0;i<w;i++){ const p=S.wavPeaks[Math.floor(S.wavPeaks.length*i/w)]||0; i?x.lineTo(i,mid-p*mid*.9):x.moveTo(i,mid-p*mid*.9); } x.stroke(); x.globalAlpha=1; }
-  }
+  if(S.wavSpec){ drawSpectrogram(x,w,h,S.wavSpec); }             // FaceFX-style grayscale spectrogram of the loaded audio
   // waveform: real peaks if audio, else synthetic openness envelope
   else if(S.wavPeaks){ x.strokeStyle=css("--accent-2"); x.globalAlpha=.85; x.beginPath();
     for(let i=0;i<w;i++){ const p=S.wavPeaks[Math.floor(S.wavPeaks.length*i/w)]||0; x.moveTo(i,mid-p*mid*.9); x.lineTo(i,mid+p*mid*.9); } x.stroke(); }
@@ -1246,12 +1257,22 @@ function drawPhonemes(waveCid,stripCid){
 }
 function drawStrip(cid){
   const cv=$("#"+(cid||"phonStrip")); if(!cv)return; const {x,w,h}=fitCanvas(cv); x.clearRect(0,0,w,h);
-  const T=Math.max(.001,S.duration); x.font="11px "+css("--font-mono"); x.textBaseline="middle";
-  for(const s of S.segments){ const a=w*(s.start/T), b=w*(s.end/T); const sil=(s.phoneme||"").toLowerCase()==="sil"||s.phoneme==="_";
-    x.fillStyle=sil?css("--panel-2"):css("--elev"); x.fillRect(a+1,4,Math.max(1,b-a-2),h-8);
-    x.strokeStyle=css("--line"); x.strokeRect(a+1,4,Math.max(1,b-a-2),h-8);
-    if(b-a>14){ x.fillStyle=sil?css("--fg-mute"):css("--fg"); x.fillText(s.phoneme,a+5,h/2); } }
-  x.strokeStyle=css("--accent"); x.beginPath(); const hx=w*(S.t/T); x.moveTo(hx,0);x.lineTo(hx,h);x.stroke();
+  const T=Math.max(.001,S.duration); const X=t=>w*(t/T); x.textBaseline="middle";
+  const hasWords=!!(S.words&&S.words.length), rowH=hasWords?h/2:h;   // FaceFX-style: phonemes over grouped words
+  // phoneme row (top) — IPA glyphs, centred in each cell
+  x.font="13px "+css("--font-mono");
+  for(const s of S.segments){ const a=X(s.start), b=X(s.end); const sil=(s.phoneme||"").toLowerCase()==="sil"||s.phoneme==="_";
+    x.fillStyle=sil?css("--panel-2"):css("--elev"); x.fillRect(a+1,3,Math.max(1,b-a-2),rowH-5);
+    x.strokeStyle=css("--line"); x.strokeRect(a+1,3,Math.max(1,b-a-2),rowH-5);
+    const lbl=phLabel(s.phoneme); if(lbl&&b-a>9){ x.fillStyle=css("--fg"); x.textAlign="center"; x.fillText(lbl,(a+b)/2,3+(rowH-5)/2); } }
+  // word row (bottom) — each word spans its phonemes
+  if(hasWords){ x.font="12px "+css("--font-ui"); x.textAlign="center";
+    for(const wd of S.words){ const a=X(wd[1]), b=X(wd[2]);
+      x.fillStyle="color-mix(in srgb,"+css("--accent-2")+" 16%,"+css("--elev")+")"; x.fillRect(a+1,rowH+2,Math.max(1,b-a-2),rowH-5);
+      x.strokeStyle=css("--line"); x.strokeRect(a+1,rowH+2,Math.max(1,b-a-2),rowH-5);
+      if(b-a>16){ x.fillStyle=css("--fg"); x.fillText(wd[0],(a+b)/2,rowH+2+(rowH-5)/2); } } }
+  x.textAlign="left";
+  x.strokeStyle=css("--accent"); x.beginPath(); const hx=X(S.t); x.moveTo(hx,0);x.lineTo(hx,h);x.stroke();
 }
 
 /* ---- Unified Workspace: every view live on one playhead (FaceFX layout) ---- */
@@ -1602,6 +1623,7 @@ function wireCanvases(){
   $("#cvAddKey")&&($("#cvAddKey").onclick=addKeyAtPlayhead);
   $("#cvDelKey")&&($("#cvDelKey").onclick=delKeyAtPlayhead);
   $("#qaRun")&&($("#qaRun").onclick=runQA);
+  $("#ipaToggle")&&($("#ipaToggle").onchange=e=>{ S.ipa=e.target.checked; drawAll(); });   // IPA ⇄ ARPABET phoneme labels (display only)
   $("#evRun")&&($("#evRun").onclick=runEvents);
   // re-derive live when a toggle changes, but only once events already exist
   ["#evEmphasis","#evPhrase"].forEach(id=>{ const c=$(id); if(c) c.onchange=()=>{ if(S.events&&S.events.length) runEvents(); }; });

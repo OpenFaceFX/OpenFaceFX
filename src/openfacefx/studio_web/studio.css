@@ -245,7 +245,7 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .lane { width:100%; background:var(--panel-2); border:1px solid var(--line);
   border-radius:var(--r); display:block; }
 .lane.tall { flex:1; min-height:280px; }
-.phon { height:64px; }
+.phon { height:88px; }   /* two tiers: phonemes (IPA) over grouped words */
 
 /* ---- Preview --------------------------------------------------------- */
 .preview-stage { flex:1; position:relative; overflow:hidden; display:flex;
