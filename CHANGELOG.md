@@ -8,6 +8,17 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Studio align-from-file** — an **Align from…** control in the Generate panel
+  times a take from a real-audio **ASR/caption alignment** instead of naive/energy
+  timing: Whisper / WhisperX / Gentle / Vosk JSON, SRT / WebVTT, word-anchor JSON,
+  Azure / ElevenLabs word timings, and Allosaurus phones. SRT/VTT and the ASR
+  formats carry their own transcript; word-timing formats use the Transcript box.
+  Routes to the matching `anchors`/`aligners` adapter → `anchored_segments` →
+  track (mirrors the CLI `--anchors` flow) via a `studio_align` bridge + native
+  `/api/align`, producing a take timed to the actual speech with its phoneme
+  segments (visible on the Phonemes tab). 3 new tests.
+
 ## [0.22.0] - 2026-07-24
 
 ### Changed

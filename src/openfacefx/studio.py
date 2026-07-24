@@ -289,6 +289,53 @@ def _import(p: dict) -> dict:
             pass
 
 
+def _align(p: dict) -> dict:
+    """Time a take from an external ASR/caption alignment (real audio) → phoneme
+    segments → track. Mirrors the CLI ``--anchors`` flow. {track, segments,...}/{error}."""
+    from openfacefx import (anchored_segments, anchors_transcript, generate_from_alignment,
+        to_dict, parse_srt, parse_vtt, parse_word_anchors, from_azure_word_boundaries,
+        from_elevenlabs_alignment, from_kokoro_tokens, from_whisper_json, from_whisperx,
+        from_gentle, from_gentle_phones, from_vosk, from_google_timepoints,
+        from_allosaurus, from_phone_timestamps)
+    from openfacefx.alignment import dump_segments
+    fmt = p.get("format", "whisper")
+    text = p.get("text", "") or ""
+    transcript = (p.get("transcript") or "").strip()
+    parsers = {"srt": parse_srt, "vtt": parse_vtt, "words": parse_word_anchors,
+               "azure": from_azure_word_boundaries, "elevenlabs": from_elevenlabs_alignment,
+               "kokoro": from_kokoro_tokens, "whisper": from_whisper_json,
+               "whisperx": from_whisperx, "gentle": from_gentle, "vosk": from_vosk}
+    self_transcribing = ("srt", "vtt", "whisper", "whisperx", "gentle", "vosk")
+    try:
+        if fmt == "gentle-phones":
+            segs = from_gentle_phones(text)
+        elif fmt == "allosaurus":
+            segs = from_allosaurus(text)
+        elif fmt == "phones":
+            segs = from_phone_timestamps(text)
+        else:
+            if fmt in self_transcribing:
+                anchors = from_vosk(text) if fmt == "vosk" else parsers[fmt](text)
+                tr = transcript or anchors_transcript(anchors)
+            else:
+                if not transcript:
+                    return {"error": f"the {fmt} format needs a transcript — type it in the Transcript box"}
+                tr = transcript
+                anchors = from_google_timepoints(text, tr) if fmt == "google" else parsers[fmt](text)
+            dur = max((a.end for a in anchors), default=0.0)
+            if dur <= 0:
+                return {"error": "the alignment has no usable word timings"}
+            segs = anchored_segments(tr, dur, anchors)
+        if not segs:
+            return {"error": "no phoneme segments produced from the alignment"}
+        track = generate_from_alignment(segs)
+        return {"track": to_dict(track), "segments": dump_segments(segs),
+                "duration": round(float(track.duration), 4), "fps": track.fps,
+                "channels": len(track.channels)}
+    except (ValueError, KeyError, TypeError, IndexError) as e:
+        return {"error": f"{fmt}: {e}"}
+
+
 def _presets() -> list:
     from openfacefx import PRESETS
     return sorted(PRESETS)
@@ -536,6 +583,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_mapping_json(body))
             if path == "/api/import":
                 return self._json(_import(body))
+            if path == "/api/align":
+                return self._json(_align(body))
             if path in ("/api/auth/register", "/api/auth/login"):
                 from .studio_saas import AuthError
                 fn = _store().register if path.endswith("register") else _store().login

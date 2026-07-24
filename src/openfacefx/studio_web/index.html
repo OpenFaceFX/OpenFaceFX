@@ -103,6 +103,24 @@
         <span class="filehint" id="importHint">glTF · VMD · A2F · Live&nbsp;Link CSV · BVH · cues · track JSON → a new take</span>
       </div>
 
+      <div class="gen-row two">
+        <label class="filebtn" for="alignFile" id="alignBtn" title="Time the take from a real-audio ASR/caption alignment (uses the Transcript above for word formats)">Align from…</label>
+        <input type="file" id="alignFile" accept=".json,.srt,.vtt,.txt,.tsv" hidden>
+        <select id="alignFmt" class="mini" title="alignment format">
+          <option value="whisper">Whisper JSON</option>
+          <option value="whisperx">WhisperX JSON</option>
+          <option value="gentle">Gentle JSON</option>
+          <option value="vosk">Vosk JSON</option>
+          <option value="srt">SRT captions</option>
+          <option value="vtt">WebVTT</option>
+          <option value="words">word anchors (JSON)</option>
+          <option value="azure">Azure word boundaries</option>
+          <option value="elevenlabs">ElevenLabs alignment</option>
+          <option value="allosaurus">Allosaurus phones</option>
+        </select>
+      </div>
+      <span class="filehint" id="alignHint">real-audio timing → a new take (SRT/Whisper/Gentle/Vosk carry the words; others use the Transcript)</span>
+
       <label class="opt"><input type="checkbox" id="optGestures"> Procedural gestures (blink · brows · head · gaze)</label>
       <label class="opt"><input type="checkbox" id="optBreath"> Idle breathing</label>
 

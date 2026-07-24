@@ -21,7 +21,7 @@ from openfacefx.alignment import dump_segments
 from openfacefx.mapping import Mapping
 from openfacefx.studio import (_generate, _export, _events, _mapping_default,
                               _mapping_json, _qa, _presets, _preset, _normalize,
-                              _import)
+                              _import, _align)
 
 TEXT = "hello brave new world"
 
@@ -222,6 +222,30 @@ def test_export_lip_from_segments():
     r = _export("lip", d, segments=segs)
     assert "error" not in r and len(base64.b64decode(r["b64"])) > 0
     assert "error" in _export("lip", d, segments=[])          # .lip needs segments
+
+
+def test_align_srt_self_transcribing():
+    srt = ("1\n00:00:00,000 --> 00:00:00,600\nhello\n\n"
+           "2\n00:00:00,600 --> 00:00:01,200\nworld\n")
+    r = _align({"format": "srt", "text": srt, "transcript": ""})   # SRT carries the words
+    assert "error" not in r and r["channels"] > 0 and r["segments"]
+    assert r["duration"] == pytest.approx(1.2, abs=0.2)
+
+
+def test_align_words_needs_transcript_then_works():
+    words = json.dumps([{"word": "hello", "start": 0.0, "end": 0.6},
+                        {"word": "world", "start": 0.6, "end": 1.2}])
+    assert "error" in _align({"format": "words", "text": words, "transcript": ""})
+    r = _align({"format": "words", "text": words, "transcript": "hello world"})
+    assert "error" not in r and r["channels"] > 0
+
+
+def test_align_whisper_json():
+    wh = json.dumps({"segments": [{"words": [
+        {"word": "hello", "start": 0.0, "end": 0.6},
+        {"word": "world", "start": 0.6, "end": 1.2}]}]})
+    r = _align({"format": "whisper", "text": wh, "transcript": ""})
+    assert "error" not in r and r["channels"] > 0
 
 
 def test_export_fuz_bundles_lip_and_audio():

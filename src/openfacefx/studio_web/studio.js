@@ -290,6 +290,40 @@ def studio_import(name, b64):
         try: os.remove(path)
         except Exception: pass
 
+def studio_align(transcript, fmt, text):
+    # time a take from an external ASR/caption alignment (real audio) → segments → track
+    from openfacefx import (anchored_segments, anchors_transcript, generate_from_alignment,
+        parse_srt, parse_vtt, parse_word_anchors, from_azure_word_boundaries, from_elevenlabs_alignment,
+        from_kokoro_tokens, from_whisper_json, from_whisperx, from_gentle, from_gentle_phones,
+        from_vosk, from_google_timepoints, from_allosaurus, from_phone_timestamps)
+    from openfacefx.alignment import dump_segments
+    parsers = {"srt":parse_srt,"vtt":parse_vtt,"words":parse_word_anchors,"azure":from_azure_word_boundaries,
+        "elevenlabs":from_elevenlabs_alignment,"kokoro":from_kokoro_tokens,"whisper":from_whisper_json,
+        "whisperx":from_whisperx,"gentle":from_gentle,"vosk":from_vosk}
+    selfx = ("srt","vtt","whisper","whisperx","gentle","vosk")
+    tr = (transcript or "").strip()
+    try:
+        if fmt=="gentle-phones": segs=from_gentle_phones(text)
+        elif fmt=="allosaurus": segs=from_allosaurus(text)
+        elif fmt=="phones": segs=from_phone_timestamps(text)
+        else:
+            if fmt in selfx:
+                anchors = from_vosk(text) if fmt=="vosk" else parsers[fmt](text)
+                tt = tr or anchors_transcript(anchors)
+            else:
+                if not tr: return json.dumps({"error":"the "+fmt+" format needs a transcript — type it in the Transcript box"})
+                tt = tr
+                anchors = from_google_timepoints(text, tt) if fmt=="google" else parsers[fmt](text)
+            dur = max((a.end for a in anchors), default=0.0)
+            if dur<=0: return json.dumps({"error":"the alignment has no usable word timings"})
+            segs = anchored_segments(tt, dur, anchors)
+        if not segs: return json.dumps({"error":"no phoneme segments produced from the alignment"})
+        track = generate_from_alignment(segs)
+        return json.dumps({"track": to_dict(track), "segments": dump_segments(segs),
+            "duration": round(float(track.duration),4), "fps": track.fps, "channels": len(track.channels)})
+    except Exception as e:
+        return json.dumps({"error": fmt+": "+str(e)})
+
 _EXPORTERS = {}
 def _reg(fmt, fn): _EXPORTERS[fmt]=fn
 
@@ -456,6 +490,10 @@ const Pipe = {
   async importFile(name,b64){
     if(S.native) return fetch("/api/import",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name,b64})}).then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_import"); const r=JSON.parse(fn(name,b64)); fn.destroy(); return r;
+  },
+  async align(transcript,fmt,text){
+    if(S.native) return fetch("/api/align",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({transcript,format:fmt,text})}).then(r=>r.json());
+    const fn=S.pyodide.globals.get("studio_align"); const r=JSON.parse(fn(transcript||"",fmt,text)); fn.destroy(); return r;
   }
 };
 
@@ -504,6 +542,24 @@ $("#importFile") && ($("#importFile").onchange=async e=>{ const f=e.target.files
     if(res.warnings&&res.warnings.length) console.warn("import warnings:", res.warnings);
   }catch(err){ if(hint) hint.textContent=orig; alert("Import failed: "+err.message); }
   finally{ e.target.value=""; }   // allow re-importing the same file
+});
+
+/* Align a take from a real-audio ASR/caption alignment file → a new, accurately-timed take */
+$("#alignFile") && ($("#alignFile").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
+  const hint=$("#alignHint"), orig=hint?hint.textContent:""; if(hint) hint.textContent="aligning from "+f.name+"…";
+  try{
+    const text=await f.text();
+    const res=await Pipe.align($("#text").value||"", $("#alignFmt").value, text);
+    if(res.error) throw new Error(res.error);
+    newTakeSlot(); const tk=curTake();
+    tk.track=res.track; tk.segments=res.segments||[]; tk.words=[]; tk.duration=res.duration;
+    tk.name=("aligned · "+f.name.replace(/\.[^.]+$/,"")).slice(0,40);
+    tk.wavName="aligned from "+f.name+" ("+$("#alignFmt").value+")"; tk.wavBytes=null; tk.wavPeaks=null;
+    if(res.fps){ tk.params={...tk.params, fps:String(res.fps)}; }
+    loadTake(); refreshIO();
+    if(hint) hint.textContent=`aligned · ${res.channels} channels · ${(+res.duration).toFixed(2)}s (see the Phonemes tab)`;
+  }catch(err){ if(hint) hint.textContent=orig; alert("Align failed: "+err.message); }
+  finally{ e.target.value=""; }
 });
 
 async function runGenerate(preserve){
