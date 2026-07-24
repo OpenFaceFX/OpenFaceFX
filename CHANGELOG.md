@@ -8,6 +8,13 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Studio: audio plays with the transport** — when a take has audio (a loaded clip
+  or an AI-generated voice), pressing play now plays it, in sync — the audio is the
+  transport clock while it runs, so the face/curves/playhead track the real audio.
+  Web Audio (`decodeAudioData` + `AudioBufferSourceNode`); scrub/seek re-cue it, it
+  restarts on loop, and a transport **🔊/🔇 mute** toggles it.
+
 ## [0.23.0] - 2026-07-25
 
 ### Added
