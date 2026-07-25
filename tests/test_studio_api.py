@@ -21,7 +21,7 @@ from openfacefx.alignment import dump_segments
 from openfacefx.mapping import Mapping
 from openfacefx.studio import (_generate, _export, _events, _mapping_default,
                               _mapping_json, _qa, _presets, _preset, _normalize,
-                              _import, _align, _resolve, _tts)
+                              _import, _align, _resolve, _tts, _tts_cloud)
 
 TEXT = "hello brave new world"
 
@@ -271,6 +271,13 @@ def test_tts_generates_wav():
 
 def test_tts_needs_duration():
     assert "error" in _tts({"text": "hi", "dur": 0})
+
+
+def test_tts_cloud_guards():
+    # error paths that don't touch the network (no key / no text / unknown provider)
+    assert "error" in _tts_cloud({"provider": "openai", "key": "", "text": "hi"})
+    assert "error" in _tts_cloud({"provider": "openai", "key": "k", "text": ""})
+    assert "unknown provider" in _tts_cloud({"provider": "nope", "key": "k", "text": "hi"})["error"]
 
 
 def test_resolve_empty_errors_cleanly():

@@ -411,6 +411,50 @@ def _llm(p: dict) -> dict:
         return {"error": str(e)}
 
 
+def _tts_cloud(p: dict) -> dict:
+    """Stateless BYO-key neural-TTS relay (OpenAI / ElevenLabs). Forwards the
+    caller's own key on this one request and stores NOTHING — sidesteps browser
+    CORS (OpenAI blocks it) and keeps the key off any third party but the chosen
+    provider. Returns base64 audio + its mime type."""
+    provider = (p.get("provider") or "").lower()
+    key = (p.get("key") or "").strip()
+    text = (p.get("text") or "").strip()
+    voice = (p.get("voice") or "").strip()
+    model = (p.get("model") or "").strip()
+    if not key:
+        return {"error": "no API key"}
+    if not text:
+        return {"error": "no text to speak"}
+    try:
+        if provider == "openai":
+            body = json.dumps({"model": model or "gpt-4o-mini-tts", "voice": voice or "alloy",
+                               "input": text, "response_format": "wav"}).encode()
+            req = _urlrequest.Request("https://api.openai.com/v1/audio/speech", data=body, method="POST",
+                                      headers={"content-type": "application/json",
+                                               "authorization": "Bearer " + key})
+            mime = "audio/wav"
+        elif provider == "elevenlabs":
+            vid = voice or "21m00Tcm4TlvDq8ikWAM"       # a default public voice
+            body = json.dumps({"text": text, "model_id": model or "eleven_multilingual_v2"}).encode()
+            req = _urlrequest.Request("https://api.elevenlabs.io/v1/text-to-speech/" + vid, data=body,
+                                      method="POST", headers={"content-type": "application/json",
+                                                              "xi-api-key": key, "accept": "audio/mpeg"})
+            mime = "audio/mpeg"
+        else:
+            return {"error": "unknown provider: " + provider}
+        with _urlrequest.urlopen(req, timeout=90) as r:
+            audio = r.read()
+        return {"audio_b64": base64.b64encode(audio).decode(), "mime": mime}
+    except HTTPError as e:
+        try:
+            msg = e.read()[:300].decode("utf-8", "ignore")
+        except Exception:
+            msg = f"{e.code} {e.reason}"
+        return {"error": f"{provider} {e.code}: {msg}"}
+    except (URLError, Exception) as e:
+        return {"error": str(e)}
+
+
 def _normalize(p: dict) -> dict:
     """Deterministic, keyless transcript normalization (qa.normalize_transcript)."""
     from openfacefx import normalize_transcript
@@ -619,6 +663,8 @@ class _Handler(BaseHTTPRequestHandler):
                                           body.get("audio_b64") or ""))
             if path == "/api/llm":
                 return self._json(_llm(body))
+            if path == "/api/tts_cloud":
+                return self._json(_tts_cloud(body))
             if path == "/api/normalize":
                 return self._json(_normalize(body))
             if path == "/api/bake_emotion":

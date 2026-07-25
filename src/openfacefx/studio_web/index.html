@@ -94,8 +94,22 @@
       <div class="gen-row">
         <label class="filebtn" for="wav" id="wavBtn">Load voice clip…</label>
         <input type="file" id="wav" accept="audio/*,.wav" hidden>
-        <button class="filebtn" id="ttsBtn" title="Synthesize voice audio from the transcript (built-in formant TTS) — drives the spectrogram + audio lip-sync, no clip needed">🔊 Generate voice</button>
+        <button class="filebtn" id="ttsBtn" title="Synthesize voice audio from the transcript, then drive the spectrogram + audio lip-sync from it">🔊 Generate voice</button>
+        <button class="filebtn" id="voiceCfgBtn" title="Voice engine settings — use a real neural voice with your own API key">⚙</button>
         <span class="filehint" id="wavName">no audio — timing from text</span>
+      </div>
+      <div id="voicePanel" class="voice-panel" hidden>
+        <label class="vp-row"><span>Voice engine</span>
+          <select id="voiceProvider">
+            <option value="builtin">Built-in — robotic, no key, offline</option>
+            <option value="elevenlabs">ElevenLabs — neural, works in the browser</option>
+            <option value="openai">OpenAI — neural, desktop Studio only</option>
+          </select></label>
+        <label class="vp-row" id="voiceKeyRow" hidden><span>API key</span>
+          <input type="password" id="voiceKey" placeholder="your provider API key" autocomplete="off" spellcheck="false"></label>
+        <label class="vp-row" id="voiceVoiceRow" hidden><span>Voice</span>
+          <input type="text" id="voiceVoice" placeholder="voice id / name (blank = default)" spellcheck="false"></label>
+        <p class="voice-note dim">Your key is kept on this device only (localStorage) and sent solely to the provider you choose — never to OpenFaceFX. ElevenLabs works in the browser; OpenAI needs the desktop Studio (its API blocks browser calls). With a neural engine, <b>Generate voice</b> uses it; otherwise the built-in synth.</p>
       </div>
 
       <div class="gen-row">

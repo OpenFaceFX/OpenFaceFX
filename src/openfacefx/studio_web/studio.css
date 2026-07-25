@@ -174,6 +174,16 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .qa-pw .pw-in:focus { outline:none; border-color:var(--accent); }
 .qa-pw .pw-save { flex:0 0 auto; }
 .qa-pron-foot { display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; }
+/* voice engine settings (BYO-key neural TTS) */
+.voice-panel { margin:8px 0 4px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--r-sm);
+  background:var(--panel); display:flex; flex-direction:column; gap:8px; }
+.voice-panel[hidden] { display:none; }
+.vp-row { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--fg-dim); }
+.vp-row > span { flex:0 0 74px; }
+.vp-row select, .vp-row input { flex:1 1 auto; min-width:0; background:var(--panel-2); color:var(--fg);
+  border:1px solid var(--line); border-radius:var(--r-sm); padding:5px 7px; font-size:12px; font-family:inherit; }
+.vp-row select:focus, .vp-row input:focus { outline:none; border-color:var(--accent); }
+.voice-note { font-size:11px; margin:2px 0 0; line-height:1.45; }
 /* Events tab — derived event layer list (#14) */
 .event-list { display:flex; flex-direction:column; gap:3px; max-height:220px; overflow:auto;
   margin-top:8px; font-family:var(--font-mono); font-size:12px; }

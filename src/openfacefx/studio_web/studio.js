@@ -583,26 +583,70 @@ $("#wav").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
   }catch(err){ $("#wavName").textContent="couldn't decode audio"; }
 };
 
-/* Generate voice audio from the transcript with the built-in formant TTS, then
- * drive the take from it (energy engine + spectrogram) — no clip needed. */
+/* Voice engine settings (BYO-key neural TTS). The key lives ONLY in this
+ * browser's localStorage and is sent only to the provider you choose. */
+function voiceCfg(){ try{ return JSON.parse(localStorage.getItem("offx_voice")||"{}"); }catch(_){ return {}; } }
+function saveVoiceCfg(c){ try{ localStorage.setItem("offx_voice", JSON.stringify(c)); }catch(_){ } }
+function neuralConfigured(){ const c=voiceCfg(); return !!(c.provider && c.provider!=="builtin" && (c.key||"").trim()); }
+/* Call a neural TTS provider → raw audio bytes (mp3/wav). ElevenLabs allows
+ * browser CORS (works everywhere); OpenAI blocks it, so it goes via the local/
+ * SaaS relay (/api/tts_cloud) — desktop Studio only. */
+async function neuralTTS(text){
+  const c=voiceCfg(); const key=(c.key||"").trim(), voice=(c.voice||"").trim();
+  if(c.provider==="elevenlabs"){
+    const vid=voice||"21m00Tcm4TlvDq8ikWAM";
+    const res=await fetch("https://api.elevenlabs.io/v1/text-to-speech/"+encodeURIComponent(vid),{
+      method:"POST", headers:{"xi-api-key":key,"content-type":"application/json","accept":"audio/mpeg"},
+      body:JSON.stringify({text, model_id:"eleven_multilingual_v2"}) });
+    if(!res.ok) throw new Error("ElevenLabs "+res.status+" — "+(await res.text().catch(()=>"")).slice(0,140));
+    return new Uint8Array(await res.arrayBuffer());
+  }
+  if(c.provider==="openai"){
+    let r; try{ r=await fetch("/api/tts_cloud",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({provider:"openai",key,voice,text})}).then(x=>x.json()); }
+    catch(_){ throw new Error("OpenAI's API can't be called from the browser (CORS). Run the desktop Studio, or use ElevenLabs."); }
+    if(r.error) throw new Error(r.error);
+    return Uint8Array.from(atob(r.audio_b64),ch=>ch.charCodeAt(0));
+  }
+  throw new Error("unknown voice provider");
+}
+/* Generate voice audio from the transcript — a neural provider if one is
+ * configured (great quality), else the built-in formant synth. Then drive the
+ * take from it (energy engine + spectrogram) and play it back. */
 async function generateVoice(){
   const text=($("#text").value||"").trim()||"hello"; const dur=parseFloat($("#dur").value)||4;
   const btn=$("#ttsBtn"); const orig=btn?btn.textContent:""; if(btn){ btn.disabled=true; btn.textContent="synthesizing…"; }
   try{
-    const res=await Pipe.tts(text,dur);
-    if(res.error) throw new Error(res.error);
-    const bytes=Uint8Array.from(atob(res.wav_b64),c=>c.charCodeAt(0));   // the synth's 16-bit PCM WAV
+    let bytes, label;
+    if(neuralConfigured()){ bytes=await neuralTTS(text); label="🧠 "+voiceCfg().provider+" voice"; }
+    else { const res=await Pipe.tts(text,dur); if(res.error) throw new Error(res.error);
+      bytes=Uint8Array.from(atob(res.wav_b64),c=>c.charCodeAt(0)); label="AI voice"; }
     const ac=new (window.AudioContext||window.webkitAudioContext)();
     const audio=await ac.decodeAudioData(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
     const ch=audio.getChannelData(0);
-    S.wavBytes=bytes; S.wavPeaks=peaks(ch,1600); S.wavSpec=computeSpectrogram(ch,audio.sampleRate); refreshAudio();  // reuse the synth WAV as-is
-    $("#wavName").textContent="AI voice · “"+text.slice(0,22)+(text.length>22?"…":"")+"” · "+audio.duration.toFixed(1)+"s";
+    S.wavBytes=encodeWav(ch,audio.sampleRate); S.wavPeaks=peaks(ch,1600); S.wavSpec=computeSpectrogram(ch,audio.sampleRate); refreshAudio();
+    $("#dur").value=audio.duration.toFixed(2);   // match the timeline to the actual audio length
+    $("#wavName").textContent=label+" · “"+text.slice(0,20)+(text.length>20?"…":"")+"” · "+audio.duration.toFixed(1)+"s";
     $("#engine").value="energy";                 // lip-sync from the generated audio
     await runGenerate();                         // re-solve with the energy engine + the new audio
-  }catch(err){ alert("Voice synthesis failed: "+err.message); }
+  }catch(err){ alert("Voice generation failed: "+err.message); }
   finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
 }
+function wireVoiceSettings(){
+  const panel=$("#voicePanel"), gear=$("#voiceCfgBtn"), prov=$("#voiceProvider"), key=$("#voiceKey"), voice=$("#voiceVoice");
+  if(!prov) return;
+  const c=voiceCfg(); prov.value=c.provider||"builtin"; if(key)key.value=c.key||""; if(voice)voice.value=c.voice||"";
+  const sync=()=>{ const neural=prov.value!=="builtin";
+    if($("#voiceKeyRow"))$("#voiceKeyRow").hidden=!neural; if($("#voiceVoiceRow"))$("#voiceVoiceRow").hidden=!neural;
+    if(voice)voice.placeholder = prov.value==="openai" ? "alloy · echo · fable · nova · shimmer (blank = alloy)" : "voice id (blank = a default)";
+    saveVoiceCfg({provider:prov.value, key:key?key.value:"", voice:voice?voice.value:""});
+    const b=$("#ttsBtn"); if(b) b.textContent = neuralConfigured() ? ("🧠 Generate voice ("+prov.value+")") : "🔊 Generate voice"; };
+  prov.onchange=sync; if(key)key.oninput=sync; if(voice)voice.oninput=sync;
+  if(gear&&panel) gear.onclick=()=>{ panel.hidden=!panel.hidden; };
+  sync();
+}
 $("#ttsBtn") && ($("#ttsBtn").onclick=generateVoice);
+wireVoiceSettings();
 
 /* Import a track from an exported/interchange file → a new take (read side of Export) */
 $("#importFile") && ($("#importFile").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
