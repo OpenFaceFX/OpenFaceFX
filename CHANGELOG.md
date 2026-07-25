@@ -8,6 +8,15 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Studio: bring-your-own-key neural TTS** — a **⚙ Voice engine** panel lets you use a
+  real neural voice for **Generate voice**: **ElevenLabs** (works right in the browser)
+  or **OpenAI** (desktop Studio — its API blocks browser calls, so it's relayed via a
+  stateless `/api/tts_cloud`, mirroring `/api/llm`). Your key stays in the browser's
+  localStorage and is sent only to the provider you pick. With no key it falls back to
+  the built-in formant synth. The neural audio drives the spectrogram + energy lip-sync
+  + playback like any clip.
+
 ### Fixed
 - **Studio: in-browser boot survives PyPI CDN lag after a release** — micropip pins
   the exact just-released version, but PyPI's index is CDN-cached per-edge, so right
