@@ -433,6 +433,12 @@ def test_native_probe_is_retried_with_a_real_timeout():
     probe = js.split("async function probeNative()", 1)[1].split("\nasync function ", 1)[0]
     assert "AbortSignal.timeout(5000)" in probe
     assert "AbortSignal.timeout(600)" in js          # the fast boot check still exists
+    # Both probes must require a PARSED {ok:true} body. Trusting r.ok alone lets a
+    # host that answers 200 with an HTML fallback flip S.native before the JSON
+    # parse throws — after which every /api call fails for no visible reason.
+    assert js.count("if(j && j.ok)") == 2
+    for chunk in (probe, js.split("async function bootstrap()", 1)[1][:600]):
+        assert chunk.index("await r.json()") < chunk.index("S.native=true")
 
 
 def test_api_keys_live_only_in_the_assistant_vault():

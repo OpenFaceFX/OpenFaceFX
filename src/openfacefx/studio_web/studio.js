@@ -570,8 +570,9 @@ const Pipe = {
 async function probeNative(){
   if(S.native) return true;
   try{ const r=await fetch("/api/health",{signal:AbortSignal.timeout(5000)});
-    if(r.ok){ const j=await r.json(); S.native=true;
-      setRuntime("native",`native · openfacefx ${j.version||""}`.trim()); gateVoiceProviders(); }
+    if(r.ok){ const j=await r.json();
+      if(j && j.ok){ S.native=true;
+        setRuntime("native",`native · openfacefx ${j.version||""}`.trim()); gateVoiceProviders(); } }
   }catch(_){}
   return S.native;
 }
@@ -579,8 +580,12 @@ async function probeNative(){
 async function bootstrap(){
   try{
     // native backend? (openfacefx studio serves /api using real Python)
+    // Only believe we're native once the body actually PARSES as our health
+    // JSON: a host that answers 200 with an HTML fallback would otherwise flip
+    // S.native before the parse threw, and every /api call would then fail.
     try{ const r=await fetch("/api/health",{signal:AbortSignal.timeout(600)});
-      if(r.ok){ S.native=true; const j=await r.json(); setRuntime("native",`native · openfacefx ${j.version||""}`.trim()); }
+      if(r.ok){ const j=await r.json();
+        if(j && j.ok){ S.native=true; setRuntime("native",`native · openfacefx ${j.version||""}`.trim()); } }
     }catch(_){}
     gateVoiceProviders();      // Piper is native-only — reflect that in the UI, not in an error
     if(!S.native){ if(typeof WebAssembly==="undefined") throw new Error("WebAssembly unavailable"); await bootPyodide(); }
@@ -740,9 +745,11 @@ function gateVoiceProviders(){
     const n=$("#voicePiperUnavail"); if(n) n.hidden=true;
   }else{
     opt.disabled=true; opt.textContent="Piper — needs the desktop Studio";
+    // A greyed-out option invites "why?", so always show the reason here rather
+    // than only after a stale desktop setting gets reset.
+    const n=$("#voicePiperUnavail"); if(n) n.hidden=false;
     if(prov.value==="piper"){                       // stale choice from a desktop session
       prov.value="builtin"; saveVoiceCfg({...voiceCfg(), provider:"builtin"});
-      const n=$("#voicePiperUnavail"); if(n) n.hidden=false;
       const p=$("#voicePanel"); if(p) p.hidden=false;   // surface the reason unprompted
     }
   }
