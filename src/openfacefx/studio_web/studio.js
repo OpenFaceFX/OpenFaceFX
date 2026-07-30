@@ -554,13 +554,27 @@ const Pipe = {
     const fn=S.pyodide.globals.get("studio_tts"); const r=JSON.parse(fn(text||"",dur)); fn.destroy(); return r;
   },
   /* Piper neural TTS — runs the user's own local Piper install, so it only
-   * exists on the native/desktop backend (no subprocesses in Pyodide). */
+   * exists on the native/desktop backend (Pyodide can't start programs). */
   async ttsPiper(text,voice,length_scale,fps){
-    if(!S.native) return {error:"Piper runs your local install, so it needs the desktop Studio (openfacefx studio) — in the browser use ElevenLabs or the built-in voice."};
+    if(!await probeNative()) return {error:"Piper needs the desktop Studio: it runs a local Piper install, and this page is on the in-browser (Pyodide) runtime, which can't start programs. Run “openfacefx studio” on your machine for Piper — or pick ElevenLabs / the built-in voice here."};
     return fetch("/api/tts_piper",{method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify({text,voice,length_scale,fps})}).then(r=>r.json());
   }
 };
+
+/* Re-probe the native backend, patiently. The boot check below deliberately
+ * gives up after 600ms so a static host doesn't stall startup — but that also
+ * means a desktop Studio whose Python server was still coming up can be
+ * misread as browser-only. Anything that genuinely requires the native runtime
+ * asks again with a real timeout before refusing. */
+async function probeNative(){
+  if(S.native) return true;
+  try{ const r=await fetch("/api/health",{signal:AbortSignal.timeout(5000)});
+    if(r.ok){ const j=await r.json(); S.native=true;
+      setRuntime("native",`native · openfacefx ${j.version||""}`.trim()); gateVoiceProviders(); }
+  }catch(_){}
+  return S.native;
+}
 
 async function bootstrap(){
   try{
@@ -568,6 +582,7 @@ async function bootstrap(){
     try{ const r=await fetch("/api/health",{signal:AbortSignal.timeout(600)});
       if(r.ok){ S.native=true; const j=await r.json(); setRuntime("native",`native · openfacefx ${j.version||""}`.trim()); }
     }catch(_){}
+    gateVoiceProviders();      // Piper is native-only — reflect that in the UI, not in an error
     if(!S.native){ if(typeof WebAssembly==="undefined") throw new Error("WebAssembly unavailable"); await bootPyodide(); }
     S.presets=await Pipe.presets(); initFaceGraphPresets();
     try{ S.arkitMap=await Pipe.presetMap("arkit"); }catch(_){ S.arkitMap=null; }  // for 3D preview
@@ -590,28 +605,73 @@ $("#wav").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
   }catch(err){ $("#wavName").textContent="couldn't decode audio"; }
 };
 
-/* Voice engine settings (BYO-key neural TTS). The key lives ONLY in this
- * browser's localStorage and is sent only to the provider you choose. */
+/* Voice engine settings. API KEYS ARE NOT STORED HERE — they live in the
+ * Assistant's encrypted vault (one place for every key, AES-GCM behind a master
+ * password) and are read back through window.Assistant. This panel keeps only
+ * non-secret preferences: which engine, which voice, what rate. */
 function voiceCfg(){ try{ return JSON.parse(localStorage.getItem("offx_voice")||"{}"); }catch(_){ return {}; } }
-function saveVoiceCfg(c){ try{ localStorage.setItem("offx_voice", JSON.stringify(c)); }catch(_){ } }
+function saveVoiceCfg(c){
+  const {key, ...safe} = c || {};          // never persist a secret from this panel
+  try{ localStorage.setItem("offx_voice", JSON.stringify(safe)); }catch(_){ }
+}
+/* One-time cleanup: an earlier build kept the voice key in plaintext here.
+ * Drop it — a secret in localStorage is exactly what the vault exists to avoid. */
+(function purgeLegacyVoiceKey(){
+  const c=voiceCfg();
+  if(c && c.key){ delete c.key; saveVoiceCfg(c); S.voiceKeyMigrated=true; }
+})();
+const AS = () => window.Assistant || null;
+function vaultKey(provider){ const a=AS(); return a && a.getKey ? a.getKey(provider) : null; }
+function vaultState(){ const a=AS(); return a && a.vaultState ? a.vaultState() : "none"; }
 function voiceProvider(){ return voiceCfg().provider||"builtin"; }
 /* Piper is local: no key, no network — so it counts as configured on its own. */
 function piperConfigured(){ return voiceProvider()==="piper"; }
-function neuralConfigured(){ const c=voiceCfg(); return !!(c.provider && c.provider!=="builtin" && c.provider!=="piper" && (c.key||"").trim()); }
+function neuralConfigured(){ const p=voiceProvider();
+  return p!=="builtin" && p!=="piper" && !!vaultKey(p); }
+/* Turn an ElevenLabs failure into something you can act on. Their 401 for a
+ * key that simply lacks a scope reads like an auth failure, which sends people
+ * hunting for a wrong key instead of ticking a permission box. */
+async function elevenErr(res,vid){
+  let body=""; try{ body=await res.text(); }catch(_){}
+  let detail={}; try{ detail=(JSON.parse(body).detail)||{}; }catch(_){}
+  const code=detail.code||"", msg=detail.message||"";
+  if(/text_to_speech/.test(msg) || code==="unauthorized"&&/permission/i.test(msg))
+    return "ElevenLabs rejected the key for missing the “text_to_speech” permission. "
+      + "The key itself is fine — it just isn't scoped for speech. In the ElevenLabs dashboard open "
+      + "Profile → API Keys, edit this key, enable Text to Speech, save, then paste the key again "
+      + "(Assistant tab → ＋ key). Their message: " + msg;
+  if(code==="missing_permissions"||res.status===403)
+    return "ElevenLabs says this key lacks the permissions for text-to-speech — enable Text to Speech "
+      + "on the key in Profile → API Keys. " + msg;
+  if(code==="voice_not_found"||/voice.*not.*found/i.test(msg))
+    return `ElevenLabs has no voice with id “${vid}”. Leave the Voice box blank for their default, or `
+      + "copy a voice id from your ElevenLabs Voices page. " + msg;
+  if(code==="quota_exceeded"||/quota|credit/i.test(msg))
+    return "ElevenLabs quota exhausted for this key — check your plan's character allowance. " + msg;
+  if(res.status===401)
+    return "ElevenLabs rejected the key (401). Check it was pasted whole, and that it's enabled in "
+      + "Profile → API Keys. " + (msg||body.slice(0,140));
+  return "ElevenLabs "+res.status+" — "+(msg||body.slice(0,180));
+}
+
 /* Call a neural TTS provider → raw audio bytes (mp3/wav). ElevenLabs allows
  * browser CORS (works everywhere); OpenAI blocks it, so it goes via the local/
  * SaaS relay (/api/tts_cloud) — desktop Studio only. */
 async function neuralTTS(text){
-  const c=voiceCfg(); const key=(c.key||"").trim(), voice=(c.voice||"").trim();
-  if(c.provider==="elevenlabs"){
+  const c=voiceCfg(); const p=voiceProvider(); const voice=(c.voice||"").trim();
+  const key=(vaultKey(p)||"").trim();
+  if(!key) throw new Error(vaultState()==="locked"
+    ? "Your key vault is locked — unlock it on the Assistant tab, then try again."
+    : "No "+p+" key stored. Add one on the Assistant tab (＋ key) — that's where every API key lives.");
+  if(p==="elevenlabs"){
     const vid=voice||"21m00Tcm4TlvDq8ikWAM";
     const res=await fetch("https://api.elevenlabs.io/v1/text-to-speech/"+encodeURIComponent(vid),{
       method:"POST", headers:{"xi-api-key":key,"content-type":"application/json","accept":"audio/mpeg"},
       body:JSON.stringify({text, model_id:"eleven_multilingual_v2"}) });
-    if(!res.ok) throw new Error("ElevenLabs "+res.status+" — "+(await res.text().catch(()=>"")).slice(0,140));
+    if(!res.ok) throw new Error(await elevenErr(res,vid));
     return new Uint8Array(await res.arrayBuffer());
   }
-  if(c.provider==="openai"){
+  if(p==="openai"){
     let r; try{ r=await fetch("/api/tts_cloud",{method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify({provider:"openai",key,voice,text})}).then(x=>x.json()); }
     catch(_){ throw new Error("OpenAI's API can't be called from the browser (CORS). Run the desktop Studio, or use ElevenLabs."); }
@@ -661,11 +721,33 @@ async function generateVoice(){
   }catch(err){ alert("Voice generation failed: "+err.message); }
   finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
 }
+/* Piper spawns a local program, so it can only work on the native backend. Show
+ * that in the dropdown rather than letting someone pick an option that always
+ * fails; if a setting carried over from a desktop session, fall back to the
+ * built-in voice and say why. Re-run whenever the known runtime changes. */
+let voiceSync = () => {};
+function gateVoiceProviders(){
+  const prov=$("#voiceProvider"); if(!prov) return;
+  const opt=[...prov.options].find(o=>o.value==="piper"); if(!opt) return;
+  if(S.native){
+    opt.disabled=false; opt.textContent="Piper — neural, no key, offline";
+    const n=$("#voicePiperUnavail"); if(n) n.hidden=true;
+  }else{
+    opt.disabled=true; opt.textContent="Piper — needs the desktop Studio";
+    if(prov.value==="piper"){                       // stale choice from a desktop session
+      prov.value="builtin"; saveVoiceCfg({...voiceCfg(), provider:"builtin"});
+      const n=$("#voicePiperUnavail"); if(n) n.hidden=false;
+      const p=$("#voicePanel"); if(p) p.hidden=false;   // surface the reason unprompted
+    }
+  }
+  voiceSync();
+}
+
 function wireVoiceSettings(){
-  const panel=$("#voicePanel"), gear=$("#voiceCfgBtn"), prov=$("#voiceProvider"), key=$("#voiceKey"),
+  const panel=$("#voicePanel"), gear=$("#voiceCfgBtn"), prov=$("#voiceProvider"),
         voice=$("#voiceVoice"), rate=$("#voiceRate");
   if(!prov) return;
-  const c=voiceCfg(); prov.value=c.provider||"builtin"; if(key)key.value=c.key||""; if(voice)voice.value=c.voice||"";
+  const c=voiceCfg(); prov.value=c.provider||"builtin"; if(voice)voice.value=c.voice||"";
   if(rate)rate.value=c.rate||"";
   const sync=()=>{ const p=prov.value, isPiper=p==="piper", cloud=p!=="builtin"&&!isPiper;
     if($("#voiceKeyRow"))$("#voiceKeyRow").hidden=!cloud;              // Piper needs no key
@@ -674,12 +756,33 @@ function wireVoiceSettings(){
     if($("#voicePiperNote"))$("#voicePiperNote").hidden=!isPiper;
     if(voice)voice.placeholder = isPiper ? "path to a .onnx voice, or its folder (blank = $OPENFACEFX_PIPER_VOICE)"
       : p==="openai" ? "alloy · echo · fable · nova · shimmer (blank = alloy)" : "voice id (blank = a default)";
-    saveVoiceCfg({provider:p, key:key?key.value:"", voice:voice?voice.value:"", rate:rate?rate.value:""});
+    if(cloud) showKeyStatus(p);
+    saveVoiceCfg({provider:p, voice:voice?voice.value:"", rate:rate?rate.value:""});
     const b=$("#ttsBtn"); if(b) b.textContent = isPiper ? "🗣 Generate voice (Piper)"
       : neuralConfigured() ? ("🧠 Generate voice ("+p+")") : "🔊 Generate voice"; };
-  prov.onchange=sync; if(key)key.oninput=sync; if(voice)voice.oninput=sync; if(rate)rate.oninput=sync;
+  prov.onchange=sync; if(voice)voice.oninput=sync; if(rate)rate.oninput=sync;
   if(gear&&panel) gear.onclick=()=>{ panel.hidden=!panel.hidden; };
+  const jump=$("#voiceOpenAssistant");
+  if(jump) jump.onclick=()=>{ const a=AS(); if(a&&a.open) a.open(); };
+  voiceSync=sync;                 // so gateVoiceProviders() can refresh the panel
+  // the vault lives in the Assistant, so re-sync when it unlocks or gains a key
+  window.addEventListener("offx-keys", sync);
   sync();
+  if(S.voiceKeyMigrated){         // a plaintext key from an older build was just dropped
+    const st=$("#voiceKeyStatus");
+    if(st) st.innerHTML='<b>your saved key was moved out of plaintext</b> — re-add it in the Assistant';
+  }
+}
+
+/* Say plainly where the key for this provider stands, since it now lives in the
+ * Assistant's vault rather than in this panel. */
+function showKeyStatus(p){
+  const el=$("#voiceKeyStatus"); if(!el) return;
+  const st=vaultState();
+  if(vaultKey(p))      el.innerHTML='✓ <b>'+p+'</b> key in your vault';
+  else if(st==="locked") el.textContent="vault locked — unlock it on the Assistant tab";
+  else if(st==="none")   el.textContent="no vault yet — add a "+p+" key on the Assistant tab";
+  else                   el.textContent="no "+p+" key stored — add one on the Assistant tab";
 }
 $("#ttsBtn") && ($("#ttsBtn").onclick=generateVoice);
 wireVoiceSettings();

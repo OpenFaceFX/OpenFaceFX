@@ -51,17 +51,26 @@ let ITEMS = [];                        // decrypted provider entries, memory onl
  *  when the studio runs under `openfacefx studio`.
  * -------------------------------------------------------------------- */
 const PROVIDERS = {
-  anthropic: { label:"Anthropic (Claude)", shape:"anthropic", model:"claude-haiku-4-5",
+  anthropic: { label:"Anthropic (Claude)", kind:"llm", shape:"anthropic", model:"claude-haiku-4-5",
     url:"https://api.anthropic.com/v1/messages", direct:true, needsKey:true },
-  openai:    { label:"OpenAI", shape:"openai", model:"gpt-5-mini",
-    url:"https://api.openai.com/v1/chat/completions", direct:false, needsKey:true },
-  gemini:    { label:"Google Gemini", shape:"openai", model:"gemini-flash-latest",
+  openai:    { label:"OpenAI", kind:"llm", shape:"openai", model:"gpt-5-mini",
+    url:"https://api.openai.com/v1/chat/completions", direct:false, needsKey:true,
+    tts:true },                       // one OpenAI key also serves Generate voice
+  gemini:    { label:"Google Gemini", kind:"llm", shape:"openai", model:"gemini-flash-latest",
     url:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", direct:false, needsKey:true },
-  ollama:    { label:"Ollama (local)", shape:"openai", model:"llama3.1",
+  ollama:    { label:"Ollama (local)", kind:"llm", shape:"openai", model:"llama3.1",
     url:"http://localhost:11434/v1/chat/completions", direct:true, needsKey:false },
-  custom:    { label:"OpenAI-compatible (vLLM / LM Studio / …)", shape:"openai", model:"",
+  custom:    { label:"OpenAI-compatible (vLLM / LM Studio / …)", kind:"llm", shape:"openai", model:"",
     url:"", direct:true, needsKey:false },
+  // Voice (TTS) providers live in the same vault so there is ONE place to put a
+  // key. They are not LLMs, so callLLM/the director never select them.
+  elevenlabs:{ label:"ElevenLabs (voice)", kind:"tts", needsKey:true, tts:true,
+    model:"eleven_multilingual_v2" },
 };
+
+const isLLM = p => (PROVIDERS[p]?.kind || "llm") === "llm";
+/* The director's provider: the first stored entry that is actually an LLM. */
+const llmEntry = () => ITEMS.find(i => isLLM(i.provider)) || null;
 
 async function nativeAvailable(){
   try { const r = await fetch("/api/health",{signal:AbortSignal.timeout(500)}); return r.ok; } catch { return false; }
@@ -196,11 +205,17 @@ function render(){
   if(!Vault.exists()){ renderSetup(); return; }
   if(!VKEY){ renderUnlock(); return; }
   renderConsole();
+  notifyKeys();
+}
+
+/* Let the rest of the Studio (the voice engine) know the vault changed. */
+function notifyKeys(){
+  try{ window.dispatchEvent(new CustomEvent("offx-keys")); }catch(_){ }
 }
 
 function renderSetup(){
   PILL.textContent="set up a key"; PILL.className="pill";
-  const opts = Object.entries(PROVIDERS).map(([k,p])=>`<option value="${k}">${p.label}</option>`).join("");
+  const opts = providerOptions();
   MOUNT.innerHTML = `
     <div class="assist-msg">
       <b>AI director for your take.</b> Describe what you want in plain language and it makes real,
@@ -266,18 +281,65 @@ function renderUnlock(){
   };
 }
 
+/* Add another provider key to an already-unlocked vault — this is the one place
+ * in the Studio where API keys are entered, voice keys included. */
+function renderAddKey(){
+  const opts = providerOptions();
+  MOUNT.innerHTML=`
+    <div class="assist-msg"><b>Add a key.</b> Same vault, same master password — encrypted here in the
+      browser. Voice providers (ElevenLabs, OpenAI) are used by <b>Generate voice</b>; LLM providers
+      power the director actions.</div>
+    <form class="keyform" id="addForm">
+      <div class="keyrow">
+        <select id="aProvider">${opts}</select>
+        <input id="aModel" placeholder="model / voice id (optional)" style="flex:1">
+      </div>
+      <input id="aKey" type="password" placeholder="provider API key">
+      <div class="keyrow">
+        <button class="btn primary" type="submit">Encrypt &amp; add</button>
+        <button class="btn" type="button" id="addCancel">Cancel</button>
+      </div>
+    </form>`;
+  $("#addCancel").onclick=()=>render();
+  $("#addForm").onsubmit=async e=>{ e.preventDefault();
+    const p=$("#aProvider").value, raw=$("#aKey").value;
+    const v=Vault.load();
+    const item={ provider:p, label:PROVIDERS[p].label, model:$("#aModel").value.trim(), url:"",
+      ...(await encryptSecret(VKEY, raw)) };
+    v.items=[...(v.items||[]).filter(i=>i.provider!==p), item];      // one entry per provider
+    Vault.save(v);
+    ITEMS=[...ITEMS.filter(i=>i.provider!==p), {...item, key:raw}];
+    render();
+  };
+}
+
+function providerOptions(){
+  const grp=(kind,label)=>`<optgroup label="${label}">`+Object.entries(PROVIDERS)
+    .filter(([,p])=>(p.kind||"llm")===kind)
+    .map(([k,p])=>`<option value="${k}">${p.label}</option>`).join("")+`</optgroup>`;
+  return grp("llm","AI director (LLM)")+grp("tts","Voice (text-to-speech)");
+}
+
 function renderConsole(){
-  const e=ITEMS[0]; PILL.textContent=e.label.split(" ")[0].toLowerCase(); PILL.className="pill ok";
+  const e=llmEntry();
+  const voice=ITEMS.filter(i=>PROVIDERS[i.provider]?.tts).map(i=>i.provider);
+  PILL.textContent=e?e.label.split(" ")[0].toLowerCase():"voice key only"; PILL.className="pill ok";
   const actionBtns=Object.entries(ACTIONS).map(([k,a])=>`<button class="btn" data-act="${k}" title="${esc(a.hint)}">${a.label}</button>`).join("");
   MOUNT.innerHTML=`
     <div class="assist-actions">${actionBtns}
+      <button class="btn" id="addKeyBtn" title="Add another provider key — LLM or voice">＋ key</button>
       <button class="btn ghost" id="lockBtn" title="Clear keys from memory">lock 🔒</button></div>
+    <div class="assist-msg dim" style="font-size:12.5px">Keys stored: ${
+      ITEMS.map(i=>esc(i.label)).join(" · ")||"none"}${
+      voice.length?` — <b>Generate voice</b> can use ${voice.map(esc).join(" / ")}.`
+                 :" — no voice key yet; add one to use a neural voice in <b>Generate voice</b>."}</div>
     <div id="assistLog" class="assistant" style="flex:1;overflow:auto"></div>
     <form class="assist-input" id="assistForm">
       <textarea id="assistNote" placeholder="Direct the performance… e.g. “tired, trailing off, slight head shake”"></textarea>
       <button class="btn primary" type="submit">Send</button>
     </form>`;
-  $("#lockBtn").onclick=()=>{ VKEY=null; ITEMS=[]; render(); };
+  $("#lockBtn").onclick=()=>{ VKEY=null; ITEMS=[]; render(); notifyKeys(); };
+  $("#addKeyBtn").onclick=()=>renderAddKey();
   $$("#assistant .assist-actions [data-act]")?.forEach; // no-op guard
   MOUNT.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>runAction(b.dataset.act, b));
   $("#assistForm").onsubmit=e=>{ e.preventDefault(); const n=$("#assistNote").value.trim(); if(n){ $("#assistNote").value=""; runAction("direct",null,n); } };
@@ -285,14 +347,17 @@ function renderConsole(){
   const rows=Object.entries(ACTIONS).map(([k,a])=>`<div class="assist-help-row"><b>${a.label}</b> — ${esc(a.hint)}</div>`).join("");
   log(`<b>AI director.</b> Describe what you want and it turns that into <b>real edits on the current take</b> — it never replaces the pipeline, it sets the inputs (transcript, pronunciation, emotion, style) and regenerates, so results stay deterministic.
     <div class="assist-help">${rows}</div>
-    <span class="dim">Type a free-form note below (e.g. “tired, trailing off, slight head shake”) → <b>Direct the performance</b>. <b>Direct emotion</b> and <b>Pronounce</b> need a generated take first. Running on ${esc(e.label)}${e.model?" · "+esc(e.model):""} — nothing is sent until you click an action.</span>`, "intro");
+    <span class="dim">Type a free-form note below (e.g. “tired, trailing off, slight head shake”) → <b>Direct the performance</b>. <b>Direct emotion</b> and <b>Pronounce</b> need a generated take first. ${
+      e ? `Running on ${esc(e.label)}${e.model?" · "+esc(e.model):""} — nothing is sent until you click an action.`
+        : `<b>No LLM key stored</b> — the director actions need one; use <b>＋ key</b> to add it. Your voice key still works for <b>Generate voice</b>.`}</span>`, "intro");
 }
 
 function log(html, cls=""){ const el=$("#assistLog"); if(!el) return;
   const d=document.createElement("div"); d.className="assist-msg "+cls; d.innerHTML=html; el.appendChild(d); el.scrollTop=el.scrollHeight; }
 
 async function runAction(key, btn, note){
-  const a=ACTIONS[key]; if(!a) return; const entry=ITEMS[0];
+  const a=ACTIONS[key]; if(!a) return; const entry=llmEntry();
+  if(!entry){ log(`<b class="dim">${a.label} — needs an LLM key.</b> Use <b>＋ key</b> above to add Anthropic, OpenAI, Gemini or a local model. A voice-only key can't run the director.`); return; }
   if(note!==undefined) log(esc(note),"user");
   log(`<span class="dim">${a.label}…</span>`);
   const busy=$("#assistLog").lastChild;
@@ -301,8 +366,24 @@ async function runAction(key, btn, note){
   }catch(err){ busy.innerHTML=`<b class="dim">${a.label} — failed:</b> ${esc(err.message)}`; }
 }
 
-/* ---- public mount --------------------------------------------------- */
-window.Assistant = { mount(){ MOUNT=document.getElementById("assistantMount"); PILL=document.getElementById("assistProvider"); render(); } };
+/* ---- public API ------------------------------------------------------ *
+ *  The vault is the Studio's single home for API keys, so the voice engine
+ *  reads its key from here instead of keeping its own copy. Decrypted keys
+ *  live in memory only (ITEMS) and only while the vault is unlocked, so
+ *  getKey() returns null when locked — the caller must say so, not guess.
+ * --------------------------------------------------------------------- */
+window.Assistant = {
+  mount(){ MOUNT=document.getElementById("assistantMount"); PILL=document.getElementById("assistProvider"); render(); },
+  /* 'none' (nothing stored) | 'locked' (ciphertext present, key needed) | 'unlocked' */
+  vaultState(){ return !Vault.exists() ? "none" : (VKEY ? "unlocked" : "locked"); },
+  hasKey(provider){ const i=ITEMS.find(x=>x.provider===provider); return !!(i && i.key); },
+  getKey(provider){ const i=ITEMS.find(x=>x.provider===provider); return (i && i.key) || null; },
+  /* extra per-provider setting: model for an LLM, default voice id for TTS */
+  getModel(provider){ const i=ITEMS.find(x=>x.provider===provider); return (i && i.model) || ""; },
+  /* which stored providers can speak — drives the voice-engine dropdown */
+  ttsProviders(){ return ITEMS.filter(i=>PROVIDERS[i.provider]?.tts && i.key).map(i=>i.provider); },
+  open(){ const t=document.querySelector('.tab[data-view="assistant"]'); if(t) t.click(); },
+};
 document.addEventListener("DOMContentLoaded", ()=>window.Assistant.mount());
 // tiny local $ helpers (module scope)
 function $(s){ return document.querySelector(s); }

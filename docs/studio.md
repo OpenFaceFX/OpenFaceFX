@@ -113,6 +113,16 @@ Llama/Mistral/Qwen — no key, nothing leaves your machine.
 
 ## Bring-your-own-key — zero-knowledge encryption
 
+**Every API key is entered in one place: the Assistant tab.** LLM keys (for the
+director actions) and voice keys (ElevenLabs, OpenAI TTS) share the same vault —
+use **＋ key** to add more than one. The Voice engine panel holds only non-secret
+preferences (which engine, which voice, what rate) and reads the key back from
+the vault at call time, so no secret is ever written to plaintext storage. A
+single OpenAI key serves both the director and **Generate voice**.
+
+If the vault is locked, **Generate voice** says so rather than failing obscurely;
+unlock it on the Assistant tab.
+
 Provider API keys are encrypted **in the browser** with a master password, using
 the same model as LastPass/Bitwarden (client-side KDF; server sees only
 ciphertext). Implemented in `assistant.js` with the Web Crypto API:
@@ -152,6 +162,12 @@ Pick the engine under the ⚙ next to it:
 | **Built-in** (`openfacefx.tts`) | robotic (formant synth) | none | none | phonemes from text |
 | **Piper** (`openfacefx.piper_tts`) | natural neural | none | none | **real phoneme timing** |
 | **ElevenLabs / OpenAI** | natural neural | yours | yes | audio envelope |
+
+Keys for the cloud engines come from the Assistant's vault (see below) — the
+Voice panel has no key field. **ElevenLabs keys are scoped**: if yours lacks the
+`text_to_speech` permission you get a 401 that looks like a bad key. Fix it in the
+ElevenLabs dashboard under Profile → API Keys → edit the key → enable Text to
+Speech; the Studio names this case explicitly when it happens.
 
 Piper is the only one that is natural *and* offline *and* keyless. It is also the
 **most accurate**: Piper reports how many audio samples each phoneme occupies, so

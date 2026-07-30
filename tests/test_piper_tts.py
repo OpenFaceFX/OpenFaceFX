@@ -400,10 +400,87 @@ def test_piper_is_offered_in_the_voice_dropdown_and_routed_in_js():
     assert 'ttsPiper' in js and '/api/tts_piper' in js
     assert re.search(r'piperConfigured\(\)\s*\{\s*return\s+voiceProvider\(\)==="piper"', js)
     # Piper must NOT be treated as a key-bearing cloud provider
-    assert re.search(r'neuralConfigured\(\).*provider!=="piper"', js)
+    neural = js.split("function neuralConfigured()", 1)[1].split("\n/*", 1)[0]
+    assert 'p!=="piper"' in neural and 'p!=="builtin"' in neural
     # the phoneme-timed branch commits Piper's own track instead of an energy re-solve
     assert re.search(r'if\(piper&&piper\.track\)\{', js)
     assert 'commitTake(piper.track' in js
+
+
+def test_piper_is_gated_to_the_native_runtime_in_the_ui():
+    """Piper spawns a local program, so the browser runtime can't run it. The
+    option must be *disabled* there rather than selectable-then-failing, and a
+    setting carried over from a desktop session must fall back with a reason."""
+    js, html = _web("studio.js"), _web("index.html")
+    assert "function gateVoiceProviders()" in js
+    # called both at boot and whenever a later probe discovers the native backend
+    assert js.count("gateVoiceProviders()") >= 3
+    gate = js.split("function gateVoiceProviders()", 1)[1].split("\nfunction ", 1)[0]
+    assert "opt.disabled=true" in gate and "opt.disabled=false" in gate
+    assert 'prov.value="builtin"' in gate            # stale piper choice falls back
+    assert "voicePiperUnavail" in gate and 'id="voicePiperUnavail"' in html
+    # the fallback must not discard the user's other voice settings (e.g. an API key)
+    assert "...voiceCfg()" in gate
+
+
+def test_native_probe_is_retried_with_a_real_timeout():
+    """bootstrap()'s health check gives up after 600ms so a static host doesn't
+    stall; without a patient re-probe, a desktop Studio whose server was still
+    starting would report Piper as browser-only."""
+    js = _web("studio.js")
+    assert "async function probeNative()" in js
+    assert "await probeNative()" in js               # ttsPiper defers to it
+    probe = js.split("async function probeNative()", 1)[1].split("\nasync function ", 1)[0]
+    assert "AbortSignal.timeout(5000)" in probe
+    assert "AbortSignal.timeout(600)" in js          # the fast boot check still exists
+
+
+def test_api_keys_live_only_in_the_assistant_vault():
+    """Keys are entered in ONE place — the Assistant's encrypted vault. The voice
+    panel must not have a key input, and must never persist a key itself."""
+    js, html = _web("studio.js"), _web("index.html")
+    assert 'id="voiceKey"' not in html            # no key input in the voice panel
+    assert 'id="voiceKeyStatus"' in html          # status + a jump to the Assistant
+    assert 'id="voiceOpenAssistant"' in html
+    # saveVoiceCfg strips any key before writing to localStorage
+    save = js.split("function saveVoiceCfg(c){", 1)[1].split("\n}", 1)[0]
+    assert "const {key, ...safe}" in save and "JSON.stringify(safe)" in save
+    # readiness and the request itself both source the key from the vault
+    assert "function vaultKey(provider)" in js and "a.getKey" in js
+    assert "vaultKey(p)" in js
+    neural = js.split("function neuralConfigured()", 1)[1].split("\n/*", 1)[0]
+    assert "vaultKey(p)" in neural and "c.key" not in neural
+    # a plaintext key from the older build is actively removed, not just ignored
+    assert "purgeLegacyVoiceKey" in js and "delete c.key" in js
+
+
+def test_assistant_exposes_a_read_api_and_holds_tts_providers():
+    a = _web("assistant.js")
+    for fn in ("vaultState()", "hasKey(provider)", "getKey(provider)", "ttsProviders()", "open()"):
+        assert fn in a, fn
+    # ElevenLabs is storable in the vault but is NOT an LLM the director can call
+    assert 'elevenlabs:' in a and 'kind:"tts"' in a
+    assert "const isLLM" in a and "const llmEntry" in a
+    assert "llmEntry()" in a and "ITEMS[0]" not in a   # director picks an LLM, not item 0
+    # one OpenAI key serves both the director and Generate voice
+    assert "tts:true" in a
+    # multi-key support: adding a second provider to an unlocked vault
+    assert "function renderAddKey()" in a and "addKeyBtn" in a
+    # the voice panel is told when the vault changes
+    assert 'CustomEvent("offx-keys")' in a and '"offx-keys"' in _web("studio.js")
+
+
+def test_elevenlabs_permission_error_is_explained_not_dumped():
+    """A key lacking the text_to_speech scope returns 401, which reads like a bad
+    key and sends people hunting for the wrong problem."""
+    js = _web("studio.js")
+    assert "async function elevenErr(res,vid)" in js
+    err = js.split("async function elevenErr(res,vid){", 1)[1].split("\n}", 1)[0]
+    assert "text_to_speech" in err and "Text to Speech" in err
+    assert "API Keys" in err                      # names the dashboard page to visit
+    for case in ("voice_not_found", "quota_exceeded", "missing_permissions"):
+        assert case in err, case
+    assert "elevenErr(res,vid)" in js             # actually wired into the request
 
 
 def test_studio_js_and_python_agree_on_the_endpoint_and_field_names():

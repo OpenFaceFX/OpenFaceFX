@@ -102,18 +102,20 @@
         <label class="vp-row"><span>Voice engine</span>
           <select id="voiceProvider">
             <option value="builtin">Built-in — robotic, no key, offline</option>
-            <option value="piper">Piper — neural, no key, offline (desktop)</option>
+            <option value="piper">Piper — neural, no key, offline</option>
             <option value="elevenlabs">ElevenLabs — neural, works in the browser</option>
             <option value="openai">OpenAI — neural, desktop Studio only</option>
           </select></label>
-        <label class="vp-row" id="voiceKeyRow" hidden><span>API key</span>
-          <input type="password" id="voiceKey" placeholder="your provider API key" autocomplete="off" spellcheck="false"></label>
+        <div class="vp-row" id="voiceKeyRow" hidden><span>API key</span>
+          <span class="vp-keystatus"><span id="voiceKeyStatus" class="dim">—</span>
+            <button type="button" class="btn" id="voiceOpenAssistant">Manage keys →</button></span></div>
         <label class="vp-row" id="voiceVoiceRow" hidden><span>Voice</span>
           <input type="text" id="voiceVoice" placeholder="voice id / name (blank = default)" spellcheck="false"></label>
         <label class="vp-row" id="voiceRateRow" hidden><span>Rate</span>
           <input type="text" id="voiceRate" placeholder="length_scale — 1.0 normal, 1.6 slower, 0.8 faster" spellcheck="false"></label>
+        <p class="voice-note dim" id="voicePiperUnavail" hidden><b>Piper isn't available on this page.</b> It runs a local Piper install on your own machine, and this Studio is on the in-browser (Pyodide) runtime, which can't start programs. Your voice engine was switched back to the built-in synth. To use Piper: <code>pip install openfacefx</code> then <code>openfacefx studio</code> — or stay here and use ElevenLabs with your own key.</p>
         <p class="voice-note dim" id="voicePiperNote" hidden><b>Piper</b> is a free neural voice that runs entirely on your machine — no key, no network. Set it up once: <code>pip install "piper-tts[alignment]"</code> (GPL-3.0, run as a separate program) then <code>python -m piper.download_voices --data-dir VOICES en_US-amy-medium</code>, and put that folder in the <b>Voice</b> box. Because Piper also reports where each phoneme lands in the audio, the curves come from real phoneme timing instead of the loudness envelope — <b>sharper lip-sync than any cloud voice can give</b>. Without the <code>[alignment]</code> extra it still speaks, just falling back to envelope timing.</p>
-        <p class="voice-note dim">Your key is kept on this device only (localStorage) and sent solely to the provider you choose — never to OpenFaceFX. ElevenLabs works in the browser; OpenAI and Piper need the desktop Studio (OpenAI's API blocks browser calls; Piper runs your local install). With a neural engine, <b>Generate voice</b> uses it; otherwise the built-in synth.</p>
+        <p class="voice-note dim">API keys live in one place: the <b>Assistant</b> tab's encrypted vault (AES-256-GCM behind your master password). They never leave this device except to the provider you pick — never to OpenFaceFX. ElevenLabs works in the browser; OpenAI and Piper need the desktop Studio (OpenAI's API blocks browser calls; Piper runs your local install). With a neural engine, <b>Generate voice</b> uses it; otherwise the built-in synth.</p>
       </div>
 
       <div class="gen-row">

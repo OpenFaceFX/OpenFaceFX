@@ -8,6 +8,29 @@ its `version` field.
 
 ## [Unreleased]
 
+### Changed
+- **All API keys are now entered in one place — the Assistant's encrypted vault.** The
+  Voice engine panel no longer has a key field: it keeps only non-secret preferences
+  (engine, voice, rate) and reads the key back from the vault at call time. The vault
+  gained **multi-key support** (**＋ key**) so an LLM key and a voice key can coexist,
+  and ElevenLabs is storable there as a voice-only provider that the AI director never
+  tries to call. One OpenAI key now serves both the director and **Generate voice**.
+  Any voice key the previous build wrote to plaintext `localStorage` is **deleted** on
+  load, with a note to re-add it in the vault.
+
+### Fixed
+- **Piper is no longer offered where it cannot run.** It spawns a local program, so the
+  in-browser (Pyodide) runtime can never use it — the option is now disabled there
+  instead of selectable-then-failing, and a setting carried over from a desktop session
+  falls back to the built-in voice and explains why. The native health check is also
+  **re-probed with a real timeout** before Piper refuses: `bootstrap()` gives up after
+  600 ms so a static host doesn't stall, which previously meant a desktop Studio whose
+  Python server was still starting got misreported as browser-only.
+- **ElevenLabs errors say what to do.** A key missing the `text_to_speech` scope returns
+  a 401 that reads like a bad key; the Studio now names the missing permission and the
+  dashboard page that fixes it, and likewise decodes unknown-voice-id, quota, and
+  missing-permission failures instead of dumping raw JSON.
+
 ## [0.24.0] - 2026-07-30
 
 ### Added

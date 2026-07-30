@@ -183,6 +183,11 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .vp-row select, .vp-row input { flex:1 1 auto; min-width:0; background:var(--panel-2); color:var(--fg);
   border:1px solid var(--line); border-radius:var(--r-sm); padding:5px 7px; font-size:12px; font-family:inherit; }
 .vp-row select:focus, .vp-row input:focus { outline:none; border-color:var(--accent); }
+/* key status + jump-to-Assistant, since API keys live in the Assistant's vault */
+.vp-keystatus { flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px;
+  justify-content:space-between; font-size:12px; }
+.vp-keystatus > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vp-keystatus .btn { flex:0 0 auto; padding:3px 8px; font-size:11px; }
 .voice-note { font-size:11px; margin:2px 0 0; line-height:1.45; }
 /* Events tab — derived event layer list (#14) */
 .event-list { display:flex; flex-direction:column; gap:3px; max-height:220px; overflow:auto;
