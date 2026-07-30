@@ -631,7 +631,7 @@ function neuralConfigured(){ const p=voiceProvider();
 /* Turn an ElevenLabs failure into something you can act on. Their 401 for a
  * key that simply lacks a scope reads like an auth failure, which sends people
  * hunting for a wrong key instead of ticking a permission box. */
-async function elevenErr(res,vid){
+async function elevenErr(res,vid,key){
   let body=""; try{ body=await res.text(); }catch(_){}
   let detail={}; try{ detail=(JSON.parse(body).detail)||{}; }catch(_){}
   const code=detail.code||"", msg=detail.message||"";
@@ -640,8 +640,11 @@ async function elevenErr(res,vid){
       + "ElevenLabs just restricts new keys by default, and speech isn't enabled on this one. Fix it "
       + "at elevenlabs.io/app/settings/api-keys: click the ⋯ next to the key → Edit, enable "
       + "Text to Speech (or switch off “Restrict Key”), save. The key string doesn't change, so "
-      + "there's nothing to re-paste here — just press Generate voice again. "
-      + "Their message: " + msg;
+      + "there's nothing to re-paste here — just press Generate voice again.\n\n"
+      + "If you already did that: make sure it was THIS key. The one being sent is "
+      + keyHint(key) + " — compare it with the key you edited in the dashboard, since editing a "
+      + "different key looks exactly like the edit not working. To replace it: Assistant tab → ＋ key "
+      + "→ ElevenLabs.\n\nTheir message: " + msg;
   if(code==="missing_permissions"||res.status===403)
     return "ElevenLabs says this key lacks the scope for text-to-speech. At "
       + "elevenlabs.io/app/settings/api-keys use ⋯ → Edit on the key and enable Text to Speech. "
@@ -671,7 +674,7 @@ async function neuralTTS(text){
     const res=await fetch("https://api.elevenlabs.io/v1/text-to-speech/"+encodeURIComponent(vid),{
       method:"POST", headers:{"xi-api-key":key,"content-type":"application/json","accept":"audio/mpeg"},
       body:JSON.stringify({text, model_id:"eleven_multilingual_v2"}) });
-    if(!res.ok) throw new Error(await elevenErr(res,vid));
+    if(!res.ok) throw new Error(await elevenErr(res,vid,key));
     return new Uint8Array(await res.arrayBuffer());
   }
   if(p==="openai"){
@@ -778,12 +781,24 @@ function wireVoiceSettings(){
   }
 }
 
+/* A key fingerprint: enough to match the stored key against the row in the
+ * provider's dashboard, never enough to use. Dashboards show a prefix for the
+ * same reason — "which key is this?" is otherwise unanswerable, and editing the
+ * permissions of a DIFFERENT key than the one stored here looks identical to
+ * the permissions edit not working at all. */
+function keyHint(k){
+  if(!k) return "";
+  return k.length<=14 ? k.slice(0,3)+"…"+k.slice(-2)
+                      : k.slice(0,6)+"…"+k.slice(-4)+" ("+k.length+" chars)";
+}
+
 /* Say plainly where the key for this provider stands, since it now lives in the
  * Assistant's vault rather than in this panel. */
 function showKeyStatus(p){
   const el=$("#voiceKeyStatus"); if(!el) return;
-  const st=vaultState();
-  if(vaultKey(p))      el.innerHTML='✓ <b>'+p+'</b> key in your vault';
+  const st=vaultState(), k=vaultKey(p);
+  if(k){ el.innerHTML='✓ <b>'+p+'</b> key <code>'+keyHint(k).replace(/</g,"&lt;")+'</code> — '
+      + 'check this matches the key you edited'; }
   else if(st==="locked") el.textContent="vault locked — unlock it on the Assistant tab";
   else if(st==="none")   el.textContent="no vault yet — add a "+p+" key on the Assistant tab";
   else                   el.textContent="no "+p+" key stored — add one on the Assistant tab";

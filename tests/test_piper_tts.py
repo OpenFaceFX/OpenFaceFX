@@ -474,13 +474,26 @@ def test_elevenlabs_permission_error_is_explained_not_dumped():
     """A key lacking the text_to_speech scope returns 401, which reads like a bad
     key and sends people hunting for the wrong problem."""
     js = _web("studio.js")
-    assert "async function elevenErr(res,vid)" in js
-    err = js.split("async function elevenErr(res,vid){", 1)[1].split("\n}", 1)[0]
+    assert "async function elevenErr(res,vid,key)" in js
+    err = js.split("async function elevenErr(res,vid,key){", 1)[1].split("\n}", 1)[0]
     assert "text_to_speech" in err and "Text to Speech" in err
     assert "settings/api-keys" in err                      # names the dashboard page to visit
     for case in ("voice_not_found", "quota_exceeded", "missing_permissions"):
         assert case in err, case
-    assert "elevenErr(res,vid)" in js             # actually wired into the request
+    assert "elevenErr(res,vid,key)" in js         # actually wired into the request
+
+
+def test_key_fingerprint_identifies_the_stored_key_without_exposing_it():
+    """Editing the permissions of a *different* key than the one stored looks
+    identical to the edit not working, so both the panel and the error name which
+    key is being sent — as a prefix/suffix only, never the secret."""
+    js = _web("studio.js")
+    assert "function keyHint(k)" in js
+    hint = js.split("function keyHint(k){", 1)[1].split("\n}", 1)[0]
+    assert "k.slice(0,6)" in hint and "k.slice(-4)" in hint   # matchable, not usable
+    assert "k.length" in hint                                 # length disambiguates further
+    assert "keyHint(k)" in js.split("function showKeyStatus(p)", 1)[1][:400]
+    assert "keyHint(key)" in js                               # and in the failure message
 
 
 def test_studio_js_and_python_agree_on_the_endpoint_and_field_names():
