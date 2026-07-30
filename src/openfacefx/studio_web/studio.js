@@ -636,21 +636,24 @@ async function elevenErr(res,vid){
   let detail={}; try{ detail=(JSON.parse(body).detail)||{}; }catch(_){}
   const code=detail.code||"", msg=detail.message||"";
   if(/text_to_speech/.test(msg) || code==="unauthorized"&&/permission/i.test(msg))
-    return "ElevenLabs rejected the key for missing the “text_to_speech” permission. "
-      + "The key itself is fine — it just isn't scoped for speech. In the ElevenLabs dashboard open "
-      + "Profile → API Keys, edit this key, enable Text to Speech, save, then paste the key again "
-      + "(Assistant tab → ＋ key). Their message: " + msg;
+    return "ElevenLabs rejected the key for missing the “text_to_speech” scope. The key is valid — "
+      + "ElevenLabs just restricts new keys by default, and speech isn't enabled on this one. Fix it "
+      + "at elevenlabs.io/app/settings/api-keys: click the ⋯ next to the key → Edit, enable "
+      + "Text to Speech (or switch off “Restrict Key”), save. The key string doesn't change, so "
+      + "there's nothing to re-paste here — just press Generate voice again. "
+      + "Their message: " + msg;
   if(code==="missing_permissions"||res.status===403)
-    return "ElevenLabs says this key lacks the permissions for text-to-speech — enable Text to Speech "
-      + "on the key in Profile → API Keys. " + msg;
+    return "ElevenLabs says this key lacks the scope for text-to-speech. At "
+      + "elevenlabs.io/app/settings/api-keys use ⋯ → Edit on the key and enable Text to Speech. "
+      + "The key itself stays the same. " + msg;
   if(code==="voice_not_found"||/voice.*not.*found/i.test(msg))
     return `ElevenLabs has no voice with id “${vid}”. Leave the Voice box blank for their default, or `
       + "copy a voice id from your ElevenLabs Voices page. " + msg;
   if(code==="quota_exceeded"||/quota|credit/i.test(msg))
     return "ElevenLabs quota exhausted for this key — check your plan's character allowance. " + msg;
   if(res.status===401)
-    return "ElevenLabs rejected the key (401). Check it was pasted whole, and that it's enabled in "
-      + "Profile → API Keys. " + (msg||body.slice(0,140));
+    return "ElevenLabs rejected the key (401). Check it was pasted whole, and that it's still enabled "
+      + "at elevenlabs.io/app/settings/api-keys. " + (msg||body.slice(0,140));
   return "ElevenLabs "+res.status+" — "+(msg||body.slice(0,180));
 }
 
@@ -754,6 +757,7 @@ function wireVoiceSettings(){
     if($("#voiceVoiceRow"))$("#voiceVoiceRow").hidden=p==="builtin";
     if($("#voiceRateRow"))$("#voiceRateRow").hidden=!isPiper;          // Piper's length_scale
     if($("#voicePiperNote"))$("#voicePiperNote").hidden=!isPiper;
+    if($("#voiceElevenNote"))$("#voiceElevenNote").hidden=p!=="elevenlabs";   // scope gotcha, up front
     if(voice)voice.placeholder = isPiper ? "path to a .onnx voice, or its folder (blank = $OPENFACEFX_PIPER_VOICE)"
       : p==="openai" ? "alloy · echo · fable · nova · shimmer (blank = alloy)" : "voice id (blank = a default)";
     if(cloud) showKeyStatus(p);

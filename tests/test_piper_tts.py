@@ -477,7 +477,7 @@ def test_elevenlabs_permission_error_is_explained_not_dumped():
     assert "async function elevenErr(res,vid)" in js
     err = js.split("async function elevenErr(res,vid){", 1)[1].split("\n}", 1)[0]
     assert "text_to_speech" in err and "Text to Speech" in err
-    assert "API Keys" in err                      # names the dashboard page to visit
+    assert "settings/api-keys" in err                      # names the dashboard page to visit
     for case in ("voice_not_found", "quota_exceeded", "missing_permissions"):
         assert case in err, case
     assert "elevenErr(res,vid)" in js             # actually wired into the request
