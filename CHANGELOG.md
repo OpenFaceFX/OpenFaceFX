@@ -8,7 +8,29 @@ its `version` field.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-30
+
 ### Added
+- **Studio: Piper neural voice — natural, offline, keyless, and phoneme-accurate**
+  (new `openfacefx.piper_tts`). A third **Voice engine** option next to the built-in
+  formant synth and the BYO-key cloud providers, and the only one that is natural
+  *and* needs no key *and* never touches the network. It is also the most accurate:
+  Piper reports how many audio samples each phoneme occupies, so **the viseme curves
+  are solved from real phoneme boundaries** rather than inferred from loudness the way
+  a cloud voice forces. Those sample counts are read by the existing
+  `timing.parse_piper_alignments` + `ipa.IPA_MAPPING` (Piper times in IPA), and they
+  tile the waveform exactly — verified against `piper-tts` 1.6.0, where
+  `sum(num_samples) == len(audio)` at every rate. Setup is
+  `pip install "piper-tts[alignment]"` plus a downloaded voice; Piper then patches the
+  voice model in memory, so no stock `.onnx` has to be modified on disk. Without the
+  `[alignment]` extra it still speaks and falls back to envelope lip-sync. A **Rate**
+  control exposes Piper's `length_scale` (1.0 normal, 1.6 slower, 0.8 faster) for
+  fitting a take to a timing budget. Native/desktop only (`/api/tts_piper`): Piper runs
+  your own local install, which Pyodide can't spawn. **Piper is GPL-3.0 and OpenFaceFX
+  is MIT, so it is never imported and never vendored** — it runs as a separate program,
+  the same arrangement as the espeak-ng/MFA aligners, and is entirely optional
+  (`OPENFACEFX_PIPER_PYTHON` / `OPENFACEFX_PIPER_VOICE` tune it). Docs cover the setup,
+  the scripting API, and the upstream espeak-ng data-path bug some wheels ship.
 - **Studio: bring-your-own-key neural TTS** — a **⚙ Voice engine** panel lets you use a
   real neural voice for **Generate voice**: **ElevenLabs** (works right in the browser)
   or **OpenAI** (desktop Studio — its API blocks browser calls, so it's relayed via a

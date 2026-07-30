@@ -142,6 +142,92 @@ stored (localStorage now; SaaS syncs the same blob):
 
 ---
 
+## Voices — three tiers behind one button
+
+**Generate voice** speaks the transcript and drives the take from the result.
+Pick the engine under the ⚙ next to it:
+
+| Engine | Quality | Key | Network | Lip-sync timing |
+|---|---|---|---|---|
+| **Built-in** (`openfacefx.tts`) | robotic (formant synth) | none | none | phonemes from text |
+| **Piper** (`openfacefx.piper_tts`) | natural neural | none | none | **real phoneme timing** |
+| **ElevenLabs / OpenAI** | natural neural | yours | yes | audio envelope |
+
+Piper is the only one that is natural *and* offline *and* keyless. It is also the
+**most accurate**: Piper reports how many audio samples each phoneme occupies, so
+the viseme curves are solved from actual phoneme boundaries. The cloud voices
+return audio only, which leaves the energy engine inferring mouth open/close from
+loudness — good, but never as sharp as knowing where the `m` ends.
+
+### Setting Piper up
+
+```bash
+pip install "piper-tts[alignment]"        # the [alignment] extra pulls in onnx
+python -m piper.download_voices --data-dir VOICES en_US-amy-medium
+```
+
+Then set **Voice engine → Piper** and put `VOICES` (the folder, or a specific
+`.onnx`) in the **Voice** box. **Rate** is Piper's `length_scale`: `1.0` normal,
+`1.6` slower, `0.8` faster — handy for fitting a take to a timing budget.
+
+Desktop only: Piper runs *your* local install, and the browser (Pyodide) build
+can't spawn processes. Use `openfacefx studio`, the Docker image, or the SaaS
+backend.
+
+Scriptable too:
+
+```python
+from openfacefx.piper_tts import synthesize
+from openfacefx.timing import parse_piper_alignments, resolve_ends, to_segments
+from openfacefx.ipa import IPA_MAPPING
+from openfacefx import generate_from_alignment
+
+res = synthesize("Hello world.", "VOICES", length_scale=1.2)
+open("out.wav", "wb").write(res.wav)
+if res.has_timing:                        # ground-truth phoneme boundaries
+    segs = to_segments(resolve_ends(parse_piper_alignments(res.alignments, res.sample_rate)))
+    track = generate_from_alignment(segs, fps=30, mapping=IPA_MAPPING)
+```
+
+Piper times its phonemes in **IPA**, so the mapping is `IPA_MAPPING` — the same
+preset `openfacefx from-timing --format piper` uses. Spaces and punctuation come
+back as real durations and map to silence, which is what they are.
+
+### Licensing, and why it's a subprocess
+
+Piper (`piper1-gpl`) is **GPL-3.0**; OpenFaceFX is MIT. So Piper is never
+imported and never vendored — it is an optional program we *run*, the same
+arrangement as the espeak-ng and MFA aligners the CLI already shells out to.
+Nothing breaks if it isn't installed; the Studio just falls back to the built-in
+synth. Two environment variables tune the arrangement:
+
+- `OPENFACEFX_PIPER_PYTHON` — the interpreter that can `import piper`, if it
+  isn't the one running OpenFaceFX.
+- `OPENFACEFX_PIPER_VOICE` — the default voice `.onnx` (or a folder of them).
+
+### If Piper can't find its phonemizer
+
+Some `piper-tts` wheels bake their build machine's espeak-ng data path into the
+native bridge, so synthesis fails with
+`Error processing file '/Users/runner/work/piper1-gpl/…/espeak-ng-data/phontab'`
+(seen on the macOS arm64 wheel of `piper-tts` 1.6.0). The wheel *does* ship the
+data inside the package; espeak just has to be pointed at it. What worked in
+testing was a clean directory holding a symlink named `espeak-ng-data`:
+
+```bash
+mkdir -p ~/.openfacefx/espeak
+ln -sfn "$(python -c 'import piper,os;print(os.path.join(os.path.dirname(piper.__file__),"espeak-ng-data"))')" \
+        ~/.openfacefx/espeak/espeak-ng-data
+export ESPEAK_DATA_PATH=~/.openfacefx/espeak
+```
+
+Setting `ESPEAK_DATA_PATH` to the `piper` package directory itself did **not**
+work — espeak then looked for `<piper>/phontab` and gave up. The indirection
+above is the reliable form. This is an upstream packaging bug, so OpenFaceFX
+doesn't try to repair it silently: it surfaces Piper's own error with this hint.
+
+---
+
 ## Running it
 
 ```bash

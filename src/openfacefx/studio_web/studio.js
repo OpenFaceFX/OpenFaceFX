@@ -6,7 +6,7 @@
 "use strict";
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-const OFFX_VERSION = "0.23.1";
+const OFFX_VERSION = "0.24.0";
 const PYODIDE_VER = "v0.26.1";
 
 /* ---- categorical curve palette (distinct on dark) --------------------- */
@@ -552,6 +552,13 @@ const Pipe = {
   async tts(text,dur){
     if(S.native) return fetch("/api/tts",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,dur})}).then(r=>r.json());
     const fn=S.pyodide.globals.get("studio_tts"); const r=JSON.parse(fn(text||"",dur)); fn.destroy(); return r;
+  },
+  /* Piper neural TTS — runs the user's own local Piper install, so it only
+   * exists on the native/desktop backend (no subprocesses in Pyodide). */
+  async ttsPiper(text,voice,length_scale,fps){
+    if(!S.native) return {error:"Piper runs your local install, so it needs the desktop Studio (openfacefx studio) — in the browser use ElevenLabs or the built-in voice."};
+    return fetch("/api/tts_piper",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({text,voice,length_scale,fps})}).then(r=>r.json());
   }
 };
 
@@ -587,7 +594,10 @@ $("#wav").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
  * browser's localStorage and is sent only to the provider you choose. */
 function voiceCfg(){ try{ return JSON.parse(localStorage.getItem("offx_voice")||"{}"); }catch(_){ return {}; } }
 function saveVoiceCfg(c){ try{ localStorage.setItem("offx_voice", JSON.stringify(c)); }catch(_){ } }
-function neuralConfigured(){ const c=voiceCfg(); return !!(c.provider && c.provider!=="builtin" && (c.key||"").trim()); }
+function voiceProvider(){ return voiceCfg().provider||"builtin"; }
+/* Piper is local: no key, no network — so it counts as configured on its own. */
+function piperConfigured(){ return voiceProvider()==="piper"; }
+function neuralConfigured(){ const c=voiceCfg(); return !!(c.provider && c.provider!=="builtin" && c.provider!=="piper" && (c.key||"").trim()); }
 /* Call a neural TTS provider → raw audio bytes (mp3/wav). ElevenLabs allows
  * browser CORS (works everywhere); OpenAI blocks it, so it goes via the local/
  * SaaS relay (/api/tts_cloud) — desktop Studio only. */
@@ -617,8 +627,15 @@ async function generateVoice(){
   const text=($("#text").value||"").trim()||"hello"; const dur=parseFloat($("#dur").value)||4;
   const btn=$("#ttsBtn"); const orig=btn?btn.textContent:""; if(btn){ btn.disabled=true; btn.textContent="synthesizing…"; }
   try{
-    let bytes, label;
-    if(neuralConfigured()){ bytes=await neuralTTS(text); label="🧠 "+voiceCfg().provider+" voice"; }
+    let bytes, label, piper=null;
+    if(piperConfigured()){
+      const c=voiceCfg();
+      piper=await Pipe.ttsPiper(text,(c.voice||"").trim(),c.rate||"",parseFloat($("#fps").value)||60);
+      if(piper.error) throw new Error(piper.error);
+      bytes=Uint8Array.from(atob(piper.wav_b64),ch=>ch.charCodeAt(0));
+      label="🗣 Piper"+(piper.voice?" · "+piper.voice.replace(/\.onnx$/,""):"")+(piper.track?" (phoneme-timed)":"");
+    }
+    else if(neuralConfigured()){ bytes=await neuralTTS(text); label="🧠 "+voiceCfg().provider+" voice"; }
     else { const res=await Pipe.tts(text,dur); if(res.error) throw new Error(res.error);
       bytes=Uint8Array.from(atob(res.wav_b64),c=>c.charCodeAt(0)); label="AI voice"; }
     const ac=new (window.AudioContext||window.webkitAudioContext)();
@@ -627,21 +644,40 @@ async function generateVoice(){
     S.wavBytes=encodeWav(ch,audio.sampleRate); S.wavPeaks=peaks(ch,1600); S.wavSpec=computeSpectrogram(ch,audio.sampleRate); refreshAudio();
     $("#dur").value=audio.duration.toFixed(2);   // match the timeline to the actual audio length
     $("#wavName").textContent=label+" · “"+text.slice(0,20)+(text.length>20?"…":"")+"” · "+audio.duration.toFixed(1)+"s";
-    $("#engine").value="energy";                 // lip-sync from the generated audio
-    await runGenerate();                         // re-solve with the energy engine + the new audio
+    if(piper&&piper.track){
+      // Piper reported per-phoneme sample counts → GROUND-TRUTH timing. Take the
+      // track it solved straight from those phonemes; no need to guess mouth
+      // motion from loudness the way every cloud voice forces us to.
+      // The engine selector is deliberately left alone: it says what a *future*
+      // Generate will do, and neither option describes where these curves came
+      // from. Provenance is shown in the clip label instead.
+      if(!curTake()) newTakeSlot();
+      commitTake(piper.track,piper.segments,[],piper.duration,false);
+      if(piper.timing_error) console.warn("Piper timing unusable:",piper.timing_error);
+    }else{
+      $("#engine").value="energy";               // lip-sync from the generated audio
+      await runGenerate();                       // re-solve with the energy engine + the new audio
+    }
   }catch(err){ alert("Voice generation failed: "+err.message); }
   finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
 }
 function wireVoiceSettings(){
-  const panel=$("#voicePanel"), gear=$("#voiceCfgBtn"), prov=$("#voiceProvider"), key=$("#voiceKey"), voice=$("#voiceVoice");
+  const panel=$("#voicePanel"), gear=$("#voiceCfgBtn"), prov=$("#voiceProvider"), key=$("#voiceKey"),
+        voice=$("#voiceVoice"), rate=$("#voiceRate");
   if(!prov) return;
   const c=voiceCfg(); prov.value=c.provider||"builtin"; if(key)key.value=c.key||""; if(voice)voice.value=c.voice||"";
-  const sync=()=>{ const neural=prov.value!=="builtin";
-    if($("#voiceKeyRow"))$("#voiceKeyRow").hidden=!neural; if($("#voiceVoiceRow"))$("#voiceVoiceRow").hidden=!neural;
-    if(voice)voice.placeholder = prov.value==="openai" ? "alloy · echo · fable · nova · shimmer (blank = alloy)" : "voice id (blank = a default)";
-    saveVoiceCfg({provider:prov.value, key:key?key.value:"", voice:voice?voice.value:""});
-    const b=$("#ttsBtn"); if(b) b.textContent = neuralConfigured() ? ("🧠 Generate voice ("+prov.value+")") : "🔊 Generate voice"; };
-  prov.onchange=sync; if(key)key.oninput=sync; if(voice)voice.oninput=sync;
+  if(rate)rate.value=c.rate||"";
+  const sync=()=>{ const p=prov.value, isPiper=p==="piper", cloud=p!=="builtin"&&!isPiper;
+    if($("#voiceKeyRow"))$("#voiceKeyRow").hidden=!cloud;              // Piper needs no key
+    if($("#voiceVoiceRow"))$("#voiceVoiceRow").hidden=p==="builtin";
+    if($("#voiceRateRow"))$("#voiceRateRow").hidden=!isPiper;          // Piper's length_scale
+    if($("#voicePiperNote"))$("#voicePiperNote").hidden=!isPiper;
+    if(voice)voice.placeholder = isPiper ? "path to a .onnx voice, or its folder (blank = $OPENFACEFX_PIPER_VOICE)"
+      : p==="openai" ? "alloy · echo · fable · nova · shimmer (blank = alloy)" : "voice id (blank = a default)";
+    saveVoiceCfg({provider:p, key:key?key.value:"", voice:voice?voice.value:"", rate:rate?rate.value:""});
+    const b=$("#ttsBtn"); if(b) b.textContent = isPiper ? "🗣 Generate voice (Piper)"
+      : neuralConfigured() ? ("🧠 Generate voice ("+p+")") : "🔊 Generate voice"; };
+  prov.onchange=sync; if(key)key.oninput=sync; if(voice)voice.oninput=sync; if(rate)rate.oninput=sync;
   if(gear&&panel) gear.onclick=()=>{ panel.hidden=!panel.hidden; };
   sync();
 }
@@ -685,6 +721,21 @@ $("#alignFile") && ($("#alignFile").onchange=async e=>{ const f=e.target.files[0
   finally{ e.target.value=""; }
 });
 
+/* Commit a freshly solved track onto the current take and redraw everything.
+ * Shared by Generate/Reanalyze and by the Piper voice path (which solves from
+ * real phoneme timing instead of re-running the analysis). */
+function commitTake(newTrack,segments,words,duration,preserve){
+  const tk=curTake();
+  tk.params={...captureParams()}; tk.wavBytes=S.wavBytes; tk.wavPeaks=S.wavPeaks; tk.wavSpec=S.wavSpec; tk.wavName=$("#wavName").textContent;
+  tk.track=newTrack; tk.segments=segments||[]; tk.words=words||[]; tk.duration=duration;
+  if(!preserve){ tk.edited=false; tk.owned={}; }    // full Generate drops ownership; Reanalyze keeps it
+  if(!preserve){ S.events=[]; } else if(S.events&&S.events.length){ newTrack.events=S.events; }  // event layer: reset on full gen, carried on Reanalyze
+  S.track=newTrack; S.segments=segments||[]; S.words=words||[]; S.duration=duration; S.t=0;
+  S.undo.length=0; S.redo.length=0; S.selKeys=[];   // rebuild clears undo history + box-selection
+  ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons(); updateReanalyze();
+  $("#tpDur").textContent="/ "+fmt(S.duration); refreshIO();
+}
+
 async function runGenerate(preserve){
   const btn=$("#run"); btn.disabled=true; btn.textContent="Generating…";
   try{
@@ -709,14 +760,7 @@ async function runGenerate(preserve){
         (tk.owned[c.name]&&oldBy[c.name])?{name:c.name,keys:structuredClone(oldBy[c.name].keys)}:c)};
       for(const nm in tk.owned){ if(oldBy[nm]&&!newTrack.channels.some(c=>c.name===nm)) newTrack.channels.push({name:nm,keys:structuredClone(oldBy[nm].keys)}); }
     }
-    tk.params={...captureParams()}; tk.wavBytes=S.wavBytes; tk.wavPeaks=S.wavPeaks; tk.wavSpec=S.wavSpec; tk.wavName=$("#wavName").textContent;
-    tk.track=newTrack; tk.segments=res.segments||[]; tk.words=res.words||[]; tk.duration=res.duration;
-    if(!preserve){ tk.edited=false; tk.owned={}; }    // full Generate drops ownership; Reanalyze keeps it
-    if(!preserve){ S.events=[]; } else if(S.events&&S.events.length){ newTrack.events=S.events; }  // event layer: reset on full gen, carried on Reanalyze
-    S.track=newTrack; S.segments=res.segments||[]; S.words=res.words||[]; S.duration=res.duration; S.t=0;
-    S.undo.length=0; S.redo.length=0; S.selKeys=[];   // rebuild clears undo history + box-selection
-    ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons(); updateReanalyze();
-    $("#tpDur").textContent="/ "+fmt(S.duration); refreshIO();
+    commitTake(newTrack, res.segments, res.words, res.duration, preserve);
     btn.textContent="Generate take"; btn.disabled=false; return true;
   }catch(err){ btn.textContent="Generate — failed"; console.error(err); alert("Generate failed: "+err.message); btn.disabled=false; return false; }
 }

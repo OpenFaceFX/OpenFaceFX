@@ -372,6 +372,57 @@ def _tts(p: dict) -> dict:
     return {"wav_b64": base64.b64encode(wav).decode(), "sr": 16000, "duration": round(dur, 3)}
 
 
+def _tts_piper(p: dict) -> dict:
+    """Piper neural TTS — natural, offline, keyless (native/desktop Studio only).
+
+    Runs the user's own Piper install as a separate program (see
+    :mod:`openfacefx.piper_tts`; it is GPL-3.0, so never imported or vendored).
+    When the voice model is alignment-patched Piper also reports per-phoneme
+    sample counts, so we return a **real phoneme-timed track** instead of
+    leaving the Studio to estimate mouth motion from loudness — the one voice
+    engine here that gives ground-truth lip-sync.
+    """
+    from openfacefx.piper_tts import PiperError, synthesize
+    text = (p.get("text") or "").strip()
+    if not text:
+        return {"error": "no text to speak"}
+    try:
+        ls = float(p["length_scale"]) if p.get("length_scale") not in (None, "") else None
+    except (TypeError, ValueError):
+        return {"error": "length_scale must be a number"}
+    try:
+        res = synthesize(text, (p.get("voice") or "").strip() or None, length_scale=ls)
+    except PiperError as e:
+        return {"error": str(e)}
+    out = {"wav_b64": base64.b64encode(res.wav).decode(), "sr": res.sample_rate,
+           "duration": res.duration, "voice": res.voice, "has_timing": res.has_timing}
+    if res.has_timing:
+        out.update(_piper_track(res, float(p.get("fps", 30) or 30)))
+    return out
+
+
+def _piper_track(res, fps: float) -> dict:
+    """Piper's phoneme sample counts → segments + a viseme track.
+
+    Piper times its phonemes in **IPA**, so this uses the built-in
+    ``IPA_MAPPING`` preset (the same one ``from-timing --format piper`` picks);
+    spaces and punctuation carry real duration and map to silence.
+    """
+    from openfacefx import generate_from_alignment, to_dict
+    from openfacefx.alignment import dump_segments
+    from openfacefx.ipa import IPA_MAPPING, ipa_unknown_symbols
+    from openfacefx.timing import parse_piper_alignments, resolve_ends, to_segments
+    try:
+        events = resolve_ends(parse_piper_alignments(res.alignments, res.sample_rate))
+        segs = to_segments(events)
+        track = generate_from_alignment(segs, fps=fps, mapping=IPA_MAPPING)
+    except (ValueError, KeyError) as e:
+        return {"timing_error": str(e)}          # audio still usable → energy engine
+    return {"track": to_dict(track), "segments": dump_segments(segs),
+            "fps": track.fps, "channels": len(track.channels),
+            "warnings": ipa_unknown_symbols(e.symbol for e in events)}
+
+
 def _presets() -> list:
     from openfacefx import PRESETS
     return sorted(PRESETS)
@@ -683,6 +734,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(_resolve(body))
             if path == "/api/tts":
                 return self._json(_tts(body))
+            if path == "/api/tts_piper":
+                return self._json(_tts_piper(body))
             if path in ("/api/auth/register", "/api/auth/login"):
                 from .studio_saas import AuthError
                 fn = _store().register if path.endswith("register") else _store().login

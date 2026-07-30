@@ -102,6 +102,7 @@
         <label class="vp-row"><span>Voice engine</span>
           <select id="voiceProvider">
             <option value="builtin">Built-in — robotic, no key, offline</option>
+            <option value="piper">Piper — neural, no key, offline (desktop)</option>
             <option value="elevenlabs">ElevenLabs — neural, works in the browser</option>
             <option value="openai">OpenAI — neural, desktop Studio only</option>
           </select></label>
@@ -109,7 +110,10 @@
           <input type="password" id="voiceKey" placeholder="your provider API key" autocomplete="off" spellcheck="false"></label>
         <label class="vp-row" id="voiceVoiceRow" hidden><span>Voice</span>
           <input type="text" id="voiceVoice" placeholder="voice id / name (blank = default)" spellcheck="false"></label>
-        <p class="voice-note dim">Your key is kept on this device only (localStorage) and sent solely to the provider you choose — never to OpenFaceFX. ElevenLabs works in the browser; OpenAI needs the desktop Studio (its API blocks browser calls). With a neural engine, <b>Generate voice</b> uses it; otherwise the built-in synth.</p>
+        <label class="vp-row" id="voiceRateRow" hidden><span>Rate</span>
+          <input type="text" id="voiceRate" placeholder="length_scale — 1.0 normal, 1.6 slower, 0.8 faster" spellcheck="false"></label>
+        <p class="voice-note dim" id="voicePiperNote" hidden><b>Piper</b> is a free neural voice that runs entirely on your machine — no key, no network. Set it up once: <code>pip install "piper-tts[alignment]"</code> (GPL-3.0, run as a separate program) then <code>python -m piper.download_voices --data-dir VOICES en_US-amy-medium</code>, and put that folder in the <b>Voice</b> box. Because Piper also reports where each phoneme lands in the audio, the curves come from real phoneme timing instead of the loudness envelope — <b>sharper lip-sync than any cloud voice can give</b>. Without the <code>[alignment]</code> extra it still speaks, just falling back to envelope timing.</p>
+        <p class="voice-note dim">Your key is kept on this device only (localStorage) and sent solely to the provider you choose — never to OpenFaceFX. ElevenLabs works in the browser; OpenAI and Piper need the desktop Studio (OpenAI's API blocks browser calls; Piper runs your local install). With a neural engine, <b>Generate voice</b> uses it; otherwise the built-in synth.</p>
       </div>
 
       <div class="gen-row">
