@@ -322,7 +322,7 @@ def _align(p: dict) -> dict:
                     return {"error": f"the {fmt} format needs a transcript — type it in the Transcript box"}
                 tr = transcript
                 anchors = from_google_timepoints(text, tr) if fmt == "google" else parsers[fmt](text)
-            dur = max((a.end for a in anchors), default=0.0)
+            dur = _anchors_duration(anchors)
             if dur <= 0:
                 return {"error": "the alignment has no usable word timings"}
             segs = anchored_segments(tr, dur, anchors)
@@ -370,6 +370,22 @@ def _tts(p: dict) -> dict:
     except (ValueError, KeyError) as e:
         return {"error": str(e)}
     return {"wav_b64": base64.b64encode(wav).decode(), "sr": 16000, "duration": round(dur, 3)}
+
+
+def _anchors_duration(anchors) -> float:
+    """Clip length implied by a set of word anchors.
+
+    ``end`` is optional in the word-anchor schema (``parse_word_anchors``
+    documents it as inferable from the next anchor), and word-boundary sources
+    — Web Speech, Azure — naturally report starts. A plain ``max(a.end ...)``
+    raises ``TypeError`` the moment one is ``None``, so take the largest real
+    end and fall back to the last start.
+    """
+    ends = [a.end for a in anchors if a.end is not None]
+    if ends:
+        return max(ends)
+    starts = [a.start for a in anchors if a.start is not None]
+    return max(starts) if starts else 0.0
 
 
 def _tts_piper(p: dict) -> dict:

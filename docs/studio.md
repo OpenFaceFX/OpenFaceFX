@@ -157,11 +157,31 @@ stored (localStorage now; SaaS syncs the same blob):
 **Generate voice** speaks the transcript and drives the take from the result.
 Pick the engine under the ⚙ next to it:
 
-| Engine | Quality | Key | Network | Lip-sync timing |
-|---|---|---|---|---|
-| **Built-in** (`openfacefx.tts`) | robotic (formant synth) | none | none | phonemes from text |
-| **Piper** (`openfacefx.piper_tts`) | natural neural | none | none | **real phoneme timing** |
-| **ElevenLabs / OpenAI** | natural neural | yours | yes | audio envelope |
+| Engine | Quality | Key | Network | Lip-sync timing | Audio clip |
+|---|---|---|---|---|---|
+| **Built-in** (`openfacefx.tts`) | robotic (formant synth) | none | none | phonemes from text | yes |
+| **System voice** (Web Speech) | your OS voices — natural | none | none | **real word timing** | **no** |
+| **Piper** (`openfacefx.piper_tts`) | natural neural | none | none | **real phoneme timing** | yes |
+| **ElevenLabs / OpenAI** | natural neural | yours | yes | audio envelope | yes |
+
+### System voice — the browser's own (no key, no download)
+
+Piper needs a local process, so the in-browser Studio can't reach it. The
+**System voice** engine uses `speechSynthesis` instead: the voices your OS
+already ships, spoken through the browser. It fires word-boundary events, so the
+words are *timed*, and those anchors go through the same `anchored_segments`
+path as **Align from… words** — the lip-sync comes from measured word positions,
+not a guess.
+
+**The catch, stated plainly: browsers do not let a page capture synthesized
+audio.** A system-voice take therefore has accurate timing but **no audio clip** —
+nothing to export, and no waveform or spectrogram. That's a platform
+restriction; capturing audio requires a voice we control (Piper on the desktop,
+or a cloud provider). Voices that never fire `boundary` fall back to text timing
+at the measured duration rather than inventing word positions.
+
+Pick it under ⚙ → Voice engine → *System voice*, choose a voice, and set **Rate**
+(1.0 normal). The button becomes **Speak & time**.
 
 Keys for the cloud engines come from the Assistant's vault (see below) — the
 Voice panel has no key field. **ElevenLabs keys are scoped**: if yours lacks the

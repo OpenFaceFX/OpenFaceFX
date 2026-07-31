@@ -8,6 +8,21 @@ its `version` field.
 
 ## [Unreleased]
 
+### Added
+- **Studio: System voice — a natural, keyless voice that works in the browser**
+  (new `studio_web/webspeech.js`). Piper needs a local process, so the in-browser
+  Studio can't reach it; this uses `speechSynthesis` and the voices the OS already
+  ships. It captures **word-boundary events**, so the take is timed from measured
+  word positions — those anchors run through the same `anchored_segments` path as
+  *Align from… words*, giving real phoneme segments rather than a guess. Verified
+  end to end: every reported boundary lands on a phoneme-segment start.
+  **Limitation, surfaced in the panel before first use:** browsers don't let a page
+  capture synthesized audio, so such a take has timing but **no audio clip** —
+  nothing to export, no waveform or spectrogram. Voices that never fire `boundary`
+  fall back to text timing at the measured duration instead of inventing word
+  positions. Timing is taken from a `performance.now()` delta, since the spec says
+  `elapsedTime` is seconds but shipped browsers have used milliseconds.
+
 ### Changed
 - **All API keys are now entered in one place — the Assistant's encrypted vault.** The
   Voice engine panel no longer has a key field: it keeps only non-secret preferences
@@ -26,6 +41,12 @@ its `version` field.
   **re-probed with a real timeout** before Piper refuses: `bootstrap()` gives up after
   600 ms so a static host doesn't stall, which previously meant a desktop Studio whose
   Python server was still starting got misreported as browser-only.
+- **`Align from… words` no longer crashes when `end` is omitted.** `parse_word_anchors`
+  documents `end` as optional (inferable from the next anchor) and word-boundary
+  sources naturally report starts, but the handler took `max(a.end …)` — a
+  `TypeError` on the first `None`. It now uses the largest real end, falling back to
+  the last start. Fixed in both runtimes (native `_anchors_duration` and the Pyodide
+  bridge).
 - **ElevenLabs errors say what to do.** A key missing the `text_to_speech` scope returns
   a 401 that reads like a bad key; the Studio now names the missing permission and the
   dashboard page that fixes it, and likewise decodes unknown-voice-id, quota, and

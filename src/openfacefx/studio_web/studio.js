@@ -324,7 +324,12 @@ def studio_align(transcript, fmt, text):
                 if not tr: return json.dumps({"error":"the "+fmt+" format needs a transcript — type it in the Transcript box"})
                 tt = tr
                 anchors = from_google_timepoints(text, tt) if fmt=="google" else parsers[fmt](text)
-            dur = max((a.end for a in anchors), default=0.0)
+            # 'end' is optional in the word-anchor schema (and word-boundary
+            # sources like Web Speech report starts), so a plain max() over
+            # .end raises on the first None. Largest real end, else last start.
+            _ends = [a.end for a in anchors if a.end is not None]
+            _starts = [a.start for a in anchors if a.start is not None]
+            dur = max(_ends) if _ends else (max(_starts) if _starts else 0.0)
             if dur<=0: return json.dumps({"error":"the alignment has no usable word timings"})
             segs = anchored_segments(tt, dur, anchors)
         if not segs: return json.dumps({"error":"no phoneme segments produced from the alignment"})
@@ -629,6 +634,8 @@ const AS = () => window.Assistant || null;
 function vaultKey(provider){ const a=AS(); return a && a.getKey ? a.getKey(provider) : null; }
 function vaultState(){ const a=AS(); return a && a.vaultState ? a.vaultState() : "none"; }
 function voiceProvider(){ return voiceCfg().provider||"builtin"; }
+const WS = () => window.WebSpeechTTS || null;
+function webspeechConfigured(){ return voiceProvider()==="webspeech" && !!(WS() && WS().available()); }
 /* Piper is local: no key, no network — so it counts as configured on its own. */
 function piperConfigured(){ return voiceProvider()==="piper"; }
 function neuralConfigured(){ const p=voiceProvider();
@@ -699,6 +706,7 @@ async function generateVoice(){
   const btn=$("#ttsBtn"); const orig=btn?btn.textContent:""; if(btn){ btn.disabled=true; btn.textContent="synthesizing…"; }
   try{
     let bytes, label, piper=null;
+    if(webspeechConfigured()){ await generateSystemVoice(text); return; }
     if(piperConfigured()){
       const c=voiceCfg();
       piper=await Pipe.ttsPiper(text,(c.voice||"").trim(),c.rate||"",parseFloat($("#fps").value)||60);
@@ -739,6 +747,17 @@ async function generateVoice(){
 let voiceSync = () => {};
 function gateVoiceProviders(){
   const prov=$("#voiceProvider"); if(!prov) return;
+  // the system voice needs speechSynthesis — present everywhere modern, but
+  // absent in some embedded/headless browsers, so check rather than assume
+  const sys=[...prov.options].find(o=>o.value==="webspeech");
+  if(sys){
+    const ok=!!(WS() && WS().available());
+    sys.disabled=!ok;
+    if(!ok){
+      sys.textContent="System voice — not available in this browser";
+      if(prov.value==="webspeech"){ prov.value="builtin"; saveVoiceCfg({...voiceCfg(), provider:"builtin"}); }
+    }
+  }
   const opt=[...prov.options].find(o=>o.value==="piper"); if(!opt) return;
   if(S.native){
     opt.disabled=false; opt.textContent="Piper — neural, no key, offline";
@@ -756,25 +775,91 @@ function gateVoiceProviders(){
   voiceSync();
 }
 
+/* System voice (Web Speech): speak the line, capture where each word lands,
+ * and turn those word boundaries into a real phoneme-timed take through the
+ * same anchor path "Align from… words" uses. The browser won't hand us the
+ * audio, so the take carries timing WITHOUT a clip — said plainly in the label
+ * rather than left for someone to discover at export time. */
+async function generateSystemVoice(text){
+  const c=voiceCfg();
+  const btn=$("#ttsBtn"); if(btn) btn.textContent="speaking…";
+  const res=await WS().speakAndTime(text,{voiceURI:c.sysVoice||"", rate:parseFloat(c.rate)||1});
+  const dur=Math.max(0.2, res.duration||0);
+  const words=WS().marksToWords(text,res.marks,dur);
+  const vname=sysVoiceLabel(c.sysVoice);
+  const who="🗣 system voice"+(vname?" · "+vname:"");
+  // nothing was captured, so clear any clip a previous engine left on the take
+  S.wavBytes=null; S.wavPeaks=null; S.wavSpec=null; await refreshAudio();
+  $("#dur").value=dur.toFixed(2);
+  $("#engine").value="naive";        // there is no audio, so energy would be a lie
+  if(!words){
+    // some voices never fire `boundary`; keep the measured length and fall back
+    // to text timing rather than inventing word positions
+    $("#wavName").textContent=who+" · "+dur.toFixed(1)+"s · text timing (this voice reports no word events)";
+    await runGenerate();
+    return;
+  }
+  const al=await Pipe.align(text,"words",JSON.stringify({words}));
+  if(al.error) throw new Error(al.error);
+  if(!curTake()) newTakeSlot();
+  if(al.fps) $("#fps").value=String(al.fps);
+  $("#wavName").textContent=who+" · “"+text.slice(0,20)+(text.length>20?"…":"")+"” · "
+    +dur.toFixed(1)+"s · "+words.length+" words timed · no clip";
+  commitTake(al.track, al.segments, [], al.duration, false);
+}
+
+function sysVoiceLabel(uri){
+  if(!WS()) return "";
+  const v=WS().voices().find(v=>v.voiceURI===uri);
+  return v ? v.name : "";
+}
+
+/* Fill the system-voice picker. getVoices() starts empty, so this reruns when
+ * the browser populates the list. */
+function fillSystemVoices(){
+  const sel=$("#voiceSysVoice"); if(!sel||!WS()) return;
+  const apply=list=>{
+    const cur=voiceCfg().sysVoice||"";
+    const langOf=v=>(v.lang||"").replace("_","-");
+    const sorted=[...list].sort((a,b)=>
+      (b.default?1:0)-(a.default?1:0) || langOf(a).localeCompare(langOf(b)) || a.name.localeCompare(b.name));
+    sel.innerHTML='<option value="">browser default</option>'+sorted.map(v=>
+      `<option value="${v.voiceURI.replace(/"/g,"&quot;")}">${
+        (v.name+" · "+langOf(v)+(v.default?" (default)":"")).replace(/</g,"&lt;")}</option>`).join("");
+    if(cur && sorted.some(v=>v.voiceURI===cur)) sel.value=cur;
+  };
+  apply(WS().voices());
+  WS().onVoices(apply);
+}
+
 function wireVoiceSettings(){
   const panel=$("#voicePanel"), gear=$("#voiceCfgBtn"), prov=$("#voiceProvider"),
-        voice=$("#voiceVoice"), rate=$("#voiceRate");
+        voice=$("#voiceVoice"), rate=$("#voiceRate"), sysv=$("#voiceSysVoice");
   if(!prov) return;
   const c=voiceCfg(); prov.value=c.provider||"builtin"; if(voice)voice.value=c.voice||"";
   if(rate)rate.value=c.rate||"";
-  const sync=()=>{ const p=prov.value, isPiper=p==="piper", cloud=p!=="builtin"&&!isPiper;
-    if($("#voiceKeyRow"))$("#voiceKeyRow").hidden=!cloud;              // Piper needs no key
-    if($("#voiceVoiceRow"))$("#voiceVoiceRow").hidden=p==="builtin";
-    if($("#voiceRateRow"))$("#voiceRateRow").hidden=!isPiper;          // Piper's length_scale
+  fillSystemVoices();
+  const sync=()=>{ const p=prov.value, isPiper=p==="piper", isSys=p==="webspeech",
+        cloud=p!=="builtin"&&!isPiper&&!isSys;
+    if($("#voiceKeyRow"))$("#voiceKeyRow").hidden=!cloud;              // Piper/system need no key
+    if($("#voiceVoiceRow"))$("#voiceVoiceRow").hidden=p==="builtin"||isSys;
+    if($("#voiceSysRow"))$("#voiceSysRow").hidden=!isSys;
+    if($("#voiceRateRow"))$("#voiceRateRow").hidden=!(isPiper||isSys);
     if($("#voicePiperNote"))$("#voicePiperNote").hidden=!isPiper;
+    if($("#voiceSysNote"))$("#voiceSysNote").hidden=!isSys;            // "no clip" caveat, up front
     if($("#voiceElevenNote"))$("#voiceElevenNote").hidden=p!=="elevenlabs";   // scope gotcha, up front
+    if(rate)rate.placeholder = isSys ? "speech rate — 1 normal, 1.4 faster, 0.8 slower"
+      : "length_scale — 1.0 normal, 1.6 slower, 0.8 faster";
     if(voice)voice.placeholder = isPiper ? "path to a .onnx voice, or its folder (blank = $OPENFACEFX_PIPER_VOICE)"
       : p==="openai" ? "alloy · echo · fable · nova · shimmer (blank = alloy)" : "voice id (blank = a default)";
     if(cloud) showKeyStatus(p);
-    saveVoiceCfg({provider:p, voice:voice?voice.value:"", rate:rate?rate.value:""});
+    saveVoiceCfg({provider:p, voice:voice?voice.value:"", rate:rate?rate.value:"",
+                  sysVoice:sysv?sysv.value:(c.sysVoice||"")});
     const b=$("#ttsBtn"); if(b) b.textContent = isPiper ? "🗣 Generate voice (Piper)"
+      : isSys ? "🗣 Speak & time (system voice)"
       : neuralConfigured() ? ("🧠 Generate voice ("+p+")") : "🔊 Generate voice"; };
   prov.onchange=sync; if(voice)voice.oninput=sync; if(rate)rate.oninput=sync;
+  if(sysv)sysv.onchange=sync;
   if(gear&&panel) gear.onclick=()=>{ panel.hidden=!panel.hidden; };
   const jump=$("#voiceOpenAssistant");
   if(jump) jump.onclick=()=>{ const a=AS(); if(a&&a.open) a.open(); };
