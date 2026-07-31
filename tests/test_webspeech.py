@@ -112,8 +112,16 @@ def test_webspeech_module_ships_and_is_loaded():
     # must load BEFORE studio.js, which calls window.WebSpeechTTS
     assert html.index('src="webspeech.js"') < html.index('src="studio.js"')
     # plain text, not tomllib — this suite also runs on Python 3.9
-    pyproject = (WEB.parents[2] / "pyproject.toml").read_text(encoding="utf-8")
+    root = WEB.parents[2]
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
     assert '"studio_web/*"' in pyproject               # so the wheel carries it
+    # …and the Pages deploy must cache-bust it like every other script, or an
+    # edit ships behind a stale browser cache
+    import re
+    loaded = re.findall(r'<script[^>]*src="([A-Za-z0-9_]+)\.js"', html)
+    sed = (root / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
+    busted = re.search(r'src=\\"\(([A-Za-z0-9|_]+)\)\\\.js', sed).group(1).split("|")
+    assert not [s for s in loaded if s not in busted], sorted(set(loaded) - set(busted))
 
 
 def test_system_voice_is_offered_and_wired():
