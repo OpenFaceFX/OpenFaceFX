@@ -111,10 +111,9 @@ def test_webspeech_module_ships_and_is_loaded():
     html = _web("index.html")
     # must load BEFORE studio.js, which calls window.WebSpeechTTS
     assert html.index('src="webspeech.js"') < html.index('src="studio.js"')
-    import tomllib
-    pyproject = (WEB.parents[2] / "pyproject.toml").read_bytes()
-    globs = tomllib.load(__import__("io").BytesIO(pyproject))["tool"]["setuptools"]["package-data"]
-    assert "studio_web/*" in globs["openfacefx"]      # so the wheel carries it
+    # plain text, not tomllib — this suite also runs on Python 3.9
+    pyproject = (WEB.parents[2] / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"studio_web/*"' in pyproject               # so the wheel carries it
 
 
 def test_system_voice_is_offered_and_wired():
