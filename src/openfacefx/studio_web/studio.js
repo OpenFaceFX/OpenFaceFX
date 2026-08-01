@@ -585,13 +585,24 @@ async function probeNative(){
 async function bootstrap(){
   try{
     // native backend? (openfacefx studio serves /api using real Python)
-    // Only believe we're native once the body actually PARSES as our health
-    // JSON: a host that answers 200 with an HTML fallback would otherwise flip
-    // S.native before the parse threw, and every /api call would then fail.
-    try{ const r=await fetch("/api/health",{signal:AbortSignal.timeout(600)});
-      if(r.ok){ const j=await r.json();
-        if(j && j.ok){ S.native=true; setRuntime("native",`native · openfacefx ${j.version||""}`.trim()); } }
-    }catch(_){}
+    // The native server stamps data-offx-native on the served HTML, so the
+    // common case needs no network at all. Probing for it used to be a race
+    // against a 600ms timeout that the desktop Studio LOST on a real page load
+    // (the request queues behind our own scripts), silently demoting itself to
+    // the browser runtime. The fetch stays as a fallback for a deployment that
+    // serves the page statically but proxies /api — and it only believes a body
+    // that actually parses as our health JSON.
+    if(document.documentElement.dataset.offxNative==="1") S.native=true;
+    if(!S.native){
+      try{ const r=await fetch("/api/health",{signal:AbortSignal.timeout(2500)});
+        if(r.ok){ const j=await r.json(); if(j && j.ok) S.native=true; }
+      }catch(_){}
+    }
+    if(S.native){
+      let ver="";
+      try{ const r=await fetch("/api/health"); ver=(await r.json()).version||""; }catch(_){}
+      setRuntime("native",`native · openfacefx ${ver}`.trim());
+    }
     gateVoiceProviders();      // Piper is native-only — reflect that in the UI, not in an error
     if(!S.native){ if(typeof WebAssembly==="undefined") throw new Error("WebAssembly unavailable"); await bootPyodide(); }
     S.presets=await Pipe.presets(); initFaceGraphPresets();
@@ -1255,8 +1266,79 @@ function updateInspVal(){ if(S.inspectKind!=="channel"||!S.sel)return; const el=
 /* ===================================================================== *
  *  Views: dispatch + drawing
  * ===================================================================== */
+/* Wire the tab bar to the WAI-ARIA tabs pattern: each tab owns its panel, the
+ * selected one is announced, and only it is in the tab order (roving tabindex)
+ * so Tab moves past the bar instead of through nine buttons. Arrow/Home/End
+ * move between tabs, which is what a screen-reader or keyboard user expects
+ * once role=tablist is claimed. Done here rather than in markup so the tabs and
+ * panels can't drift out of sync. */
+function initTabsA11y(){
+  const tabs=$$("#tabs .tab");
+  tabs.forEach(t=>{
+    const v=t.dataset.view, pane=$(`.view[data-view="${v}"]`);
+    t.id=t.id||("tab-"+v);
+    if(pane){
+      pane.id=pane.id||("panel-"+v);
+      pane.setAttribute("role","tabpanel");
+      pane.setAttribute("aria-labelledby",t.id);
+      pane.setAttribute("tabindex","0");        // the panel itself is focusable per APG
+      t.setAttribute("aria-controls",pane.id);
+    }
+  });
+  syncTabsA11y();
+  $("#tabs").addEventListener("keydown",e=>{
+    const ts=$$("#tabs .tab"), i=ts.indexOf(document.activeElement);
+    if(i<0) return;
+    const go=n=>{ e.preventDefault(); ts[n].focus(); ts[n].click(); };
+    if(e.key==="ArrowRight") go((i+1)%ts.length);
+    else if(e.key==="ArrowLeft") go((i-1+ts.length)%ts.length);
+    else if(e.key==="Home") go(0);
+    else if(e.key==="End") go(ts.length-1);
+  });
+}
+/* Every visualisation in the Studio is a <canvas>, which is a blank element to
+ * assistive tech unless it's named. Give each one role=img and a description of
+ * what it plots, so the page is navigable and screenshots/tests can identify
+ * panels by accessible name rather than by id. */
+const CANVAS_LABELS = {
+  curves:"Animation curve editor — channel values over time",
+  curveStrip:"Word and phoneme alignment strip under the curves",
+  wave:"Audio waveform and spectrogram of the take",
+  phonStrip:"Phoneme and word timing bar — drag a boundary to re-time",
+  eventsTl:"Event timeline — emphasis and phrase markers",
+  eventStrip:"Phoneme and word strip under the event timeline",
+  facegraph:"Face graph — viseme inputs wired to rig outputs",
+  schematic:"2D face schematic driven by the current frame",
+  ws_facegraph:"Workspace face graph panel",
+  ws_curves:"Workspace curve panel",
+  ws_wave:"Workspace waveform and spectrogram panel",
+  ws_phonStrip:"Workspace phoneme timing panel",
+  ws_schematic:"Workspace face schematic panel",
+  preview3d:"3D head preview driven by the current frame",
+};
+function initCanvasA11y(){
+  document.querySelectorAll("canvas").forEach(c=>{
+    const label=CANVAS_LABELS[c.id];
+    if(label && !c.getAttribute("aria-label")){
+      c.setAttribute("role","img");
+      c.setAttribute("aria-label",label);
+    }else if(!label && !c.getAttribute("aria-hidden") && !c.getAttribute("aria-label")){
+      c.setAttribute("aria-hidden","true");     // decorative/offscreen buffers
+    }
+  });
+}
+
+function syncTabsA11y(){
+  $$("#tabs .tab").forEach(t=>{
+    const on=t.classList.contains("active");
+    t.setAttribute("aria-selected",on?"true":"false");
+    t.tabIndex=on?0:-1;                         // roving tabindex
+  });
+}
+
 $$("#tabs .tab").forEach(t=>t.onclick=()=>{
   $$("#tabs .tab").forEach(x=>x.classList.remove("active")); t.classList.add("active");
+  syncTabsA11y();
   $$(".view").forEach(v=>v.classList.remove("active"));
   S.view=t.dataset.view; $(`.view[data-view="${S.view}"]`).classList.add("active");
   if(S.view==="workspace") initDock();               // place modules into panes before mounting/drawing
@@ -1841,11 +1923,13 @@ async function renderMapping(){
   host.innerHTML=phons.map(ph=>{
     const rows=S.phonMap[ph]||[];
     const cells=rows.map((tw,i)=>
-      `<span class="map-cell"><input class="map-w" type="number" min="0" max="1" step="0.05" value="${(+tw[1]).toFixed(2)}" data-p="${esc(ph)}" data-i="${i}">`+
-      `<input class="map-t" type="text" value="${esc(tw[0])}" data-p="${esc(ph)}" data-i="${i}" spellcheck="false">`+
-      `<button class="map-del" data-p="${esc(ph)}" data-i="${i}" title="Remove target">✕</button></span>`).join("");
+      // every field names its phoneme: 80 inputs that all announce "edit text"
+      // are unusable with a screen reader, and the row header is far to the left
+      `<span class="map-cell"><input class="map-w" type="number" min="0" max="1" step="0.05" value="${(+tw[1]).toFixed(2)}" data-p="${esc(ph)}" data-i="${i}" aria-label="${esc(ph)} target ${i+1} weight">`+
+      `<input class="map-t" type="text" value="${esc(tw[0])}" data-p="${esc(ph)}" data-i="${i}" spellcheck="false" aria-label="${esc(ph)} target ${i+1} viseme">`+
+      `<button class="map-del" data-p="${esc(ph)}" data-i="${i}" title="Remove target" aria-label="Remove ${esc(ph)} target ${i+1}">✕</button></span>`).join("");
     return `<div class="map-row"><span class="map-vis">${esc(ph)}</span><div class="map-cells">${cells}`+
-      `<button class="map-add" data-p="${esc(ph)}" title="Add a viseme target">＋</button></div></div>`;
+      `<button class="map-add" data-p="${esc(ph)}" title="Add a viseme target" aria-label="Add a viseme target to ${esc(ph)}">＋</button></div></div>`;
   }).join("");
   host.querySelectorAll(".map-w").forEach(inp=>inp.onchange=()=>{
     let w=parseFloat(inp.value); if(!isFinite(w))w=0; w=Math.max(0,Math.min(1,w)); inp.value=w.toFixed(2);
@@ -2396,4 +2480,5 @@ function wirePreviewChooser(){
 }
 
 wireIO(); wireCanvases(); wirePreviewChooser();
+initTabsA11y(); initCanvasA11y();
 bootstrap();

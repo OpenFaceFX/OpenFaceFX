@@ -9,6 +9,36 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **Live end-to-end / UX tests for the Studio** (`tests/e2e/`, Playwright + your own
+  Chrome). Drives the real Studio against a running server and checks what the Python
+  suite structurally cannot: every tab renders, every control has an accessible name,
+  every canvas is named or marked decorative, no target is under WCAG's 24×24 minimum,
+  the keyboard tabs pattern works, the primary Generate workflow produces a track, the
+  canvases actually paint, and the console stays clean. 56 checks. Not in CI — it needs
+  a browser and a live server; see `tests/e2e/README.md`.
+
+### Fixed
+- **The desktop Studio could silently demote itself to the browser runtime.** Native
+  detection raced a `fetch("/api/health")` against a 600 ms timeout. The server answers
+  in under a millisecond, but that first request queues behind the page's own scripts —
+  measured ~700 ms in a real Chrome — so a **fresh load of the desktop app** lost the
+  race, fell back to the slower Pyodide runtime and disabled Piper while the native
+  backend was running the whole time. The server now stamps `data-offx-native` on served
+  HTML, so detection involves no timing at all; the fetch remains as a fallback (with a
+  workable 2.5 s timeout) for deployments that serve the page statically but proxy `/api`.
+
+### Accessibility
+- **The Studio's tab bar now implements the pattern it claimed.** It declared
+  `role="tablist"` but had no `aria-selected`, no `role="tabpanel"`, no `aria-controls`,
+  and no keyboard support. Tabs now own their panels, announce selection, support
+  Arrow/Home/End, and use a roving tabindex so Tab moves past the bar instead of through
+  nine buttons.
+- **80 unlabelled fields on the Mapping tab** — every weight and target input announced
+  only "edit text". Each now names its phoneme, as do the add/remove buttons.
+- **Eleven unnamed `<canvas>` elements**, which is the Studio's entire visual content,
+  now carry `role="img"` and a description; offscreen buffers are marked decorative.
+- Added the document's missing `<h1>`, and raised six controls to the WCAG 2.2
+  Target Size minimum (2.5.8).
 - **Studio: System voice — a natural, keyless voice that works in the browser**
   (new `studio_web/webspeech.js`). Piper needs a local process, so the in-browser
   Studio can't reach it; this uses `speechSynthesis` and the voices the OS already

@@ -1,0 +1,12 @@
+{
+  "name": "openfacefx-studio-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Live browser tests for OpenFaceFX Studio. Not part of the Python package or CI — needs a real Chrome and a running studio server.",
+  "scripts": {
+    "test": "node studio.e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.62.0"
+  }
+}

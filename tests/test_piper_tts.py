@@ -423,22 +423,42 @@ def test_piper_is_gated_to_the_native_runtime_in_the_ui():
     assert "...voiceCfg()" in gate
 
 
-def test_native_probe_is_retried_with_a_real_timeout():
-    """bootstrap()'s health check gives up after 600ms so a static host doesn't
-    stall; without a patient re-probe, a desktop Studio whose server was still
-    starting would report Piper as browser-only."""
+def test_native_runtime_is_detected_without_a_timing_race():
+    """The native server stamps the served HTML, so detection needs no network.
+
+    This replaced a `fetch("/api/health")` raced against a 600 ms timeout. The
+    server answers in under a millisecond, but that first request queues behind
+    the page's own scripts — measured ~700 ms in a real Chrome — so the desktop
+    Studio lost the race, demoted itself to the Pyodide runtime and disabled
+    Piper while the native backend was running the whole time.
+    """
+    from openfacefx.studio import _mark_native
+    js = _web("studio.js")
+    html = _web("index.html")
+    # server side: the stamp lands on the real markup
+    assert b'data-offx-native="1"' in _mark_native(html.encode())
+    assert _mark_native(b"<p>no html tag</p>") == b"<p>no html tag</p>"   # no-op elsewhere
+    # client side: the marker is checked, and only then the network fallback
+    assert 'document.documentElement.dataset.offxNative==="1"' in js
+    boot = js.split("async function bootstrap()", 1)[1][:1200]
+    assert boot.index("offxNative") < boot.index("fetch(\"/api/health\"")
+
+
+def test_native_probe_falls_back_to_a_patient_fetch():
+    """A deployment that serves the page statically but proxies /api still has
+    to be detectable, and a late-starting server must not permanently disable
+    Piper — so the fetch fallback stays, with a real timeout."""
     js = _web("studio.js")
     assert "async function probeNative()" in js
     assert "await probeNative()" in js               # ttsPiper defers to it
     probe = js.split("async function probeNative()", 1)[1].split("\nasync function ", 1)[0]
     assert "AbortSignal.timeout(5000)" in probe
-    assert "AbortSignal.timeout(600)" in js          # the fast boot check still exists
-    # Both probes must require a PARSED {ok:true} body. Trusting r.ok alone lets a
+    assert "AbortSignal.timeout(2500)" in js         # the boot fallback, no longer 600ms
+    # Every path must require a PARSED {ok:true} body: trusting r.ok alone lets a
     # host that answers 200 with an HTML fallback flip S.native before the JSON
-    # parse throws — after which every /api call fails for no visible reason.
-    assert js.count("if(j && j.ok)") == 2
-    for chunk in (probe, js.split("async function bootstrap()", 1)[1][:600]):
-        assert chunk.index("await r.json()") < chunk.index("S.native=true")
+    # parse throws, after which every /api call fails for no visible reason.
+    assert js.count("if(j && j.ok)") == 2          # the boot fallback and probeNative
+    assert probe.index("await r.json()") < probe.index("S.native=true")
 
 
 def test_api_keys_live_only_in_the_assistant_vault():

@@ -1,0 +1,180 @@
+/* ===================================================================== *
+ *  OpenFaceFX Studio — live end-to-end / UX tests
+ *
+ *  Drives the REAL Studio in a real Chrome against a running native server,
+ *  so it catches what the Python suite structurally cannot: markup that never
+ *  renders, controls that don't respond, canvases that paint nothing, and
+ *  accessibility defects that only exist in the composed page.
+ *
+ *  Run:
+ *      openfacefx studio --port 8801 --no-open &      # or any port
+ *      node tests/e2e/studio.e2e.mjs                  # OFFX_URL to override
+ *
+ *  Requires `playwright-core` and a local Chrome (channel:"chrome"), so no
+ *  browser download. Deliberately NOT wired into CI: it needs a browser and a
+ *  live server. `--json <path>` writes the full report for diffing between runs.
+ * ===================================================================== */
+import { chromium } from "playwright-core";
+import fs from "fs";
+
+const URL = process.env.OFFX_URL || "http://127.0.0.1:8801";
+const JSON_OUT = (() => { const i = process.argv.indexOf("--json"); return i > 0 ? process.argv[i+1] : null; })();
+const HEADED = process.argv.includes("--headed");
+
+let pass = 0, fail = 0;
+const failures = [];
+const ok = (cond, name, detail) => {
+  if (cond) { pass++; console.log(`  ✓ ${name}`); }
+  else { fail++; failures.push({ name, detail }); console.log(`  ✗ ${name}${detail ? "\n      " + detail : ""}`); }
+};
+const group = n => console.log(`\n${n}`);
+
+const browser = await chromium.launch({ channel: "chrome", headless: !HEADED });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const consoleErrors = [];
+page.on("console", m => { if (m.type() === "error") consoleErrors.push(m.text()); });
+page.on("pageerror", e => consoleErrors.push("pageerror: " + e.message));
+
+const report = { url: URL, tabs: [] };
+
+try {
+  /* ---------------- boot ---------------- */
+  group("Boot");
+  const t0 = Date.now();
+  await page.goto(URL, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => !document.querySelector("#run")?.disabled, null, { timeout: 60000 });
+  report.bootMs = Date.now() - t0;
+  ok(true, `Studio became interactive (${report.bootMs} ms)`);
+  ok(await page.title() === "OpenFaceFX Studio", "document title");
+  const runtime = await page.$eval("#runtimeLabel", e => e.textContent.trim()).catch(() => "");
+  ok(/native/.test(runtime), "native runtime detected", `runtime chip said: ${runtime || "(empty)"}`);
+
+  /* ---------------- document structure ---------------- */
+  group("Document structure");
+  const doc = await page.evaluate(() => ({
+    lang: document.documentElement.lang,
+    h1: [...document.querySelectorAll("h1")].length,
+    main: document.querySelectorAll("main,[role=main]").length,
+    viewport: !!document.querySelector("meta[name=viewport]"),
+    tabs: document.querySelectorAll("[role=tab]").length,
+    panels: document.querySelectorAll("[role=tabpanel]").length,
+    selected: document.querySelectorAll("[role=tab][aria-selected=true]").length,
+    controls: [...document.querySelectorAll("[role=tab]")].filter(t => t.getAttribute("aria-controls")).length,
+  }));
+  report.doc = doc;
+  ok(doc.lang === "en", "html[lang] is set");
+  ok(doc.h1 === 1, "exactly one <h1>", `found ${doc.h1}`);
+  ok(doc.main === 1, "a <main> landmark exists");
+  ok(doc.viewport, "viewport meta present");
+  ok(doc.panels === doc.tabs, "every tab has a tabpanel", `${doc.tabs} tabs / ${doc.panels} panels`);
+  ok(doc.selected === 1, "exactly one tab is aria-selected", `found ${doc.selected}`);
+  ok(doc.controls === doc.tabs, "every tab aria-controls its panel", `${doc.controls}/${doc.tabs}`);
+
+  /* ---------------- keyboard: WAI-ARIA tabs pattern ---------------- */
+  group("Keyboard (WAI-ARIA tabs pattern)");
+  await page.focus('.tab[data-view="preview"]');
+  await page.keyboard.press("ArrowRight");
+  ok(await page.evaluate(() => document.activeElement?.dataset?.view) === "workspace",
+     "ArrowRight moves to the next tab");
+  await page.keyboard.press("End");
+  const last = await page.evaluate(() => ({
+    focused: document.activeElement?.dataset?.view,
+    lastTab: [...document.querySelectorAll("#tabs .tab")].pop()?.dataset.view,
+  }));
+  ok(last.focused === last.lastTab, "End jumps to the last tab", JSON.stringify(last));
+  await page.keyboard.press("Home");
+  ok(await page.evaluate(() => document.activeElement?.dataset?.view) === "preview", "Home returns to the first tab");
+  const roving = await page.evaluate(() =>
+    [...document.querySelectorAll("#tabs .tab")].filter(t => t.tabIndex === 0).length);
+  ok(roving === 1, "roving tabindex — only the active tab is in the tab order", `${roving} tabs tabbable`);
+
+  /* ---------------- every tab renders and is labelled ---------------- */
+  group("Per-tab render + labelling");
+  const views = await page.$$eval("#tabs .tab", ts => ts.map(t => t.dataset.view));
+  for (const v of views) {
+    await page.click(`.tab[data-view="${v}"]`);
+    await page.waitForTimeout(200);
+    const r = await page.evaluate(view => {
+      const visible = el => { const s = getComputedStyle(el), b = el.getBoundingClientRect();
+        return s.display !== "none" && s.visibility !== "hidden" && b.width > 0 && b.height > 0; };
+      const pane = document.querySelector(`.view[data-view="${view}"]`);
+      const ctl = [...pane.querySelectorAll("button,input,select,textarea,[tabindex]")].filter(visible);
+      const named = e => {
+        if (e.type === "hidden") return true;
+        return !!((e.textContent || "").trim() || e.getAttribute("aria-label") || e.getAttribute("title") ||
+          (e.id && document.querySelector(`label[for="${e.id}"]`)) || e.closest("label") || e.getAttribute("placeholder"));
+      };
+      // effective target: a checkbox inside a label is toggled by the whole label
+      const target = e => (e.tagName === "INPUT" && e.closest("label")) || e;
+      return {
+        view,
+        visible: visible(pane),
+        controls: ctl.length,
+        unnamed: ctl.filter(e => !named(e)).map(e => e.tagName + "." + (e.className || "")),
+        tiny: ctl.filter(e => { const b = target(e).getBoundingClientRect(); return b.height < 24 || b.width < 24; })
+                .map(e => { const b = target(e).getBoundingClientRect();
+                  return `${e.id || e.tagName}[${(e.className||"").split(" ")[0]}] ${Math.round(b.width)}x${Math.round(b.height)}`; }),
+        canvasUnnamed: [...pane.querySelectorAll("canvas")].filter(visible)
+          .filter(c => !c.getAttribute("aria-label") && c.getAttribute("aria-hidden") !== "true")
+          .map(c => c.id || "(anon)"),
+      };
+    }, v);
+    report.tabs.push(r);
+    ok(r.visible, `${v}: panel renders`);
+    ok(r.unnamed.length === 0, `${v}: every control has an accessible name`,
+       r.unnamed.length ? `${r.unnamed.length} unnamed: ${[...new Set(r.unnamed)].slice(0,3).join(", ")}` : "");
+    ok(r.canvasUnnamed.length === 0, `${v}: every visible canvas is named or marked decorative`,
+       r.canvasUnnamed.join(", "));
+    ok(r.tiny.length === 0, `${v}: no target under 24x24 (WCAG 2.5.8)`,
+       [...new Set(r.tiny)].slice(0, 5).join(" | "));
+  }
+
+  /* ---------------- the core workflow actually works ---------------- */
+  group("Generate a take (the primary workflow)");
+  await page.click('.tab[data-view="preview"]');
+  await page.fill("#text", "Hello world, this is a live end to end test.");
+  await page.click("#run");
+  await page.waitForFunction(() => window.StudioBridge?.track?.()?.channels?.length > 0, null, { timeout: 60000 });
+  const take = await page.evaluate(() => {
+    const t = window.StudioBridge.track();
+    return { channels: t.channels.length, keys: t.channels.reduce((n, c) => n + c.keys.length, 0),
+             duration: window.StudioBridge.duration?.() ?? null };
+  });
+  report.take = take;
+  ok(take.channels > 0, `track generated (${take.channels} channels, ${take.keys} keys)`);
+  ok(take.keys > 0, "channels carry keyframes");
+
+  group("Canvases actually paint");
+  for (const [view, id] of [["curves","curves"], ["phonemes","wave"], ["facegraph","facegraph"]]) {
+    await page.click(`.tab[data-view="${view}"]`);
+    await page.waitForTimeout(320);
+    const lit = await page.evaluate(cid => {
+      const c = document.getElementById(cid);
+      if (!c || !c.width) return -1;
+      const x = c.getContext("2d");
+      if (!x) return -2;                                 // webgl canvas — skip
+      const d = x.getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 3; i < d.length; i += 4 * 37) if (d[i] > 8) n++;   // sparse alpha sample
+      return n;
+    }, id);
+    ok(lit === -2 || lit > 0, `${view}: #${id} has painted pixels`, `sampled ${lit}`);
+  }
+
+  /* ---------------- no console noise anywhere ---------------- */
+  group("Console");
+  report.consoleErrors = consoleErrors;
+  ok(consoleErrors.length === 0, "no console errors across the whole session",
+     consoleErrors.slice(0, 4).join(" | "));
+
+} catch (err) {
+  fail++; failures.push({ name: "suite crashed", detail: err.message });
+  console.log("\n✗ SUITE CRASHED: " + err.message);
+} finally {
+  await browser.close();
+}
+
+report.pass = pass; report.fail = fail; report.failures = failures;
+if (JSON_OUT) fs.writeFileSync(JSON_OUT, JSON.stringify(report, null, 2));
+console.log(`\n${fail ? "FAIL" : "PASS"} — ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

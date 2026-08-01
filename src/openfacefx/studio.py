@@ -372,6 +372,23 @@ def _tts(p: dict) -> dict:
     return {"wav_b64": base64.b64encode(wav).decode(), "sr": 16000, "duration": round(dur, 3)}
 
 
+_NATIVE_MARK = b'<html lang="en" data-offx-native="1"'
+
+
+def _mark_native(html: bytes) -> bytes:
+    """Stamp served HTML so the page knows it has a native backend *instantly*.
+
+    Detection used to be a `fetch("/api/health")` race against a 600 ms timeout.
+    The server answers in well under a millisecond, but that first request is
+    queued behind the page's own scripts during load, so it measured ~700 ms in
+    a real Chrome and lost the race — the desktop Studio then fell back to the
+    slower Pyodide runtime and disabled Piper, on a machine that was running the
+    native backend all along. A static host simply never sends this attribute,
+    so the two cases are distinguishable with no timing involved at all.
+    """
+    return html.replace(b'<html lang="en"', _NATIVE_MARK, 1)
+
+
 def _anchors_duration(anchors) -> float:
     """Clip length implied by a set of word anchors.
 
@@ -680,6 +697,8 @@ class _Handler(BaseHTTPRequestHandler):
         except (FileNotFoundError, ModuleNotFoundError, OSError, IsADirectoryError):
             return self._send(404, b"not found", "text/plain")
         ext = os.path.splitext(name)[1]
+        if ext == ".html":
+            data = _mark_native(data)
         self._send(200, data, _CTYPE.get(ext, "application/octet-stream"))
 
     def do_GET(self):

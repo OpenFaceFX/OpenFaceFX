@@ -29,3 +29,4 @@ track.csv
 
 # local design references / scratch (screen-capture gifs, etc.)
 work/
+node_modules/
