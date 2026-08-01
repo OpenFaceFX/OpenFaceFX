@@ -161,6 +161,102 @@ try {
     ok(lit === -2 || lit > 0, `${view}: #${id} has painted pixels`, `sampled ${lit}`);
   }
 
+  /* ---------------- colour contrast, both themes (WCAG 1.4.3) ---------------- */
+  group("Colour contrast (WCAG 1.4.3 AA)");
+  const CONTRAST = `(() => {
+    const lum = c => { const [r,g,b] = c.map(v => { v/=255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055,2.4); });
+      return 0.2126*r + 0.7152*g + 0.0722*b; };
+    const parse = s => { const m = s.match(/rgba?\\(([^)]+)\\)/); if(!m) return null;
+      const p = m[1].split(",").map(Number); return {rgb:[p[0],p[1],p[2]], a: p.length>3?p[3]:1}; };
+    const ratio = (f,bg) => { const L1=lum(f), L2=lum(bg); const [a,b]=L1>L2?[L1,L2]:[L2,L1]; return (a+0.05)/(b+0.05); };
+    const bgOf = el => { let n = el;
+      while(n && n !== document.documentElement){ const c = parse(getComputedStyle(n).backgroundColor);
+        if(c && c.a > 0.85) return c.rgb; n = n.parentElement; }
+      return parse(getComputedStyle(document.body).backgroundColor)?.rgb || [0,0,0]; };
+    const vis = el => { const s=getComputedStyle(el), r=el.getBoundingClientRect();
+      return s.display!=="none" && s.visibility!=="hidden" && +s.opacity>0.05 && r.width>0 && r.height>0; };
+    const out = [];
+    for(const el of document.querySelectorAll("body *")){
+      if(!vis(el)) continue;
+      const txt = [...el.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent.trim()).join("");
+      if(!txt) continue;
+      const s = getComputedStyle(el), fg = parse(s.color); if(!fg) continue;
+      const size = parseFloat(s.fontSize), bold = (parseInt(s.fontWeight)||400) >= 700;
+      const need = (size >= 24 || (size >= 18.66 && bold)) ? 3 : 4.5;
+      const r = ratio(fg.rgb, bgOf(el));
+      if(r < need) out.push(\`\${el.tagName.toLowerCase()}\${el.id?"#"+el.id:""} \${r.toFixed(2)}:1 need \${need} "\${txt.slice(0,22)}"\`);
+    }
+    return [...new Set(out)];
+  })()`;
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(t => document.documentElement.setAttribute("data-theme", t), theme);
+    await page.waitForTimeout(200);
+    const bad = [];
+    for (const v of views) {
+      await page.click(`.tab[data-view="${v}"]`); await page.waitForTimeout(120);
+      bad.push(...await page.evaluate(CONTRAST));
+    }
+    const uniq = [...new Set(bad)];
+    report[`contrast_${theme}`] = uniq;
+    ok(uniq.length === 0, `${theme} theme: all text meets 4.5:1 (3:1 large)`, uniq.slice(0, 6).join(" | "));
+  }
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+
+  /* ---------------- focus is always visible (WCAG 2.4.7) ---------------- */
+  group("Focus visibility (WCAG 2.4.7)");
+  // Drive real Tab presses: :focus-visible does NOT match a programmatic
+  // .focus() in Chrome, so scripted focus would report a false failure on
+  // markup that is perfectly fine for an actual keyboard user.
+  await page.evaluate(() => document.body.focus());
+  const noRing = [];
+  const seenStops = new Set();
+  for (let i = 0; i < 45; i++) {
+    await page.keyboard.press("Tab");
+    const r = await page.evaluate(() => {
+      const e = document.activeElement;
+      if (!e || e === document.body) return null;
+      const snap = el => { const s = getComputedStyle(el);
+        return s.outlineWidth + s.outlineStyle + s.outlineColor + s.boxShadow + s.borderColor + s.backgroundColor; };
+      const focused = snap(e);
+      const key = (e.id ? "#" + e.id : e.tagName.toLowerCase() + "." + String(e.className || "").split(" ")[0]);
+      e.blur();
+      return { key, changed: snap(e) !== focused };
+    });
+    if (!r) continue;
+    if (seenStops.has(r.key)) continue;
+    seenStops.add(r.key);
+    if (!r.changed) noRing.push(r.key);
+  }
+  report.focusStops = seenStops.size;
+  ok(seenStops.size > 10, `Tab reaches the controls (${seenStops.size} distinct stops)`);
+  ok(noRing.length === 0, "every keyboard-focused control shows a visible focus indicator",
+     noRing.slice(0, 8).join(", "));
+
+  /* ---------------- status messages (WCAG 4.1.3) ---------------- */
+  group("Status messages (WCAG 4.1.3)");
+  const hasLive = await page.evaluate(() =>
+    !!document.querySelector("[role=status],[aria-live=polite],[aria-live=assertive]"));
+  ok(hasLive, "a live region exists for async results");
+  await page.click('.tab[data-view="preview"]');
+  await page.evaluate(() => { document.getElementById("srStatus").textContent = ""; });
+  await page.click("#run");
+  await page.waitForFunction(() => (document.getElementById("srStatus")?.textContent || "").length > 0,
+                             null, { timeout: 60000 });
+  const spoken = await page.$eval("#srStatus", e => e.textContent);
+  report.announced = spoken;
+  ok(/take ready|generating/i.test(spoken), "generating a take is announced", `said: "${spoken}"`);
+
+  /* ---------------- reflow (WCAG 1.4.10) ---------------- */
+  group("Reflow");
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.waitForTimeout(250);
+  const reflow = await page.evaluate(() => ({
+    overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  }));
+  report.reflow1024 = reflow;
+  ok(reflow.overflow <= 1, "no horizontal scrolling at 1024px", `overflows by ${reflow.overflow}px`);
+  await page.setViewportSize({ width: 1440, height: 900 });
+
   /* ---------------- no console noise anywhere ---------------- */
   group("Console");
   report.consoleErrors = consoleErrors;

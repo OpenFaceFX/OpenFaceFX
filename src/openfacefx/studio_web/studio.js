@@ -748,7 +748,7 @@ async function generateVoice(){
       $("#engine").value="energy";               // lip-sync from the generated audio
       await runGenerate();                       // re-solve with the energy engine + the new audio
     }
-  }catch(err){ alert("Voice generation failed: "+err.message); }
+  }catch(err){ announce("Voice generation failed."); alert("Voice generation failed: "+err.message); }
   finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
 }
 /* Piper spawns a local program, so it can only work on the native backend. Show
@@ -946,6 +946,17 @@ $("#alignFile") && ($("#alignFile").onchange=async e=>{ const f=e.target.files[0
   finally{ e.target.value=""; }
 });
 
+/* Announce an async result to assistive tech (WCAG 4.1.3 Status Messages).
+ * Everything here used to report only visually — a button label flipping to
+ * "✓ json", a hint line changing — which a screen-reader user never learns
+ * about. role="status" speaks it without stealing focus. Re-setting the same
+ * string wouldn't re-announce, hence the clear-then-set. */
+function announce(msg){
+  const el=$("#srStatus"); if(!el||!msg) return;
+  el.textContent="";
+  setTimeout(()=>{ el.textContent=msg; },60);
+}
+
 /* Commit a freshly solved track onto the current take and redraw everything.
  * Shared by Generate/Reanalyze and by the Piper voice path (which solves from
  * real phoneme timing instead of re-running the analysis). */
@@ -959,10 +970,12 @@ function commitTake(newTrack,segments,words,duration,preserve){
   S.undo.length=0; S.redo.length=0; S.selKeys=[];   // rebuild clears undo history + box-selection
   ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons(); updateReanalyze();
   $("#tpDur").textContent="/ "+fmt(S.duration); refreshIO();
+  announce(`Take ready — ${newTrack.channels.length} channels, ${(+duration).toFixed(2)} seconds.`);
 }
 
 async function runGenerate(preserve){
   const btn=$("#run"); btn.disabled=true; btn.textContent="Generating…";
+  btn.setAttribute("aria-busy","true"); announce("Generating take…");
   try{
     S.fps=parseFloat($("#fps").value)||60;
     const hasWav=!!S.wavBytes && $("#engine").value==="energy";
@@ -986,8 +999,9 @@ async function runGenerate(preserve){
       for(const nm in tk.owned){ if(oldBy[nm]&&!newTrack.channels.some(c=>c.name===nm)) newTrack.channels.push({name:nm,keys:structuredClone(oldBy[nm].keys)}); }
     }
     commitTake(newTrack, res.segments, res.words, res.duration, preserve);
-    btn.textContent="Generate take"; btn.disabled=false; return true;
-  }catch(err){ btn.textContent="Generate — failed"; console.error(err); alert("Generate failed: "+err.message); btn.disabled=false; return false; }
+    btn.textContent="Generate take"; btn.disabled=false; btn.removeAttribute("aria-busy"); return true;
+  }catch(err){ btn.textContent="Generate — failed"; console.error(err); announce("Generate failed: "+err.message);
+    alert("Generate failed: "+err.message); btn.disabled=false; btn.removeAttribute("aria-busy"); return false; }
 }
 $("#run").onclick=()=>{ const tk=curTake();
   if(tk&&tk.edited&&S.track&&!confirm("Generate replaces the whole take, discarding your hand edits.\n\nUse “Reanalyze — keep my edits” to rebuild but preserve edited channels.\n\nReplace anyway?")) return;
@@ -2352,7 +2366,9 @@ function buildExportGrid(){
       const blob=new Blob([Uint8Array.from(atob(r.b64),c=>c.charCodeAt(0))]);
       const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=r.filename; a.click();
       b.textContent="✓ "+r.filename.split(".").slice(-1); setTimeout(()=>b.textContent=was,1800);
-    }catch(err){ b.textContent="failed"; alert("Export failed: "+err.message); setTimeout(()=>b.textContent=was,1800); }
+      announce("Exported "+r.filename+".");
+    }catch(err){ b.textContent="failed"; announce("Export failed: "+err.message);
+      alert("Export failed: "+err.message); setTimeout(()=>b.textContent=was,1800); }
     b.disabled=false;
   });
 }

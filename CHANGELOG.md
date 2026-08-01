@@ -18,6 +18,10 @@ its `version` field.
   a browser and a live server; see `tests/e2e/README.md`.
 
 ### Fixed
+- **"Generate voice" and the ⚙ button rendered as light-grey pills in the dark UI.**
+  `.filebtn` styled a border and colour but no background, so the two `<button>`s using
+  it inherited the browser's default `buttonface` (#efefef) — the sibling `<label>`s
+  never did, which is why it survived. Now transparent, matching its neighbours.
 - **The desktop Studio could silently demote itself to the browser runtime.** Native
   detection raced a `fetch("/api/health")` against a 600 ms timeout. The server answers
   in under a millisecond, but that first request queues behind the page's own scripts —
@@ -28,6 +32,16 @@ its `version` field.
   workable 2.5 s timeout) for deployments that serve the page statically but proxy `/api`.
 
 ### Accessibility
+- **Every text colour now meets WCAG 1.4.3 AA in both themes** — measured live, 28
+  failures down to 0. The status palette (`--good/--warn/--crit/--info`) had been tuned
+  for the dark ground and never given light-theme values, so it rendered at 2.2–3.1:1 on
+  white; white-on-amber primary buttons were 3.07:1; and `--fg-mute`, used for every hint
+  and empty state, was 3.0:1. Adds an `--accent-text` token because the amber that works
+  as a *fill* is unreadable as *text* on light panels.
+- **Async results are announced** (WCAG 4.1.3). Generate, export and voice synthesis
+  reported success only by flipping a button label, which a screen-reader user never
+  learns about. A polite `role="status"` region now speaks them, and the Generate button
+  carries `aria-busy` while it works.
 - **The Studio's tab bar now implements the pattern it claimed.** It declared
   `role="tablist"` but had no `aria-selected`, no `role="tabpanel"`, no `aria-controls`,
   and no keyboard support. Tabs now own their panels, announce selection, support
