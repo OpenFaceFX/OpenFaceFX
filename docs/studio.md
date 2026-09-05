@@ -78,6 +78,13 @@ absent → **browser/Pyodide**. Same UI, same results.
 
 ---
 
+**The browser runtime runs off the main thread.** CPython + numpy + the wheel live in
+a Web Worker (`pyworker.js`, a ~60-line RPC host: `boot` / `call` / `write`); every
+bridge call in `studio.js` goes through one `py()` helper, so a long solve never
+freezes the page — a 1080-word generate keeps the longest frame gap around 30 ms
+where it used to block for 3 s with the "Generating…" state never painting. If the
+worker cannot start (no Worker support, a CSP), the interpreter runs in-page as before.
+
 ## LLM integration — where it helps, and how
 
 LLMs are wired into the **Assistant** tab and target the specific places a

@@ -33,6 +33,14 @@ its `version` field.
   and a live server; see `tests/e2e/README.md`.
 
 ### Fixed
+- **In the browser runtime, a long transcript froze the whole page.** Pyodide ran on the
+  main thread, so Generate blocked everything for its entire solve — measured 0.7 s for a
+  430-word transcript and 3.2 s for 1080 words, during which the "Generating…" state never
+  even painted and the 3D head stopped. CPython now runs in a Web Worker (new
+  `studio_web/pyworker.js`, a small RPC host); the page keeps painting, the busy state
+  shows, and every bridge call goes through the same `py()` helper. If the worker cannot
+  start (no Worker support, a CSP) the interpreter runs in-page exactly as before. The
+  E2E suite now asserts a 720-word generate keeps the longest frame gap under 250 ms.
 - **The live site logged two 404s in every visitor's console.** A static host has no
   backend, but the page still probed `/api/health` and `/api/auth/me` to find one. The
   Pages deploy now stamps the page `data-offx-static`, and the Studio skips both probes

@@ -635,6 +635,27 @@ try {
   const tts = await page.evaluate(() => ({ bytes: S.wavBytes?.length || 0, spec: !!S.wavSpec, name: document.getElementById("wavName").textContent }));
   ok(tts.bytes > 10000 && tts.spec && /AI voice/.test(tts.name), "Generate voice synthesises a clip and drives the spectrogram", JSON.stringify(tts));
 
+  // a long transcript must not freeze the page: Pyodide runs in a worker, native is a fetch
+  await page.click('.tab[data-view="preview"]');
+  await page.fill("#text", "The quick brown fox jumps over the lazy dog while the old clock ticks softly in the hall. ".repeat(40).trim());
+  await page.selectOption("#engine", "naive");            // text timing, not the 4 s voice clip loaded above
+  await page.fill("#dur", "220");
+  const live = await page.evaluate(async () => {
+    let maxGap = 0, frames = 0, last = performance.now(), running = true;
+    const tick = () => { const now = performance.now(); maxGap = Math.max(maxGap, now - last); last = now; frames++; if (running) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+    const btn = document.getElementById("run"); window.__prevTrack = S.track; const t0 = performance.now(); btn.click();
+    await new Promise(r => setTimeout(r, 30));
+    const busy = btn.getAttribute("aria-busy") === "true" && /Generating/.test(btn.textContent);
+    await new Promise(res => { const w = () => { if (S.track && S.track !== window.__prevTrack && !btn.disabled) res(); else setTimeout(w, 20); }; w(); });
+    running = false;
+    return { ms: Math.round(performance.now() - t0), maxGap: Math.round(maxGap), frames, busy, dur: S.duration, words: document.getElementById("text").value.split(/\s+/).length };
+  });
+  report.longGenerate = live;
+  ok(live.busy && live.dur >= 200, `a ${live.words}-word, ${Math.round(live.dur)} s generate shows its busy state (${live.ms} ms)`, JSON.stringify(live));
+  ok(live.maxGap < 250, "…and the page keeps painting meanwhile (longest frame gap under 250 ms)", `longest gap ${live.maxGap} ms over ${live.frames} frames`);
+  await page.fill("#dur", "4");
+
   /* ---------------- what survives a reload ---------------- */
   group("Reload: theme and session persist");
   const themeBefore = await page.evaluate(() => document.documentElement.dataset.theme);

@@ -94,6 +94,8 @@ jobs:
           # the deploy is a static host by construction: stamp it so the SPA never
           # probes /api (each probe is a 404 in every visitor's console)
           sed -i 's#<html lang="en" data-theme="dark">#<html lang="en" data-theme="dark" data-offx-static="1">#' site/studio/index.html
+          # the Pyodide worker is fetched by studio.js, not a <script> tag — bust it too
+          sed -i "s#const PYWORKER_URL = \"pyworker.js\"#const PYWORKER_URL = \"pyworker.js?v=$CB\"#" site/studio/studio.js
           sed -i -E "s#href=\"studio\.css\"#href=\"studio.css?v=$CB\"#; s#src=\"(studio|assistant|account|preview3d|webspeech|keyboard|session)\.js\"#src=\"\1.js?v=$CB\"#g" site/studio/index.html
           echo "Cache-busted Studio assets with $CB"
           # Landing page — the full marketing site (examples/landing.html): animated

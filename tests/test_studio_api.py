@@ -380,6 +380,11 @@ def test_studio_markup_a11y_contract():
     pages = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "pages.yml"
     assert 'data-offx-static="1"' in pages.read_text(encoding="utf-8")
     assert 'offxStatic!=="1"' in js and "offxStatic" in acct
+    # the browser runtime hosts Pyodide in a worker (pyworker.js), cache-busted by the deploy
+    assert (resources.files("openfacefx") / "studio_web" / "pyworker.js").is_file()
+    assert 'new Worker(PYWORKER_URL)' in js and "async function py(" in js
+    assert js.count("S.pyodide.globals") == 1                 # only the in-page fallback inside py()
+    assert "pyworker.js?v=$CB" in pages.read_text(encoding="utf-8")
     # the 3D preview renders on demand — the only rAF is scheduled by requestRender
     p3d = _web("preview3d.js")
     assert "function requestRender" in p3d

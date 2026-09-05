@@ -8,6 +8,7 @@ const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const OFFX_VERSION = "0.24.0";
 const PYODIDE_VER = "v0.26.1";
+const PYWORKER_URL = "pyworker.js";   // the Pyodide host worker (browser runtime)
 
 /* ---- categorical curve palette (distinct on dark) --------------------- */
 const CURVE_COLORS = ["#f4b942","#4cc2ff","#e06c9f","#5ad19a","#b78cff","#ff8f6b",
@@ -463,7 +464,15 @@ def studio_export(fmt, track_json, fps, fgmap_json='', fgconst_json='', fglink_j
         return json.dumps({"error":str(e)})
 `;
 
+/* Browser runtime: CPython runs in a Web Worker (pyworker.js) so a long solve
+ * never freezes the page — measured 0.7 s frozen for a 430-word transcript and
+ * 3.2 s for 1080 words when it ran in-page, with the "Generating…" state never
+ * painting. The in-page path below stays as the fallback (no Worker / CSP). */
 async function bootPyodide(){
+  if(typeof Worker!=="undefined"){
+    try{ await bootPyWorker(); return; }
+    catch(e){ console.warn("[studio] Pyodide worker unavailable, running in-page:",e&&e.message); S.pyw=null; }
+  }
   boot.set("Loading the WebAssembly runtime (~24 MB first visit, then cached)…",0.08);
   const s=document.createElement("script");
   s.src=`https://cdn.jsdelivr.net/pyodide/${PYODIDE_VER}/full/pyodide.js`;
@@ -488,13 +497,30 @@ async function bootPyodide(){
   let ver=OFFX_VERSION; try{ ver=await S.pyodide.runPythonAsync("import openfacefx as _o; _o.__version__"); }catch(_){ }
   boot.set("Ready.",1); setRuntime("browser",`browser · openfacefx ${ver}`);
 }
+async function bootPyWorker(){
+  const w=new Worker(PYWORKER_URL); const pending=new Map(); let seq=0;
+  w.onmessage=e=>{ const m=e.data;
+    if(m.type==="progress"){ boot.set(m.msg,m.frac); return; }
+    const p=pending.get(m.id); if(!p) return; pending.delete(m.id);
+    if(m.error!=null) p.rej(new Error(m.error)); else p.res(m.result); };
+  w.onerror=e=>{ const err=new Error((e&&e.message)||"Pyodide worker failed"); for(const p of pending.values()) p.rej(err); pending.clear(); };
+  const rpc=(msg,transfer)=>new Promise((res,rej)=>{ const id=++seq; pending.set(id,{res,rej}); w.postMessage({id,...msg},transfer||[]); });
+  const ver=await rpc({type:"boot",pyodideVer:PYODIDE_VER,version:OFFX_VERSION,bridge:PY_BRIDGE});
+  S.pyw={ call:(fn,args)=>rpc({type:"call",fn,args}),
+          write:(path,bytes)=>{ const b=bytes.slice().buffer; return rpc({type:"write",path,bytes:b},[b]); } };
+  boot.set("Ready.",1); setRuntime("browser",`browser · openfacefx ${ver}`);
+}
+/* Call a bridge function in the browser runtime — through the worker, or on the
+ * in-page interpreter as the fallback. Returns the function's JSON string. */
+async function py(fn,...args){
+  if(S.pyw) return S.pyw.call(fn,args);
+  const f=S.pyodide.globals.get(fn); try{ return await f(...args); } finally{ f.destroy(); } }
+async function pyWrite(path,bytes){ if(S.pyw) return S.pyw.write(path,bytes); S.pyodide.FS.writeFile(path,bytes); }
 
 const Pipe = {
   async generate(args){
     if(S.native) return fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(args)}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_generate");
-    const out=await fn(args.text,args.engine,args.dur,args.style,args.gestures,args.breath,args.has_wav,args.fps,args.cmudict||"",args.mapping_json||"");
-    fn.destroy(); return JSON.parse(out);
+    return JSON.parse(await py("studio_generate",args.text,args.engine,args.dur,args.style,args.gestures,args.breath,args.has_wav,args.fps,args.cmudict||"",args.mapping_json||""));
   },
   async export(fmt){
     // custom Face Graph outputs feed the retargeted formats (livelink/a2f), which are arkit-based
@@ -505,58 +531,57 @@ const Pipe = {
     const segForLip=(fmt==="lip"||fmt==="fuz")?(S.segments||[]):null;
     const audioForFuz=(fmt==="fuz"&&S.wavBytes)?toB64(S.wavBytes):"";
     if(S.native) return fetch(`/api/export/${fmt}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,fgmap:custom?S.presetMap:null,fgconst,fglink,segments:segForLip,audio_b64:audioForFuz})}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_export");
-    const out=await fn(fmt,JSON.stringify(S.track),S.fps,custom?JSON.stringify(S.presetMap):"",fgconst?JSON.stringify(fgconst):"",fglink?JSON.stringify(fglink):"",segForLip?JSON.stringify(segForLip):"",audioForFuz); fn.destroy(); return JSON.parse(out);
+    return JSON.parse(await py("studio_export",fmt,JSON.stringify(S.track),S.fps,custom?JSON.stringify(S.presetMap):"",fgconst?JSON.stringify(fgconst):"",fglink?JSON.stringify(fglink):"",segForLip?JSON.stringify(segForLip):"",audioForFuz));
   },
   async presets(){
     if(S.native) return fetch("/api/presets").then(r=>r.json());
-    const a=S.pyodide.globals.get("studio_presets"); const r=JSON.parse(a()); a.destroy(); return r;
+    return JSON.parse(await py("studio_presets"));
   },
   async presetMap(name){
     if(S.native) return fetch(`/api/preset/${name}`).then(r=>r.json());
-    const a=S.pyodide.globals.get("studio_preset_map"); const r=JSON.parse(a(name)); a.destroy(); return r;
+    return JSON.parse(await py("studio_preset_map",name));
   },
   async normalize(text){
     if(S.native) return fetch("/api/normalize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text})}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_normalize"); const r=JSON.parse(fn(text||"")); fn.destroy(); return r;
+    return JSON.parse(await py("studio_normalize",text||""));
   },
   async bakeEmotion(env,intensity){
     if(S.native) return fetch("/api/bake_emotion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,envelope:env,intensity})}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_bake_emotion"); const r=JSON.parse(fn(JSON.stringify(S.track),JSON.stringify(env),intensity)); fn.destroy(); return r;
+    return JSON.parse(await py("studio_bake_emotion",JSON.stringify(S.track),JSON.stringify(env),intensity));
   },
   async qa(){
     const text=$("#text").value||"";
     const cmudict=(curTake()&&curTake().cmudict)||"";   // so words already fixed on this take drop off the OOV list
     if(S.native) return fetch("/api/qa",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({track:S.track,segments:S.segments,text,cmudict})}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_qa"); const r=JSON.parse(fn(S.track?JSON.stringify(S.track):"null",JSON.stringify(S.segments||[]),text,cmudict)); fn.destroy(); return r;
+    return JSON.parse(await py("studio_qa",S.track?JSON.stringify(S.track):"null",JSON.stringify(S.segments||[]),text,cmudict));
   },
   async events(emphasis,phrase){
     if(S.native) return fetch("/api/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({segments:S.segments,emphasis,phrase})}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_events"); const r=JSON.parse(fn(JSON.stringify(S.segments||[]),!!emphasis,!!phrase)); fn.destroy(); return r;
+    return JSON.parse(await py("studio_events",JSON.stringify(S.segments||[]),!!emphasis,!!phrase));
   },
   async mappingJson(edit,preset){
     if(S.native) return fetch("/api/mapping_json",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({edit,preset})}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_mapping_json"); const r=JSON.parse(fn(JSON.stringify(edit),preset)); fn.destroy(); return r;
+    return JSON.parse(await py("studio_mapping_json",JSON.stringify(edit),preset));
   },
   async mappingDefault(){
     if(S.native) return fetch("/api/mapping_default").then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_mapping_default"); const r=JSON.parse(fn()); fn.destroy(); return r;
+    return JSON.parse(await py("studio_mapping_default"));
   },
   async importFile(name,b64){
     if(S.native) return fetch("/api/import",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name,b64})}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_import"); const r=JSON.parse(fn(name,b64)); fn.destroy(); return r;
+    return JSON.parse(await py("studio_import",name,b64));
   },
   async align(transcript,fmt,text){
     if(S.native) return fetch("/api/align",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({transcript,format:fmt,text})}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_align"); const r=JSON.parse(fn(transcript||"",fmt,text)); fn.destroy(); return r;
+    return JSON.parse(await py("studio_align",transcript||"",fmt,text));
   },
   async resolve(segments,fps){
     if(S.native) return fetch("/api/resolve",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({segments,fps})}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_resolve"); const r=JSON.parse(fn(JSON.stringify(segments||[]),fps)); fn.destroy(); return r;
+    return JSON.parse(await py("studio_resolve",JSON.stringify(segments||[]),fps));
   },
   async tts(text,dur){
     if(S.native) return fetch("/api/tts",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,dur})}).then(r=>r.json());
-    const fn=S.pyodide.globals.get("studio_tts"); const r=JSON.parse(fn(text||"",dur)); fn.destroy(); return r;
+    return JSON.parse(await py("studio_tts",text||"",dur));
   },
   /* Piper neural TTS — runs the user's own local Piper install, so it only
    * exists on the native/desktop backend (Pyodide can't start programs). */
@@ -998,7 +1023,7 @@ async function runGenerate(preserve){
     S.fps=parseFloat($("#fps").value)||60;
     const hasWav=!!S.wavBytes && $("#engine").value==="energy";
     let wav_b64;
-    if(hasWav){ if(S.native) wav_b64=toB64(S.wavBytes); else S.pyodide.FS.writeFile("/tmp/in.wav",S.wavBytes); }
+    if(hasWav){ if(S.native) wav_b64=toB64(S.wavBytes); else await pyWrite("/tmp/in.wav",S.wavBytes); }
     const mapping_json=($("#mapApply")&&$("#mapApply").checked)?await customMappingJson():"";  // custom phoneme→viseme mapping (#15)
     const res=await Pipe.generate({
       text:$("#text").value.trim()||"hello", engine:$("#engine").value,
