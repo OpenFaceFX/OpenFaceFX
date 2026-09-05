@@ -33,6 +33,13 @@ its `version` field.
   and a live server; see `tests/e2e/README.md`.
 
 ### Fixed
+- **The live site logged two 404s in every visitor's console.** A static host has no
+  backend, but the page still probed `/api/health` and `/api/auth/me` to find one. The
+  Pages deploy now stamps the page `data-offx-static`, and the Studio skips both probes
+  when it sees the stamp; self-hosted static copies without it keep the probes (they are
+  how a static page with a proxied `/api` finds its server). Found by running the E2E
+  suite against the browser (Pyodide) runtime for the first time — the runtime the live
+  site actually uses — which otherwise passed every check.
 - **Deleting a take or an actor asked nothing and could not be undone.** Both now confirm
   first once there is a generated take to lose.
 - **The playhead froze when the audio clock did.** Audio is the transport's clock while a

@@ -593,7 +593,9 @@ async function bootstrap(){
     // serves the page statically but proxies /api — and it only believes a body
     // that actually parses as our health JSON.
     if(document.documentElement.dataset.offxNative==="1") S.native=true;
-    if(!S.native){
+    // the Pages deploy stamps data-offx-static: no backend by construction, so
+    // don't probe for one (a 404 in the console on every visit to the live site)
+    if(!S.native && document.documentElement.dataset.offxStatic!=="1"){
       try{ const r=await fetch("/api/health",{signal:AbortSignal.timeout(2500)});
         if(r.ok){ const j=await r.json(); if(j && j.ok) S.native=true; }
       }catch(_){}

@@ -27,6 +27,22 @@ Uses `channel:"chrome"`, so it drives the Chrome you already have — no
 browser download. **Not wired into CI**: it needs a browser and a live server.
 Run it before releasing anything that touches `studio_web/`.
 
+### The browser (Pyodide) runtime, and the live site
+
+`openfacefx studio` always serves the **native** runtime. The live site runs the
+pipeline **in the browser** (Pyodide + the published wheel), so drive that too —
+serve the folder statically and point the suite at it, or at the deploy itself:
+
+```bash
+(cd src/openfacefx/studio_web && python3 -m http.server 8803 --bind 127.0.0.1 &)
+OFFX_URL=http://127.0.0.1:8803/ node tests/e2e/studio.e2e.mjs      # boots Pyodide
+OFFX_URL=https://openfacefx.com/studio/ node tests/e2e/studio.e2e.mjs   # post-deploy smoke
+```
+
+The suite reports which runtime it found and adapts: the boot wait allows the
+wheel download, and on a static host that isn't the Pages deploy the two backend
+probes (`/api/health`, `/api/auth/me`) are allowed to 404.
+
 ## What it covers
 
 | Group | Checks |

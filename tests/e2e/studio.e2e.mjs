@@ -39,7 +39,7 @@ const consoleErrors = [];
 const dialogs = [];
 page.on("dialog", async d => { dialogs.push(d.message()); await d.accept(); });
 const HEADLESS_AUDIO = /AudioContext encountered an error from the audio device/;   // no output device in headless Chrome
-page.on("console", m => { if (m.type() === "error" && !HEADLESS_AUDIO.test(m.text())) consoleErrors.push(m.text()); });
+page.on("console", m => { if (m.type() === "error" && !HEADLESS_AUDIO.test(m.text())) consoleErrors.push(m.text() + (m.location()?.url ? " @ " + m.location().url : "")); });
 page.on("pageerror", e => consoleErrors.push("pageerror: " + e.message));
 
 const report = { url: URL, tabs: [] };
@@ -49,12 +49,16 @@ try {
   group("Boot");
   const t0 = Date.now();
   await page.goto(URL, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => !document.querySelector("#run")?.disabled, null, { timeout: 60000 });
+  // the browser runtime downloads Pyodide + the openfacefx wheel first: allow 3 min
+  await page.waitForFunction(() => !document.querySelector("#run")?.disabled, null, { timeout: 180000 });
   report.bootMs = Date.now() - t0;
   ok(true, `Studio became interactive (${report.bootMs} ms)`);
   ok(await page.title() === "OpenFaceFX Studio", "document title");
   const runtime = await page.$eval("#runtimeLabel", e => e.textContent.trim()).catch(() => "");
-  ok(/native/.test(runtime), "native runtime detected", `runtime chip said: ${runtime || "(empty)"}`);
+  // a native server stamps the page; a static host (the live site) boots Pyodide in-browser
+  const RUNTIME = /native/.test(runtime) ? "native" : /browser/.test(runtime) ? "browser" : "";
+  report.runtime = RUNTIME;
+  ok(!!RUNTIME, `runtime detected: ${RUNTIME || "?"}`, `runtime chip said: ${runtime || "(empty)"}`);
 
   /* ---------------- document structure ---------------- */
   group("Document structure");
@@ -685,9 +689,13 @@ try {
 
   /* ---------------- no console noise anywhere ---------------- */
   group("Console");
-  report.consoleErrors = consoleErrors;
-  ok(consoleErrors.length === 0, "no console errors across the whole session",
-     consoleErrors.slice(0, 4).join(" | "));
+  // a static host that isn't the Pages deploy (no data-offx-static stamp) is
+  // probed for a backend once per boot; those two 404s are expected there
+  const PROBE = /\/api\/(health|auth\/me)\b/;
+  const realErrors = RUNTIME === "browser" ? consoleErrors.filter(e => !(/Failed to load resource/.test(e) && PROBE.test(e))) : consoleErrors;
+  report.consoleErrors = realErrors;
+  ok(realErrors.length === 0, "no console errors across the whole session",
+     realErrors.slice(0, 4).join(" | "));
 
 } catch (err) {
   fail++; failures.push({ name: "suite crashed", detail: err.message });

@@ -25,6 +25,7 @@
 
   /* ---- backend detection --------------------------------------------- */
   async function detect() {
+    if (document.documentElement.dataset.offxStatic === "1") { A.native = false; return; }   // static deploy: no backend to ask
     try {
       const r = await fetch("/api/auth/me", { credentials: "same-origin" });
       if (r.ok) { const j = await r.json(); if ("user" in j) { A.native = true; A.user = j.user; return; } }

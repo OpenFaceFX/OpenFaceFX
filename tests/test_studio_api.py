@@ -375,6 +375,11 @@ def test_studio_markup_a11y_contract():
     assert "function notice" in js
     assert 'alert("' not in js and "alert(`" not in js       # no blocking dialogs for results/errors
     assert "offx:take" in js and "offx:take" in _web("session.js")
+    # the Pages deploy stamps the page static → the SPA skips the /api probes
+    from pathlib import Path
+    pages = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "pages.yml"
+    assert 'data-offx-static="1"' in pages.read_text(encoding="utf-8")
+    assert 'offxStatic!=="1"' in js and "offxStatic" in acct
     # the 3D preview renders on demand — the only rAF is scheduled by requestRender
     p3d = _web("preview3d.js")
     assert "function requestRender" in p3d
