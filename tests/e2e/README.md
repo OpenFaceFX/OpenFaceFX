@@ -37,10 +37,13 @@ Run it before releasing anything that touches `studio_web/`.
 | Idle rendering | the 3D head draws **zero** frames while idle, never while its canvas is hidden, and one when shown again |
 | Reflow | no horizontal scroll at 1024; every control still reachable at 768 and 1024 (200 % zoom on a laptop) |
 | Button sweep | every visible, non-destructive button on every tab is clicked — no console error may follow |
+| Keyboard operability | channel list + Workspace rail are roving listboxes; on the Curves canvas ← → select, Shift+← → and ↑ ↓ nudge, Enter adds, Delete removes, Ctrl+Z restores, edits are announced; phoneme boundary moves a frame and re-solves; Face Graph node, Event jump and pose pad from the arrows (WCAG 2.1.1) |
 | Console | zero errors across the whole session |
 
 ## Bugs it has already caught
 
+- **Every canvas editor was pointer-only** (WCAG 2.1.1): no key could select or move a
+  curve key, re-time a phoneme, pick a graph node or turn the head. Now `keyboard.js`.
 - **The 3D preview rendered at 60 fps forever** — on every tab, canvas hidden or
   not, nothing moving. Now on-demand (0 idle frames).
 - **The header and transport pushed controls off-screen below ~900 px** (tablet,

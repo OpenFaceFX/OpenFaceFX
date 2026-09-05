@@ -161,7 +161,8 @@
 
     <section class="panel channels">
       <h2 class="panel-title">Channels <span class="count" id="chCount">0</span></h2>
-      <ul class="channel-list" id="channelList">
+      <p class="sr-only" id="chanKeys">Up and Down move between channels, Enter selects, V shows or hides the channel.</p>
+      <ul class="channel-list" id="channelList" role="listbox" aria-label="Channels" aria-describedby="chanKeys">
         <li class="empty">Generate a take to see its animation channels.</li>
       </ul>
     </section>
@@ -257,7 +258,7 @@
         <div id="wsModules" hidden>
           <div class="ws-mod" id="mod-preview" data-mod="preview" data-label="Preview"><div id="wsFaceMount" class="ws-facemount"></div></div>
           <div class="ws-mod" id="mod-facegraph" data-mod="facegraph" data-label="Face Graph"><canvas id="ws_facegraph" class="ws-canvas"></canvas><div class="ws-props" id="ws_props"></div></div>
-          <div class="ws-mod" id="mod-curves" data-mod="curves" data-label="Curves"><div class="ws-curvewrap"><ul id="ws_rail" class="ws-rail" aria-label="curve select"></ul><canvas id="ws_curves" class="ws-canvas"></canvas></div></div>
+          <div class="ws-mod" id="mod-curves" data-mod="curves" data-label="Curves"><div class="ws-curvewrap"><ul id="ws_rail" class="ws-rail" role="listbox" aria-label="Curve select" aria-describedby="chanKeys"></ul><canvas id="ws_curves" class="ws-canvas"></canvas></div></div>
           <div class="ws-mod" id="mod-phonemes" data-mod="phonemes" data-label="Phonemes"><canvas id="ws_wave" class="ws-canvas ws-wave"></canvas><canvas id="ws_phonStrip" class="ws-canvas ws-strip"></canvas></div>
         </div>
         <p class="view-note dim">A resizable <b>dock</b> — drag the dividers to resize the sections, and use each pane's dropdown to put any panel (Preview · Face&nbsp;Graph · Curves · Phonemes) in any section. All live on one playhead: drag a curve's keyframe to edit · click a rig node to inspect · click the strip to seek. Layout is remembered.</p>
@@ -274,6 +275,7 @@
         <canvas id="phonStrip" class="lane phon" height="88"></canvas>
         <div id="qaPanel" class="qa-panel" hidden></div>
         <p class="view-note dim">A live <b>spectrogram</b> of the loaded audio (or a synthetic energy envelope when there's no clip), with the phonemes (as <b>IPA</b>) over the <b>words</b> they belong to. <b>Drag a boundary</b> between two phonemes to fine-tune its timing — the viseme curves re-solve on release (Ctrl+Z to undo). Click elsewhere to seek. <b>Run QA</b> flags cue-timing outliers &amp; out-of-vocabulary words. <span class="dim">(Phonemes are standard ARPABET internally; IPA is display-only.)</span></p>
+        <p class="view-note dim" id="phonKeys"><b>Keyboard:</b> Tab to the strip, then ← → select a boundary (Home/End first/last) · Shift+← → move it one frame (Alt: ten) — the curves re-solve when you pause · <kbd>,</kbd> <kbd>.</kbd> step the playhead a frame anywhere.</p>
       </section>
 
       <!-- Curves -->
@@ -292,6 +294,7 @@
         <canvas id="curves" class="lane tall"></canvas>
         <canvas id="curveStrip" class="lane phon" height="44"></canvas>
         <p class="view-note dim">Coarticulated viseme &amp; gesture curves over the phoneme &amp; word strip. Click a curve to select it · drag its dots to move a key · double-click to add · alt/right-click a dot to delete · <b>drag on empty space to box-select</b> keys, then drag them together or press Delete · Ctrl+Z to undo.</p>
+        <p class="view-note dim" id="curvesKeys"><b>Keyboard:</b> Tab to the canvas, then ← → select a key (Home/End first/last, Ctrl+A all) · Shift+← → nudge a frame (Alt: ten) · ↑ ↓ nudge the value 0.01 (Shift: 0.1) · Enter adds a key at the playhead · Delete removes · PgUp/PgDn switch channel · in the channel list, ↑ ↓ move, Enter selects, V shows/hides.</p>
       </section>
 
       <!-- Events -->
@@ -308,6 +311,7 @@
         <canvas id="eventsTl" class="lane tall"></canvas>
         <canvas id="eventStrip" class="lane phon" height="44"></canvas>
         <div id="eventList" class="event-list"></div>
+        <p class="view-note dim" id="evKeys"><b>Keyboard:</b> Tab to the timeline, then ← → jump the playhead to the previous / next event.</p>
         <p class="view-note dim">A typed event layer auto-authored from the speech itself (<b>derive_events</b>): <b>emphasis</b> beats on stressed syllables and <b>phrase</b> markers at pauses — the same accents the gesture layer reads. Click an event to seek. Events ride in the track JSON and export as engine notifies (Unity/Unreal).</p>
       </section>
 
@@ -321,6 +325,7 @@
           </div>
         </div>
         <canvas id="facegraph" class="lane tall"></canvas>
+        <p class="view-note dim" id="fgKeys"><b>Keyboard:</b> Tab to the graph, then ← → (Home/End) select a node — the Inspector follows.</p>
         <p class="view-note dim"><b>Click a rig-output node</b> (right column) to edit it in the Inspector → tune each viseme's weight, add/remove one, <b>clone</b> it, or (on a clone) set a constant <b>Value</b> or a nonlinear <b>Response</b>. <b>Press play</b> — each node fills like a <b>level meter</b> (its live value) and the links pulse as the signal flows. Pick a target rig preset above.</p>
       </section>
 
@@ -403,6 +408,7 @@
 <div id="srStatus" role="status" aria-live="polite" class="sr-only"></div>
 <script src="webspeech.js"></script>
 <script src="studio.js"></script>
+<script src="keyboard.js"></script>
 <script src="assistant.js"></script>
 <script src="account.js"></script>
 <script type="module" src="preview3d.js"></script>

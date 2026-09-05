@@ -17,8 +17,9 @@ its `version` field.
   canvases actually paint, text contrast and focus rings hold in both themes, the ⋯
   menu and the account dialog follow the ARIA patterns, the 3D head renders on demand,
   every control stays reachable at tablet width / 200 % zoom, every visible button
-  survives a click, and the console stays clean. 83 checks. Not in CI — it needs a
-  browser and a live server; see `tests/e2e/README.md`.
+  survives a click, every canvas editor is driven from the keyboard, and the console
+  stays clean. 100 checks. Not in CI — it needs a browser and a live server; see
+  `tests/e2e/README.md`.
 
 ### Fixed
 - **The 3D preview burned GPU and battery while idle.** It ran a free-running 60 fps
@@ -49,6 +50,20 @@ its `version` field.
   workable 2.5 s timeout) for deployments that serve the page statically but proxy `/api`.
 
 ### Accessibility
+- **Every canvas editor now works from the keyboard** (WCAG 2.1.1; new
+  `studio_web/keyboard.js`). Until now selecting, moving, adding or deleting a curve key,
+  re-timing a phoneme boundary, picking a Face Graph node, jumping to an event and turning
+  the head were pointer-only. The canvases are focusable editors: on the Curves canvas
+  ← → select a key (the playhead follows), Shift+← → nudge it a frame (Alt: ten), ↑ ↓ nudge
+  the value, Enter adds a key at the playhead, Delete removes, Home/End/Ctrl+A select,
+  PgUp/PgDn switch channel; on the phoneme strip ← → select a boundary and Shift+← → move
+  it (the curves re-solve when you pause); ← → cycle Face Graph nodes and Event markers;
+  arrows turn the head on the pose pad; **,** and **.** step the playhead one frame from
+  anywhere. The channel list and the Workspace rail are roving-tabindex listboxes (↑ ↓
+  move, Enter selects, V shows/hides). Every keyboard edit is undoable like a pointer edit
+  (a burst of nudges is one undo step) and is announced through the status region; each
+  editor names its keys in a note under it (`aria-describedby`), and `docs/studio.md`
+  gains a keyboard table.
 - **The ⋯ actor/take menu is now a real menu button** (WAI-ARIA APG): `aria-haspopup` /
   `aria-expanded` / `aria-controls` on the button, `role="menu"` with `menuitem`s; opening
   moves focus into the menu, Arrow/Home/End move between items, Escape (or Tab) closes it

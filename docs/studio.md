@@ -311,6 +311,26 @@ and vault sync are implemented in `studio_saas.py` (stdlib `sqlite3` + `hashlib`
 Storage is a single SQLite file (`~/.openfacefx/studio.db`, override with
 `OFFX_STUDIO_DB`); mount it as a volume for a container deploy.
 
+## Keyboard — every editor works without a mouse
+
+The Studio is fully keyboard-operable (WCAG 2.1.1), and the live E2E suite drives
+each of these. Tab reaches every control; the tab bar and the channel lists are
+roving-tabindex widgets (Arrow / Home / End); the canvases are focusable editors.
+
+| Where | Keys |
+|---|---|
+| Anywhere (not in a field) | **Space** play / pause · **,** **.** step one frame · **Ctrl+Z / Ctrl+Y** undo / redo · **Esc** clear the selection |
+| Curves canvas | **← →** select a key (the playhead follows) · **Home / End** first / last · **Ctrl+A** all · **Shift+← →** nudge one frame (Alt: ten) · **↑ ↓** value ±0.01 (Shift: 0.1; pose channels 1° / 10°) · **Enter** add a key at the playhead · **Delete** remove · **PgUp / PgDn** switch channel |
+| Channel list, Workspace rail | **↑ ↓ Home End** move · **Enter** select (rail: solo) · **V** show / hide |
+| Phoneme strip | **← → Home End** select a boundary · **Shift+← →** move it one frame — the viseme curves re-solve when you pause |
+| Face Graph | **← → Home End** select a node — the Inspector follows |
+| Events timeline | **← →** jump to the previous / next event |
+| Pose pad | **arrows** turn the head 1° (Shift: 5°) · **Home** recentre |
+| ⋯ menu, Account dialog | the standard menu-button and modal-dialog keys (Arrow, Escape; focus is trapped and restored) |
+
+Keyboard edits are undoable like pointer edits (a burst of nudges is one undo step)
+and are announced to screen readers through the page's status region.
+
 ## Roadmap
 
 Built today: Preview (3D head), Curves (**editable — drag keyframes**), Phonemes,

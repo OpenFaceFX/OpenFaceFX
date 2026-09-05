@@ -140,7 +140,8 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .chan .sw { width:11px; height:11px; border-radius:3px; flex:none; }
 .chan .nm { flex:1; font-family:var(--font-mono); font-size:12.5px; }
 .chan .kc { color:var(--fg-mute); font-size:11px; font-variant-numeric:tabular-nums; }
-.chan .vis { opacity:.5; } .chan.off .nm, .chan.off .kc { opacity:.4; }
+.chan .vis { opacity:.5; min-width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; margin:-4px -6px -4px 0; }   /* 24px hit band */
+.chan.off .nm, .chan.off .kc { opacity:.4; }
 .chan .own { color:var(--accent-text); font-size:11px; margin-right:2px; }
 #reanalyze { margin-top:8px; font-size:12.5px; }
 
@@ -484,7 +485,7 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .ws-curvewrap{ flex:1 1 auto; min-height:0; min-width:0; display:flex; gap:8px; }
 .ws-curvewrap .ws-canvas{ flex:1 1 auto; min-width:0; }
 .ws-rail{ flex:0 0 132px; overflow-y:auto; margin:0; padding:0; list-style:none; font-size:11px; }
-.ws-rc{ display:flex; align-items:center; gap:5px; padding:2px 4px; border-radius:4px; cursor:pointer; }
+.ws-rc{ display:flex; align-items:center; gap:5px; padding:2px 4px; min-height:24px; border-radius:4px; cursor:pointer; }
 .ws-rc:hover{ background:var(--elev); }
 .ws-rc.sel{ background:var(--elev); outline:1px solid var(--accent); }
 .ws-rc.off{ opacity:.42; }

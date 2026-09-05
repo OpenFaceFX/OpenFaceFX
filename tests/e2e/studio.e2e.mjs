@@ -422,6 +422,93 @@ try {
   report.sweep = { clicked, errors: sweepErrs };
   ok(sweepErrs.length === 0, `${clicked} buttons clicked across ${views.length} tabs without a console error`, sweepErrs.slice(0, 5).join(" | "));
 
+  /* ---------------- the canvas editors work from the keyboard (WCAG 2.1.1) ---------------- */
+  // Every pointer gesture (select / drag / add / delete a key, drag a phoneme
+  // boundary, pick a graph node, seek to an event, turn the head) has a key.
+  group("Keyboard operability of the canvas editors (WCAG 2.1.1)");
+  await page.click('.tab[data-view="curves"]'); await page.waitForTimeout(250);
+  const rowsTabbable = await page.evaluate(() => [...document.querySelectorAll("#channelList li")].filter(l => l.tabIndex === 0).length);
+  ok(rowsTabbable === 1, "the channel list is a roving-tabindex listbox (one row in the tab order)", `${rowsTabbable} rows tabbable`);
+  await page.focus("#channelList li[tabindex='0']");
+  await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter"); await page.waitForTimeout(120);
+  const rowSel = await page.evaluate(() => ({ sel: S.sel, focused: document.activeElement?.dataset?.name, aria: document.activeElement?.getAttribute("aria-selected") }));
+  ok(!!rowSel.sel && rowSel.sel === rowSel.focused && rowSel.aria === "true",
+     "ArrowDown + Enter selects a channel and focus stays on its row", JSON.stringify(rowSel));
+  // the Workspace rail is the same listbox; Enter there also solos the channel
+  await page.click('.tab[data-view="workspace"]'); await page.waitForTimeout(400);
+  await page.focus("#ws_rail li[tabindex='0']");
+  await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter"); await page.waitForTimeout(150);
+  const railSel = await page.evaluate(() => ({ sel: S.sel, solo: S.solo, focused: document.activeElement?.dataset?.name }));
+  ok(!!railSel.sel && railSel.sel === railSel.focused && railSel.solo === railSel.sel,
+     "Workspace rail: ArrowDown + Enter selects and solos a channel, focus stays on its row", JSON.stringify(railSel));
+  await page.keyboard.press("Enter"); await page.waitForTimeout(150);          // toggle the solo back off
+  await page.click('.tab[data-view="curves"]'); await page.waitForTimeout(250);
+  await page.focus("#curves");
+  await page.evaluate(() => { document.getElementById("srStatus").textContent = ""; S.t = 0; S.playClock = 0; setScrub(); drawAll(); });
+  let k0;                                              // walk right from the start to a key with a free frame after it
+  for (let tries = 0; tries < 8; tries++) {
+    await page.keyboard.press("ArrowRight"); await page.waitForTimeout(80);
+    k0 = await page.evaluate(() => { const c = chan(S.sel), k = S.selKeys[0], i = c.keys.indexOf(k), next = c.keys[i + 1];
+      return { n: S.selKeys.length, t: k?.[0], v: k?.[1], keys: c.keys.length, fps: S.fps || 60, playhead: S.t,
+               room: next ? next[0] - k[0] : S.duration - k[0], signed: SIGNED_CH.test(S.sel) }; });
+    if (k0.room > 2 / k0.fps) break;
+  }
+  ok(k0.n === 1 && Math.abs(k0.playhead - k0.t) < 1e-6, "ArrowRight selects a key and moves the playhead to it", JSON.stringify(k0));
+  await page.keyboard.press("Shift+ArrowRight"); await page.waitForTimeout(60);
+  const k1 = await page.evaluate(() => S.selKeys[0]?.[0]);
+  ok(Math.abs(k1 - k0.t - 1 / k0.fps) < 1e-6, "Shift+ArrowRight nudges the key one frame later", `${k0.t} → ${k1} (frame ${1 / k0.fps})`);
+  const step = k0.signed ? 1 : 0.01, up = k0.signed || k0.v < 0.5;
+  await page.keyboard.press(up ? "ArrowUp" : "ArrowDown"); await page.waitForTimeout(60);
+  const v1 = await page.evaluate(() => S.selKeys[0]?.[1]);
+  ok(Math.abs(v1 - k0.v - (up ? step : -step)) < 1e-6, `${up ? "ArrowUp" : "ArrowDown"} nudges the value by ${step}`, `${k0.v} → ${v1}`);
+  await page.waitForTimeout(500);                      // the nudge burst settles into one undo entry
+  await page.keyboard.press("."); await page.waitForTimeout(60);      // step the playhead off the key
+  await page.keyboard.press("Enter"); await page.waitForTimeout(120);
+  const added = await page.evaluate(() => chan(S.sel).keys.length);
+  ok(added === k0.keys + 1, "Enter adds a key at the playhead (after '.' stepped it one frame)", `${k0.keys} → ${added}`);
+  await page.keyboard.press("Delete"); await page.waitForTimeout(120);
+  const deleted = await page.evaluate(() => chan(S.sel).keys.length);
+  ok(deleted === k0.keys, "Delete removes the selected key", `${added} → ${deleted}`);
+  await page.keyboard.press("Control+z"); await page.waitForTimeout(120);
+  const undone = await page.evaluate(() => chan(S.sel).keys.length);
+  ok(undone === k0.keys + 1, "Ctrl+Z restores it", `${deleted} → ${undone}`);
+  const spokenKey = await page.$eval("#srStatus", e => e.textContent);
+  ok(/key \d+ of \d+/.test(spokenKey), "key selection and edits are announced", `said: "${spokenKey}"`);
+  // phoneme strip: select a boundary, move it a frame, the take re-solves
+  await page.click('.tab[data-view="phonemes"]'); await page.waitForTimeout(250);
+  await page.focus("#phonStrip");
+  await page.keyboard.press("Home"); await page.waitForTimeout(100);
+  const b0 = await page.evaluate(() => ({ ends: S.segments.map(s => s.end), spoken: document.getElementById("srStatus").textContent, fps: S.fps || 60 }));
+  await page.keyboard.press("Shift+ArrowRight"); await page.waitForTimeout(80);
+  const b1 = await page.evaluate(() => S.segments.map(s => s.end));
+  const moved = b1.map((e, i) => Math.abs(e - b0.ends[i]) > 1e-9 ? i : -1).filter(i => i >= 0);
+  ok(moved.length === 1 && Math.abs(b1[moved[0]] - b0.ends[moved[0]] - 1 / b0.fps) < 1e-6,
+     "Shift+ArrowRight moves exactly one phoneme boundary one frame later", JSON.stringify({ moved, from: b0.ends[moved[0]], to: b1[moved[0]] }));
+  await page.waitForTimeout(900);                      // the re-solve fires once the burst settles
+  const resolved = await page.evaluate(() => S.track.channels.length);
+  ok(resolved > 0 && /boundary \d+ of \d+/.test(b0.spoken), "the boundary is announced and the take re-solves afterwards", `spoken: "${b0.spoken}", channels: ${resolved}`);
+  // face graph: arrows pick a node
+  await page.click('.tab[data-view="facegraph"]'); await page.waitForTimeout(400);
+  await page.focus("#facegraph"); await page.keyboard.press("ArrowRight"); await page.waitForTimeout(150);
+  const node = await page.evaluate(() => ({ kind: S.inspectKind, label: S.node?.label, inspector: !!S.node && document.getElementById("inspector")?.textContent.includes(S.node.label) }));
+  ok(node.kind === "node" && !!node.label && node.inspector, "ArrowRight on the Face Graph selects a node and the Inspector shows it", JSON.stringify(node));
+  // events: arrows jump between markers
+  await page.click('.tab[data-view="events"]'); await page.waitForTimeout(200);
+  if (!(await page.evaluate(() => (S.events || []).length))) { await page.click("#evRun"); await page.waitForFunction(() => (S.events || []).length > 0, null, { timeout: 20000 }).catch(() => {}); }
+  await page.evaluate(() => { S.t = 0; S.playClock = 0; setScrub(); drawAll(); });
+  await page.focus("#eventsTl"); await page.keyboard.press("ArrowRight"); await page.waitForTimeout(100);
+  const evJump = await page.evaluate(() => ({ n: (S.events || []).length, t: S.t }));
+  ok(evJump.n > 0 && evJump.t > 0, "ArrowRight on the Events timeline jumps the playhead to the next event", JSON.stringify(evJump));
+  // pose pad: arrows turn the head
+  await page.click('.tab[data-view="preview"]'); await page.waitForTimeout(200);
+  if (await page.evaluate(() => document.getElementById("posePanel").hidden)) await page.click("#poseToggle");
+  await page.waitForTimeout(100);
+  const yaw0 = await page.evaluate(() => { const c = chan("headYaw"); return c ? sample(c.keys, S.t) : 0; });
+  await page.focus("#posePad"); await page.keyboard.press("ArrowRight"); await page.waitForTimeout(100);
+  const yaw1 = await page.evaluate(() => { const c = chan("headYaw"); return c ? sample(c.keys, S.t) : null; });
+  ok(yaw1 !== null && Math.abs(yaw1 - yaw0 - 1) < 1e-6, "ArrowRight on the pose pad turns the head 1° (a headYaw key at the playhead)", `${yaw0} → ${yaw1}`);
+  await page.keyboard.press("Home"); await page.waitForTimeout(80);
+
   /* ---------------- no console noise anywhere ---------------- */
   group("Console");
   report.consoleErrors = consoleErrors;

@@ -356,6 +356,17 @@ def test_studio_markup_a11y_contract():
     assert acct.count('role="alert"') == 2
     # the narrow-width rail drawer has a toggle that owns it
     assert 'id="railToggle"' in html and 'aria-controls="railLeft"' in html
+    # keyboard operability (keyboard.js): loaded after studio.js, every editor canvas gets keys
+    from importlib import resources
+    assert (resources.files("openfacefx") / "studio_web" / "keyboard.js").is_file()
+    assert html.index('src="studio.js"') < html.index('src="keyboard.js"')
+    kb = _web("keyboard.js")
+    for cid in ("curves", "ws_curves", "phonStrip", "ws_phonStrip", "facegraph", "ws_facegraph", "eventsTl"):
+        assert f'editor("{cid}"' in kb, cid
+    assert 'id="channelList" role="listbox"' in html
+    for hint in ("curvesKeys", "phonKeys", "fgKeys", "evKeys", "chanKeys"):
+        assert f'id="{hint}"' in html, hint
+    assert "function railRow" in _web("studio.js")          # roving-tabindex channel rows
     # the 3D preview renders on demand — the only rAF is scheduled by requestRender
     p3d = _web("preview3d.js")
     assert "function requestRender" in p3d

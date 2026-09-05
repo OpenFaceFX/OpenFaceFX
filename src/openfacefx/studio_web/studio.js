@@ -1149,17 +1149,27 @@ function wireIO(){
 function buildChannelList(){
   const list=$("#channelList"); if(!S.track||!list)return; $("#chCount").textContent=S.track.channels.length;
   list.innerHTML="";
+  const anchor=railAnchor();                        // the one row Tab lands on (roving tabindex)
   for(const c of S.track.channels){
     const m=S.chan[c.name];
     const li=document.createElement("li");
     li.className="chan"+(m.visible?"":" off")+(S.sel===c.name?" sel":"")+(S.solo===c.name?" solo":"");
     li.innerHTML=`<span class="sw" style="background:${m.color}"></span>
       <span class="nm">${esc(c.name)}</span>${m.owned?'<span class="own" title="hand-edited — kept on Reanalyze">✎</span>':''}<span class="kc">${c.keys.length}</span>
-      <span class="vis">${m.visible?"◉":"○"}</span>`;
+      <span class="vis" title="${m.visible?"Hide":"Show"} (V)">${m.visible?"◉":"○"}</span>`;
+    railRow(li,c,m,anchor);                         // listbox semantics + keyboard (keyboard.js)
     li.querySelector(".vis").onclick=e=>{e.stopPropagation(); m.visible=!m.visible; buildChannelList(); if(S.view==="curves")drawCurves(); if(S.view==="preview")drawPreview();};
     li.onclick=()=>selChannel(c.name);
     list.appendChild(li);
   }
+}
+/* Channel rows are a roving-tabindex listbox: Tab enters at the selected (else
+ * first) channel, arrows move, Enter selects, V shows/hides — see keyboard.js. */
+function railAnchor(){ const names=S.track?S.track.channels.map(c=>c.name):[]; return names.includes(S.sel)?S.sel:names[0]; }
+function railRow(li,c,m,anchor){
+  li.setAttribute("role","option"); li.setAttribute("aria-selected",String(S.sel===c.name)); li.dataset.name=c.name;
+  li.tabIndex=c.name===anchor?0:-1;
+  li.setAttribute("aria-label",`${c.name}, ${c.keys.length} keys${m.visible?"":", hidden"}${S.solo===c.name?", solo":""}${m.owned?", hand-edited":""}`);
 }
 function selChannel(name){ if(name!==S.sel) S.selKeys=[]; S.sel=name; S.inspectKind="channel"; S.node=null; buildChannelList(); buildInspector();
   if(S.view==="workspace")drawWorkspace(); else if(S.view==="curves")drawCurves(); }
@@ -1760,12 +1770,13 @@ function buildRail(){
   const rail=$("#ws_rail"); if(!rail||!S.track) return;
   const key=S.track.channels.map(c=>c.name).join(",")+"|"+S.sel+"|"+S.solo;
   if(rail._key!==key){                              // rebuild only when the set/selection changes
-    rail._key=key; rail.innerHTML="";
+    rail._key=key; rail.innerHTML=""; const anchor=railAnchor();
     for(const c of S.track.channels){ const m=S.chan[c.name]; if(!m)continue;
       const li=document.createElement("li");
       li.className="ws-rc"+(S.sel===c.name?" sel":"")+(S.solo===c.name?" solo":"")+(m.visible?"":" off");
       li.innerHTML=`<span class="sw" style="background:${m.color}"></span><span class="nm">${esc(c.name)}</span>`+
         `<span class="lvbar"><i style="background:${m.color}"></i></span><span class="lvn mono"></span>`;
+      railRow(li,c,m,anchor);
       li.onclick=()=>{ selChannel(c.name);           // select + toggle solo-isolate from the rail
         if(S.solo===c.name){ for(const k in S.chan)S.chan[k].visible=true; S.solo=null; }
         else { for(const k in S.chan)S.chan[k].visible=(k===c.name); S.solo=c.name; }
@@ -2212,6 +2223,15 @@ function wirePosePanel(){
   pad.addEventListener("pointerup",padEnd); pad.addEventListener("pointercancel",padEnd);
   pad.addEventListener("contextmenu",e=>{ e.preventDefault(); if(!need())return; snapshotUndo();
     setChannelAt("headYaw",0,S.t); setChannelAt("headPitch",0,S.t); setDot(0,0); markEdited(); drawPreview(); });
+  // keyboard: arrows turn the head 1° (Shift: 5°), Home recentres — the pad is a focusable widget (WCAG 2.1.1)
+  pad.tabIndex=0; pad.setAttribute("role","application");
+  pad.setAttribute("aria-label","Head pose pad — arrow keys turn the head 1 degree, Shift 5 degrees, Home recentres");
+  pad.addEventListener("keydown",e=>{ const dx=e.key==="ArrowRight"?1:e.key==="ArrowLeft"?-1:0, dy=e.key==="ArrowDown"?1:e.key==="ArrowUp"?-1:0;
+    if(!dx&&!dy&&e.key!=="Home") return; e.preventDefault(); if(!need()) return; snapshotUndo();
+    const st=e.shiftKey?5:1, cl=v=>Math.max(-RANGE,Math.min(RANGE,v));
+    const yaw=e.key==="Home"?0:cl(gval("headYaw")+dx*st), pitch=e.key==="Home"?0:cl(gval("headPitch")+dy*st);
+    setChannelAt("headYaw",yaw,S.t); setChannelAt("headPitch",pitch,S.t); setDot(yaw/RANGE,pitch/RANGE); markEdited(); drawPreview();
+    announce("head yaw "+yaw.toFixed(0)+" degrees, pitch "+pitch.toFixed(0)+" degrees"); });
   roll.addEventListener("pointerdown",()=>{ if(need()) snapshotUndo(); });
   roll.addEventListener("input",()=>{ if(!S.track)return; setChannelAt("headRoll",parseFloat(roll.value)||0,S.t); markEdited(); drawPreview(); });
   EXPR.forEach(inp=>{ inp.addEventListener("pointerdown",()=>{ if(need()) snapshotUndo(); });
