@@ -249,7 +249,7 @@ function renderSetup(){
     $("#kModel").placeholder = "model (default: "+(PROVIDERS[prov.value].model||"—")+")"; };
   prov.onchange=syncProv; syncProv();
   $("#setupForm").onsubmit=async e=>{ e.preventDefault();
-    const pass=$("#kPass").value; if(pass.length<6){ alert("Choose a master password (6+ chars)."); return; }
+    const pass=$("#kPass").value; if(pass.length<6){ (window.notice||alert)("Choose a master password (6+ chars).","error"); return; }
     const salt=crypto.getRandomValues(new Uint8Array(16));
     VKEY=await deriveKey(pass,salt);
     const item={ provider:prov.value, label:PROVIDERS[prov.value].label,
@@ -277,7 +277,7 @@ function renderUnlock(){
     try{ const key=await deriveKey($("#uPass").value, salt);
       const items=[]; for(const it of v.items){ items.push({...it, key: it.ciphertext?await decryptSecret(key,it):""}); }
       VKEY=key; ITEMS=items; render();
-    }catch(err){ alert("Wrong master password (decryption failed)."); }
+    }catch(err){ (window.notice||alert)("Wrong master password (decryption failed).","error"); }
   };
 }
 

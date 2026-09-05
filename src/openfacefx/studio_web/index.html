@@ -2,6 +2,8 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
+<script>/* remembered theme, applied before first paint (session.js stores it) */
+try{var t=localStorage.getItem("offx_theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="logo.svg">
 <title>OpenFaceFX Studio</title>
@@ -43,6 +45,8 @@
     <div class="io-sep" role="separator"></div>
     <button role="menuitem" tabindex="-1" data-act="actor-rename">Rename actor…</button>
     <button role="menuitem" tabindex="-1" data-act="actor-del">Delete actor</button>
+    <div class="io-sep" role="separator"></div>
+    <button role="menuitem" tabindex="-1" data-act="ws-reset" title="Discard the takes and the autosaved session">Start a fresh workspace…</button>
   </div>
 
   <div class="topbar-spacer"></div>
@@ -406,9 +410,12 @@
 <!-- WCAG 4.1.3 Status Messages: async results (generate, export, QA, voice)
      were shown only visually. Announced here without moving focus. -->
 <div id="srStatus" role="status" aria-live="polite" class="sr-only"></div>
+<!-- visible notices (toasts); the same text is announced through #srStatus -->
+<div id="toasts" class="toasts" aria-hidden="true"></div>
 <script src="webspeech.js"></script>
 <script src="studio.js"></script>
 <script src="keyboard.js"></script>
+<script src="session.js"></script>
 <script src="assistant.js"></script>
 <script src="account.js"></script>
 <script type="module" src="preview3d.js"></script>

@@ -748,7 +748,7 @@ async function generateVoice(){
       $("#engine").value="energy";               // lip-sync from the generated audio
       await runGenerate();                       // re-solve with the energy engine + the new audio
     }
-  }catch(err){ announce("Voice generation failed."); alert("Voice generation failed: "+err.message); }
+  }catch(err){ notice("Voice generation failed: "+err.message,"error"); }
   finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
 }
 /* Piper spawns a local program, so it can only work on the native backend. Show
@@ -924,7 +924,7 @@ $("#importFile") && ($("#importFile").onchange=async e=>{ const f=e.target.files
     loadTake(); refreshIO();
     if(hint) hint.textContent=`imported ${res.channels} channels`+(res.warnings&&res.warnings.length?` · ${res.warnings.length} warning(s)`:"");
     if(res.warnings&&res.warnings.length) console.warn("import warnings:", res.warnings);
-  }catch(err){ if(hint) hint.textContent=orig; alert("Import failed: "+err.message); }
+  }catch(err){ if(hint) hint.textContent=orig; notice("Import failed: "+err.message); }
   finally{ e.target.value=""; }   // allow re-importing the same file
 });
 
@@ -942,7 +942,7 @@ $("#alignFile") && ($("#alignFile").onchange=async e=>{ const f=e.target.files[0
     if(res.fps){ tk.params={...tk.params, fps:String(res.fps)}; }
     loadTake(); refreshIO();
     if(hint) hint.textContent=`aligned · ${res.channels} channels · ${(+res.duration).toFixed(2)}s (see the Phonemes tab)`;
-  }catch(err){ if(hint) hint.textContent=orig; alert("Align failed: "+err.message); }
+  }catch(err){ if(hint) hint.textContent=orig; notice("Align failed: "+err.message); }
   finally{ e.target.value=""; }
 });
 
@@ -955,6 +955,20 @@ function announce(msg){
   const el=$("#srStatus"); if(!el||!msg) return;
   el.textContent="";
   setTimeout(()=>{ el.textContent=msg; },60);
+}
+/* A visible, non-blocking notice (toast) that is ALSO announced — replaces the
+ * blocking alert() dialogs: a result or an error must never freeze the app or
+ * steal focus. Errors stay 8 s, info 5 s; click to dismiss. `kind` defaults
+ * from the wording so call sites stay terse. */
+function notice(msg,kind){
+  kind=kind||(/fail|couldn|can['’]t|error|wrong|first\b|unavailable/i.test(msg)?"error":"info");
+  announce(msg);
+  const host=$("#toasts"); if(!host) return;
+  const t=document.createElement("div"); t.className="toast"+(kind==="error"?" error":""); t.textContent=msg;
+  const close=()=>{ t.classList.add("out"); setTimeout(()=>t.remove(),220); };
+  t.onclick=close; host.appendChild(t);
+  while(host.children.length>4) host.firstChild.remove();
+  setTimeout(close, kind==="error"?8000:5000);
 }
 
 /* Commit a freshly solved track onto the current take and redraw everything.
@@ -971,6 +985,8 @@ function commitTake(newTrack,segments,words,duration,preserve){
   ingestChannels(); buildChannelList(); buildInspector(); drawAll(); setScrub(); refreshUndoButtons(); updateReanalyze();
   $("#tpDur").textContent="/ "+fmt(S.duration); refreshIO();
   announce(`Take ready — ${newTrack.channels.length} channels, ${(+duration).toFixed(2)} seconds.`);
+  if(!$("#text").value.trim()) notice(`Empty transcript — made a silent ${(+duration).toFixed(1)} s take (pose-only). Type a line to get lip-sync.`,"info");
+  document.dispatchEvent(new CustomEvent("offx:take"));         // session.js autosaves on this
 }
 
 async function runGenerate(preserve){
@@ -1000,8 +1016,8 @@ async function runGenerate(preserve){
     }
     commitTake(newTrack, res.segments, res.words, res.duration, preserve);
     btn.textContent="Generate take"; btn.disabled=false; btn.removeAttribute("aria-busy"); return true;
-  }catch(err){ btn.textContent="Generate — failed"; console.error(err); announce("Generate failed: "+err.message);
-    alert("Generate failed: "+err.message); btn.disabled=false; btn.removeAttribute("aria-busy"); return false; }
+  }catch(err){ btn.textContent="Generate — failed"; console.error(err); notice("Generate failed: "+err.message,"error");
+    btn.disabled=false; btn.removeAttribute("aria-busy"); return false; }
 }
 $("#run").onclick=()=>{ const tk=curTake();
   if(tk&&tk.edited&&S.track&&!confirm("Generate replaces the whole take, discarding your hand edits.\n\nUse “Reanalyze — keep my edits” to rebuild but preserve edited channels.\n\nReplace anyway?")) return;
@@ -1023,7 +1039,7 @@ async function batchGenerate(){
   }
   if(b){ b.textContent="⁝ Batch — a take per line"; b.disabled=false; }
   refreshIO();
-  alert(`Batched ${made} take${made===1?"":"s"} from ${lines.length} lines — switch between them in the Take menu.`);
+  notice(`Batched ${made} take${made===1?"":"s"} from ${lines.length} lines — switch between them in the Take menu.`);
 }
 $("#batch")&&($("#batch").onclick=batchGenerate);
 $("#text")&&$("#text").addEventListener("input",updateBatchBtn);
@@ -1112,9 +1128,10 @@ function inlineRename(kind,cur,cb){ const sel=(kind==="actor"?$("#actorSelect"):
 function ioAction(act){ const t=curTake();
   if(act==="take-dup") dupTake();
   else if(act==="take-rename"){ if(t) inlineRename("take",t.name,v=>{t.name=v;refreshIO();}); }
-  else if(act==="take-del") delTake();
+  else if(act==="take-del"){ if(!t||!t.track||confirm(`Delete take “${t.name}”? This can't be undone.`)) delTake(); }
   else if(act==="actor-rename") inlineRename("actor",curActor().name,v=>{curActor().name=v;refreshIO();});
-  else if(act==="actor-del") delActor(); }
+  else if(act==="actor-del"){ const a=curActor(), n=a.takes.filter(x=>x.track).length;
+    if(!n||confirm(`Delete actor “${a.name}” and its ${n} generated take${n===1?"":"s"}? This can't be undone.`)) delActor(); } }
 function wireIO(){
   $("#actorSelect").onchange=e=>switchActor(+e.target.value);
   $("#takeSelect").onchange=e=>{ const v=+e.target.value; if(v>=0) switchTake(v); };
@@ -1990,10 +2007,10 @@ async function customMappingJson(){ if(!(S.mapCustom&&S.phonMap)) return "";
   try{ const r=await Pipe.mappingJson(S.phonMap,"arkit"); return r&&r.json?r.json:""; }catch(_){ return ""; } }
 async function downloadMapping(){
   try{ const r=await Pipe.mappingJson(S.phonMap||{},"arkit");
-    if(r.error){ alert("Mapping export failed: "+r.error); return; }
+    if(r.error){ notice("Mapping export failed: "+r.error); return; }
     const blob=new Blob([r.json],{type:"application/json"}); const url=URL.createObjectURL(blob);
     const a=document.createElement("a"); a.href=url; a.download="phoneme.mapping.json"; a.click(); URL.revokeObjectURL(url);
-  }catch(err){ alert("Mapping export failed: "+err.message); }
+  }catch(err){ notice("Mapping export failed: "+err.message); }
 }
 
 /* ===================================================================== *
@@ -2019,7 +2036,7 @@ function snapshotUndo(){ if(!S.track)return; S.undo.push(_editSnap());
 /* redraw the curve canvas for whichever view is active (the focused Curves tab
  * or the Workspace), so curve editing works in both. */
 function redrawCurves(){ if(S.view==="workspace") drawCurves("ws_curves"); else drawCurves(); }
-function afterEdit(){ markEdited(); buildChannelList(); buildInspector();
+function afterEdit(){ markEdited(); buildChannelList(); buildInspector(); document.dispatchEvent(new CustomEvent("offx:take"));
   if(S.view==="workspace") drawWorkspace(); else drawCurves();
   drawPreview(); updateInspVal(); refreshUndoButtons(); }
 function refreshUndoButtons(){ const u=$("#cvUndo"),r=$("#cvRedo"); if(u)u.disabled=!S.undo.length; if(r)r.disabled=!S.redo.length; }
@@ -2211,7 +2228,7 @@ function wirePosePanel(){
   function sync(){ const yaw=gval("headYaw"), pitch=gval("headPitch");
     setDot(Math.max(-1,Math.min(1,yaw/RANGE)), Math.max(-1,Math.min(1,pitch/RANGE)));
     roll.value=gval("headRoll"); EXPR.forEach(inp=>{ inp.value=gval(inp.dataset.ch); }); }
-  function need(){ if(!S.track){ alert("Generate a take first — pose controls write keys onto the take."); return false; } return true; }
+  function need(){ if(!S.track){ notice("Generate a take first — pose controls write keys onto the take."); return false; } return true; }
   tog.onclick=()=>{ panel.hidden=!panel.hidden; if(!panel.hidden) sync(); };
   let padDrag=false;
   const padTo=e=>{ const r=pad.getBoundingClientRect();
@@ -2396,15 +2413,15 @@ function buildExportGrid(){
     `<div class="exp-card"><h4>${label} <span class="ext">${ext}</span></h4><p>${desc}</p>
      <button class="btn" data-fmt="${fmt}">Export</button></div>`).join("");
   $$("#exportGrid button").forEach(b=>b.onclick=async()=>{
-    if(!S.track){ alert("Generate a take first."); return; }
+    if(!S.track){ notice("Generate a take first."); return; }
     b.disabled=true; const was=b.textContent; b.textContent="…";
     try{ const r=await Pipe.export(b.dataset.fmt); if(r.error)throw new Error(r.error);
       const blob=new Blob([Uint8Array.from(atob(r.b64),c=>c.charCodeAt(0))]);
       const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=r.filename; a.click();
       b.textContent="✓ "+r.filename.split(".").slice(-1); setTimeout(()=>b.textContent=was,1800);
       announce("Exported "+r.filename+".");
-    }catch(err){ b.textContent="failed"; announce("Export failed: "+err.message);
-      alert("Export failed: "+err.message); setTimeout(()=>b.textContent=was,1800); }
+    }catch(err){ b.textContent="failed"; notice("Export failed: "+err.message,"error");
+      setTimeout(()=>b.textContent=was,1800); }
     b.disabled=false;
   });
 }
@@ -2428,7 +2445,7 @@ function startAudioAt(off){ stopAudioSource(); if(!S.audioBuf) return;
   const o=Math.max(0,Math.min(off, S.audioBuf.duration-0.001));
   src.onended=()=>{ if(S.audioSrc===src) S.audioSrc=null; };   // natural end (buffer shorter than take)
   try{ src.start(0,o); }catch(_){ return; }
-  S.audioSrc=src; S._audioStartCtx=ctx.currentTime; S._audioStartOff=o; }
+  S.audioSrc=src; S._audioStartCtx=ctx.currentTime; S._audioStartOff=o; S._audioLastPos=-1; S._audioStall=0; }
 function audioPlaying(){ return !!S.audioSrc; }
 function audioPos(){ return S._audioStartOff + (S.actx.currentTime - S._audioStartCtx); }
 async function refreshAudio(){
@@ -2467,7 +2484,13 @@ showFps(null);
 function loop(ts){ if(!S.playing)return;
   const aOn=audioPlaying();                                              // audio is the clock while it plays
   if(S.lastTs){ const dt=(ts-S.lastTs)/1000;
-    S.playClock = aOn ? audioPos() : S.playClock+dt;
+    if(aOn){ const p=audioPos();
+      // a suspended or erroring AudioContext (autoplay policy, no output device)
+      // freezes its clock — after 0.6 s without progress drop the audio and keep
+      // the playhead moving on the frame clock instead of freezing the transport
+      if(p>S._audioLastPos+1e-4){ S._audioLastPos=p; S._audioStall=0; S.playClock=p; }
+      else if((S._audioStall=(S._audioStall||0)+dt)>0.6){ stopAudioSource(); S.playClock+=dt; }
+    } else S.playClock+=dt;
     fpsMeter.acc+=dt; fpsMeter.n++;
     if(fpsMeter.acc>=0.4){ showFps(fpsMeter.n/fpsMeter.acc); fpsMeter.acc=0; fpsMeter.n=0; } }
   S.lastTs=ts;
@@ -2521,13 +2544,13 @@ function wirePreviewChooser(){
   if(btn&&file){ btn.onclick=()=>file.click();
     file.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
       const p=window.Preview3D;
-      if(!p){ alert("The 3D preview needs WebGL, which isn't available here — can't load a model."); e.target.value=""; return; }
+      if(!p){ notice("The 3D preview needs WebGL, which isn't available here — can't load a model."); e.target.value=""; return; }
       const orig=btn.textContent; btn.disabled=true; btn.textContent="loading…";
       try{ const ok=await p.loadModel(await f.arrayBuffer());
         if(ok){ S.previewMode="3d"; if(sel) sel.value="3d"; drawPreview();
           const cap=document.querySelector(".preview-readout .dim"); if(cap) cap.textContent="Loaded "+f.name+" — driven by the take via its ARKit blendshapes.";
-        } else alert("Couldn't use that file. Load a .glb whose meshes have ARKit blendshape morph targets (e.g. a Rocketbox avatar exported to glTF).");
-      }catch(err){ alert("Model load failed: "+err.message); }
+        } else notice("Couldn't use that file. Load a .glb whose meshes have ARKit blendshape morph targets (e.g. a Rocketbox avatar exported to glTF).");
+      }catch(err){ notice("Model load failed: "+err.message); }
       finally{ btn.disabled=false; btn.textContent=orig; e.target.value=""; } };
   }
 }

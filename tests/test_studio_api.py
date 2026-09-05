@@ -343,7 +343,7 @@ def test_studio_markup_a11y_contract():
     # menu button pattern (WAI-ARIA APG): button ↔ menu ↔ items
     assert 'id="ioMenuBtn"' in html and 'aria-haspopup="menu"' in html
     assert 'aria-controls="ioMenu"' in html and 'id="ioMenu" role="menu"' in html
-    assert html.count('role="menuitem"') == 5
+    assert html.count('role="menuitem"') == 6         # …incl. "Start a fresh workspace…"
     # modal dialog, labelled by its own heading
     assert 'id="acctModal" role="dialog" aria-modal="true" aria-labelledby="acctTitle"' in html
     assert 'id="acctTitle"' in html
@@ -367,6 +367,14 @@ def test_studio_markup_a11y_contract():
     for hint in ("curvesKeys", "phonKeys", "fgKeys", "evKeys", "chanKeys"):
         assert f'id="{hint}"' in html, hint
     assert "function railRow" in _web("studio.js")          # roving-tabindex channel rows
+    # session.js (theme + autosave/restore) loads last; notices are toasts, never alert()
+    assert html.index('src="keyboard.js"') < html.index('src="session.js"')
+    assert 'id="toasts"' in html and 'localStorage.getItem("offx_theme")' in html
+    assert 'data-act="ws-reset"' in html
+    js = _web("studio.js")
+    assert "function notice" in js
+    assert 'alert("' not in js and "alert(`" not in js       # no blocking dialogs for results/errors
+    assert "offx:take" in js and "offx:take" in _web("session.js")
     # the 3D preview renders on demand — the only rAF is scheduled by requestRender
     p3d = _web("preview3d.js")
     assert "function requestRender" in p3d

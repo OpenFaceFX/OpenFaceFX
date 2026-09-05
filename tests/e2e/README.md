@@ -14,6 +14,15 @@ node tests/e2e/studio.e2e.mjs                 # from the repo root
 Options: `OFFX_URL=…` to point elsewhere, `--headed` to watch it,
 `--json report.json` to save the full report for diffing between runs.
 
+The account flow (register → save project → reload → open → delete → sign out)
+writes a user to the server's database, so it is opt-in: start the server on a
+throwaway DB and set `OFFX_E2E_ACCOUNTS=1`:
+
+```bash
+OFFX_STUDIO_DB=/tmp/offx-e2e.db openfacefx studio --port 8801 --no-open &
+OFFX_E2E_ACCOUNTS=1 node tests/e2e/studio.e2e.mjs
+```
+
 Uses `channel:"chrome"`, so it drives the Chrome you already have — no
 browser download. **Not wired into CI**: it needs a browser and a live server.
 Run it before releasing anything that touches `studio_web/`.
@@ -38,10 +47,20 @@ Run it before releasing anything that touches `studio_web/`.
 | Reflow | no horizontal scroll at 1024; every control still reachable at 768 and 1024 (200 % zoom on a laptop) |
 | Button sweep | every visible, non-destructive button on every tab is clicked — no console error may follow |
 | Keyboard operability | channel list + Workspace rail are roving listboxes; on the Curves canvas ← → select, Shift+← → and ↑ ↓ nudge, Enter adds, Delete removes, Ctrl+Z restores, edits are announced; phoneme boundary moves a frame and re-solves; Face Graph node, Event jump and pose pad from the arrows (WCAG 2.1.1) |
-| Console | zero errors across the whole session |
+| Workflows | every exporter yields a real, non-empty download (`.fuz` refuses without audio — as a notice); a real WAV → spectrogram, energy engine, mute button, playback that advances; Import track… and Align from… words add takes; Batch makes one take per line; Run QA flags an OOV word and the pronunciation editor clears it; duplicate / inline-rename / delete-with-confirmation; a broken import is a notice and Generate still works; an empty transcript explains its silent take; Generate voice drives the spectrogram |
+| Reload | the theme choice and the whole session survive a reload; Start a fresh workspace… clears it |
+| Accounts (opt-in) | register → Save new → reload keeps the cookie session → Open restores the take → Delete → Sign out |
+| Console | zero errors across the whole session (headless Chrome's "no audio device" renderer error is filtered) |
 
 ## Bugs it has already caught
 
+- **A reload lost every unsaved take**; the theme choice was forgotten too. Now
+  `session.js` autosaves/restores the workspace and remembers the theme.
+- **Delete take / Delete actor asked nothing** — one click, gone, no undo.
+- **The playhead froze whenever the audio clock did** (suspended or erroring
+  `AudioContext`): audio is the transport's clock and nothing fell back.
+- **Thirteen `alert()` dialogs** froze the app for results and errors; they are
+  notices now.
 - **Every canvas editor was pointer-only** (WCAG 2.1.1): no key could select or move a
   curve key, re-time a phoneme, pick a graph node or turn the head. Now `keyboard.js`.
 - **The 3D preview rendered at 60 fps forever** — on every tab, canvas hidden or

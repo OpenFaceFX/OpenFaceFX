@@ -16,6 +16,9 @@
  * ===================================================================== */
 import { chromium } from "playwright-core";
 import fs from "fs";
+import path from "path";
+import os from "os";
+import { fileURLToPath } from "url";
 
 const URL = process.env.OFFX_URL || "http://127.0.0.1:8801";
 const JSON_OUT = (() => { const i = process.argv.indexOf("--json"); return i > 0 ? process.argv[i+1] : null; })();
@@ -30,9 +33,13 @@ const ok = (cond, name, detail) => {
 const group = n => console.log(`\n${n}`);
 
 const browser = await chromium.launch({ channel: "chrome", headless: !HEADED });
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
 const consoleErrors = [];
-page.on("console", m => { if (m.type() === "error") consoleErrors.push(m.text()); });
+// native confirm()s (delete a take, start fresh) are accepted; every dialog is recorded
+const dialogs = [];
+page.on("dialog", async d => { dialogs.push(d.message()); await d.accept(); });
+const HEADLESS_AUDIO = /AudioContext encountered an error from the audio device/;   // no output device in headless Chrome
+page.on("console", m => { if (m.type() === "error" && !HEADLESS_AUDIO.test(m.text())) consoleErrors.push(m.text()); });
 page.on("pageerror", e => consoleErrors.push("pageerror: " + e.message));
 
 const report = { url: URL, tabs: [] };
@@ -298,7 +305,7 @@ try {
   ok(second === "Rename take…", "ArrowDown moves to the next item", `focused "${second}"`);
   await page.keyboard.press("End");
   const lastItem = await page.evaluate(() => document.activeElement?.textContent.trim());
-  ok(lastItem === "Delete actor", "End jumps to the last item", `focused "${lastItem}"`);
+  ok(lastItem === "Start a fresh workspace…", "End jumps to the last item", `focused "${lastItem}"`);
   await page.keyboard.press("Escape"); await page.waitForTimeout(80);
   const closed = await page.evaluate(() => ({ expanded: document.getElementById("ioMenuBtn").getAttribute("aria-expanded"),
     hidden: document.getElementById("ioMenu").hidden, focus: document.activeElement?.id }));
@@ -508,6 +515,173 @@ try {
   const yaw1 = await page.evaluate(() => { const c = chan("headYaw"); return c ? sample(c.keys, S.t) : null; });
   ok(yaw1 !== null && Math.abs(yaw1 - yaw0 - 1) < 1e-6, "ArrowRight on the pose pad turns the head 1° (a headYaw key at the playhead)", `${yaw0} → ${yaw1}`);
   await page.keyboard.press("Home"); await page.waitForTimeout(80);
+
+  /* ---------------- the core workflows, end to end ---------------- */
+  // Real downloads, a real WAV, import/align/batch/QA round-trips, take CRUD,
+  // what survives a reload, error recovery. Fixtures live in a temp dir.
+  group("Workflows: export, audio, import, align, batch, QA, takes");
+  const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "offx-e2e-"));
+  const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const takesInfo = () => page.evaluate(() => ({ n: curActor().takes.length, idx: S.takeIdx, names: curActor().takes.map(t => t.name) }));
+  const generate = async (text) => {
+    await page.click('.tab[data-view="preview"]'); await page.fill("#text", text);
+    await page.evaluate(() => { window.__prevTrack = S.track; }); await page.click("#run");
+    await page.waitForFunction(() => S.track && S.track !== window.__prevTrack && !document.getElementById("run").disabled, null, { timeout: 60000 });
+    await page.waitForTimeout(150);
+  };
+  const toasts = () => page.evaluate(() => [...document.querySelectorAll("#toasts .toast")].map(t => (t.classList.contains("error") ? "error: " : "") + t.textContent));
+  // exports: every button yields a real file; .fuz refuses without audio (a toast, not a dialog)
+  await generate("Hello world, this is a live end to end test of every exporter.");
+  await page.click('.tab[data-view="export"]'); await page.waitForTimeout(200);
+  const fmts = await page.$$eval("#exportGrid button", bs => bs.map(b => b.dataset.fmt));
+  const exported = {}, noFile = [];
+  for (const f of fmts) {
+    const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 8000 }).catch(() => null), page.click(`#exportGrid button[data-fmt="${f}"]`)]);
+    if (!dl) { noFile.push(f); await page.waitForTimeout(150); continue; }
+    const p = path.join(TMP, dl.suggestedFilename()); await dl.saveAs(p);
+    exported[f] = { file: dl.suggestedFilename(), size: fs.statSync(p).size };
+    await page.waitForTimeout(100);
+  }
+  report.exports = exported;
+  ok(fmts.length >= 15 && Object.values(exported).every(e => e.size > 0), `${Object.keys(exported).length} of ${fmts.length} exporters produced a non-empty download`,
+     Object.entries(exported).filter(([, e]) => !e.size).map(([f]) => f).join(", "));
+  ok(noFile.length === 1 && noFile[0] === "fuz", "only .fuz refuses before a voice clip is loaded", `no download: ${noFile.join(", ")}`);
+  const dExp = dialogs.length;                       // click it again: the notice must be visible right away, with no dialog
+  await page.click('#exportGrid button[data-fmt="fuz"]'); await page.waitForTimeout(400);
+  ok((await toasts()).some(t => /^error: Export failed.*audio/i.test(t)) && dialogs.length === dExp, "that refusal is a visible notice, not a blocking dialog",
+     JSON.stringify({ toasts: await toasts(), dialogs: dialogs.slice(dExp) }));
+  const trackJson = JSON.parse(fs.readFileSync(path.join(TMP, exported.json.file), "utf8"));
+  ok(Array.isArray(trackJson.channels) && trackJson.channels.length > 0, "the Track JSON download parses and carries channels", `${trackJson.channels?.length} channels`);
+  // audio: a real WAV → spectrogram, energy engine, audio-clocked playback, .fuz
+  await page.click('.tab[data-view="preview"]');
+  await page.setInputFiles("#wav", path.join(ROOT, "examples", "speech.wav"));
+  await page.waitForFunction(() => !!S.wavBytes && !!S.wavSpec, null, { timeout: 15000 });
+  const wavState = await page.evaluate(() => ({ name: document.getElementById("wavName").textContent, engine: document.getElementById("engine").value, dur: +document.getElementById("dur").value }));
+  ok(/speech\.wav/.test(wavState.name) && wavState.engine === "energy" && Math.abs(wavState.dur - 3.27) < 0.05, "loading a WAV names it, sets the duration and switches to the energy engine", JSON.stringify(wavState));
+  await generate("The quick brown fox jumps over the lazy dog.");
+  await page.click('.tab[data-view="phonemes"]'); await page.waitForTimeout(400);
+  const specLit = await page.evaluate(() => { const c = document.getElementById("wave"), x = c.getContext("2d"); const d = x.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4 * 37) if (d[i] > 8) n++; return n; });
+  ok(specLit > 500, "the spectrogram paints from the loaded audio", `sampled ${specLit} lit pixels`);
+  ok(await page.$eval("#tpMute", e => !e.hidden), "the mute button appears once audio is loaded");
+  await page.click("#tpPlay"); await page.waitForTimeout(1200);
+  const playing = await page.evaluate(() => ({ playing: S.playing, t: S.t }));
+  await page.click("#tpPlay"); await page.waitForTimeout(100);
+  ok(playing.playing && playing.t > 0.2, "Play advances the playhead (even if the audio device stalls, the frame clock takes over)", JSON.stringify(playing));
+  ok(await page.evaluate(() => !S.playing && !audioPlaying()), "Pause stops playback and the audio source");
+  await page.click('.tab[data-view="export"]'); await page.waitForTimeout(150);
+  const [fuz] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }).catch(() => null), page.click('#exportGrid button[data-fmt="fuz"]')]);
+  ok(!!fuz && fs.statSync(await fuz.path()).size > 1000, "with audio loaded, .fuz exports (lip + clip)", fuz ? fuz.suggestedFilename() : "no download");
+  // import the exported track back as a new take
+  const before = await takesInfo();
+  await page.click('.tab[data-view="preview"]');
+  await page.setInputFiles("#importFile", path.join(TMP, exported.json.file));
+  await page.waitForFunction(n => curActor().takes.length > n, before.n, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(250);
+  const imported = await takesInfo();
+  ok(imported.n === before.n + 1 && await page.evaluate(n => S.track?.channels?.length === n, trackJson.channels.length),
+     "Import track… adds a take with the same channels", `${before.n} → ${imported.n}, hint: ${await page.$eval("#importHint", e => e.textContent)}`);
+  // align from a words JSON
+  fs.writeFileSync(path.join(TMP, "words.json"), JSON.stringify([{ word: "hello", start: 0.1, end: 0.45 }, { word: "brave", start: 0.5, end: 0.9 }, { word: "new", start: 0.95, end: 1.2 }, { word: "world", start: 1.25, end: 1.8 }]));
+  await page.fill("#text", "hello brave new world");
+  await page.selectOption("#alignFmt", "words");
+  await page.setInputFiles("#alignFile", path.join(TMP, "words.json"));
+  await page.waitForFunction(n => curActor().takes.length > n, imported.n, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(250);
+  const aligned = await page.evaluate(() => ({ segs: S.segments.length, dur: S.duration, hint: document.getElementById("alignHint").textContent }));
+  ok(aligned.segs > 4 && Math.abs(aligned.dur - 1.8) < 0.01, "Align from… words makes a take timed by the word anchors", JSON.stringify(aligned));
+  // batch: one take per line, reported by a notice
+  const batchBefore = await takesInfo();
+  await page.fill("#text", "First line of the batch.\nSecond line here.\nThird and last line."); await page.waitForTimeout(150);
+  ok(await page.$eval("#batch", b => !b.hidden), "a multi-line transcript reveals the Batch button");
+  await page.click("#batch"); await page.waitForFunction(n => curActor().takes.length >= n + 3, batchBefore.n, { timeout: 60000 }).catch(() => {}); await page.waitForTimeout(300);
+  ok((await takesInfo()).n === batchBefore.n + 3 && (await toasts()).some(t => /^Batched 3 takes/.test(t)), "Batch makes one take per line and says so in a notice", JSON.stringify({ takes: (await takesInfo()).n, toasts: await toasts() }));
+  // QA + pronunciation editor round-trip
+  await generate("The xylozor hummed softly.");
+  await page.click('.tab[data-view="phonemes"]'); await page.waitForTimeout(150);
+  await page.click("#qaRun"); await page.waitForFunction(() => !!document.querySelector("#qaPanel .pw-in"), null, { timeout: 20000 }).catch(() => {}); await page.waitForTimeout(200);
+  const oovBefore = await page.$$eval("#qaPanel .pw-in", is => is.map(i => i.dataset.word));
+  ok(oovBefore.includes("xylozor"), "Run QA flags the made-up word as out-of-vocabulary with an editable pronunciation", oovBefore.join(", "));
+  await page.fill('#qaPanel .pw-in[data-word="xylozor"]', "Z AY1 L OW0 Z ER0");
+  await page.click("#pwAll"); await page.waitForTimeout(1500);
+  await page.click("#qaRun"); await page.waitForTimeout(1200);
+  const oovAfter = await page.evaluate(() => ({ oov: [...document.querySelectorAll("#qaPanel .pw-in")].map(i => i.dataset.word), dict: curTake().cmudict }));
+  ok(!oovAfter.oov.includes("xylozor") && /XYLOZOR\s+Z AY1 L OW0 Z ER0/.test(oovAfter.dict), "Save all & re-generate writes the dictionary and clears the flag", JSON.stringify(oovAfter));
+  // takes: duplicate, rename, delete (with a confirmation)
+  const t0n = (await takesInfo()).n;
+  await page.click("#ioMenuBtn"); await page.click('#ioMenu [data-act="take-dup"]'); await page.waitForTimeout(200);
+  ok((await takesInfo()).n === t0n + 1, "Duplicate take adds a copy");
+  await page.click("#ioMenuBtn"); await page.click('#ioMenu [data-act="take-rename"]'); await page.waitForTimeout(100);
+  await page.keyboard.type("Renamed take"); await page.keyboard.press("Enter"); await page.waitForTimeout(150);
+  const tr = await takesInfo();
+  ok(tr.names[tr.idx] === "Renamed take", "Rename take… renames it inline", tr.names[tr.idx]);
+  const d0 = dialogs.length;
+  await page.click("#ioMenuBtn"); await page.click('#ioMenu [data-act="take-del"]'); await page.waitForTimeout(200);
+  ok(dialogs.length === d0 + 1 && /Delete take/.test(dialogs[d0] || "") && (await takesInfo()).n === t0n, "Delete take asks for confirmation first, then deletes", dialogs[d0]);
+  // a bad import is a notice, and the app keeps working
+  fs.writeFileSync(path.join(TMP, "garbage.json"), "{not json at all");
+  const dBad = dialogs.length;
+  await page.click('.tab[data-view="preview"]'); await page.setInputFiles("#importFile", path.join(TMP, "garbage.json")); await page.waitForTimeout(1200);
+  ok(dialogs.length === dBad && (await toasts()).some(t => /^error: Import failed/.test(t)), "a broken import file yields an error notice, not a dialog", JSON.stringify(await toasts()));
+  await generate("Still working after a bad import.");
+  ok(await page.evaluate(() => !!S.track), "…and Generate still works afterwards");
+  // an empty transcript says what it made
+  await generate("");
+  ok((await toasts()).some(t => /Empty transcript/.test(t)), "an empty transcript explains it made a silent take", JSON.stringify(await toasts()));
+  // built-in voice
+  await page.fill("#text", "Generate a voice for me."); await page.evaluate(() => { S.wavBytes = null; });
+  await page.click("#ttsBtn"); await page.waitForFunction(() => !!S.wavBytes && !document.getElementById("ttsBtn").disabled, null, { timeout: 60000 }).catch(() => {});
+  const tts = await page.evaluate(() => ({ bytes: S.wavBytes?.length || 0, spec: !!S.wavSpec, name: document.getElementById("wavName").textContent }));
+  ok(tts.bytes > 10000 && tts.spec && /AI voice/.test(tts.name), "Generate voice synthesises a clip and drives the spectrogram", JSON.stringify(tts));
+
+  /* ---------------- what survives a reload ---------------- */
+  group("Reload: theme and session persist");
+  const themeBefore = await page.evaluate(() => document.documentElement.dataset.theme);
+  await page.click("#themeToggle"); const themeSet = await page.evaluate(() => document.documentElement.dataset.theme);
+  const takesBefore = await page.evaluate(() => S.actors.reduce((n, a) => n + a.takes.filter(t => t.track).length, 0));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => !document.querySelector("#run")?.disabled, null, { timeout: 60000 }); await page.waitForTimeout(700);
+  ok(themeSet !== themeBefore && await page.evaluate(() => document.documentElement.dataset.theme) === themeSet, `the ${themeSet} theme survives a reload`);
+  const restored = await page.evaluate(() => ({ takes: S.actors.reduce((n, a) => n + a.takes.filter(t => t.track).length, 0), toasts: [...document.querySelectorAll("#toasts .toast")].map(t => t.textContent) }));
+  ok(restored.takes === takesBefore && takesBefore > 0, `the session is restored after a reload (${restored.takes} takes) and announced`, JSON.stringify(restored));
+  const dFresh = dialogs.length;
+  await page.click("#ioMenuBtn"); await page.click('#ioMenu [data-act="ws-reset"]'); await page.waitForTimeout(300);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => !document.querySelector("#run")?.disabled, null, { timeout: 60000 }); await page.waitForTimeout(500);
+  ok(dialogs.length === dFresh + 1 && await page.evaluate(() => !S.track && S.actors.every(a => !a.takes.some(t => t.track))), "Start a fresh workspace… (confirmed) clears the saved session for good");
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+
+  /* ---------------- accounts (opt-in: needs a throwaway DB) ---------------- */
+  // Registers a user, so it only runs when OFFX_E2E_ACCOUNTS=1 — start the server
+  // with OFFX_STUDIO_DB pointing at a scratch file first (see README).
+  if (process.env.OFFX_E2E_ACCOUNTS === "1") {
+    group("Accounts: register → save project → reload → open → delete → sign out");
+    await generate("Persist me across a reload please.");
+    const email = `e2e_${Date.now()}@example.test`;
+    await page.click("#acctChip"); await page.waitForTimeout(200);
+    if (await page.$("#authForm")) {
+      await page.click('#acctBody .acct-tab[data-mode="register"]'); await page.waitForTimeout(100);
+      await page.fill("#authEmail", email); await page.fill("#authPass", "correct-horse-battery");
+      await page.click('#authForm button[type="submit"]');
+      await page.waitForFunction(() => !!document.getElementById("projSave"), null, { timeout: 15000 }).catch(() => {});
+    }
+    ok((await page.$eval("#acctChip", e => e.textContent)).includes(email), "registering signs the user in (chip shows the email)");
+    await page.fill("#projName", "E2E project"); await page.click("#projSave");
+    await page.waitForFunction(() => document.querySelectorAll("#projList .acct-item").length > 0, null, { timeout: 15000 }).catch(() => {});
+    ok((await page.$$eval("#projList .acct-item .acct-name", es => es.map(e => e.textContent))).includes("E2E project"), "Save new lists the project");
+    await page.keyboard.press("Escape");
+    await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForFunction(() => !document.querySelector("#run")?.disabled, null, { timeout: 60000 }); await page.waitForTimeout(600);
+    ok((await page.$eval("#acctChip", e => e.textContent)).includes(email), "the session cookie keeps the user signed in across a reload");
+    await page.click("#ioMenuBtn"); await page.click('#ioMenu [data-act="ws-reset"]'); await page.waitForTimeout(300);   // drop the autosaved copy so Open is what restores it
+    await page.click("#acctChip"); await page.waitForFunction(() => document.querySelectorAll("#projList .acct-item").length > 0, null, { timeout: 15000 }).catch(() => {});
+    await page.click('#projList .acct-item [data-act="open"]'); await page.waitForTimeout(800);
+    const opened = await page.evaluate(() => ({ closed: document.getElementById("acctModal").hidden, text: document.getElementById("text").value, track: !!S.track }));
+    ok(opened.closed && opened.track && /Persist me/.test(opened.text), "Open restores the saved take and closes the dialog", JSON.stringify(opened));
+    await page.click("#acctChip"); await page.waitForTimeout(300);
+    await page.click('#projList .acct-item [data-act="del"]'); await page.waitForTimeout(500);
+    ok(/No saved projects/.test(await page.$eval("#projList", e => e.textContent)), "Delete removes the project");
+    await page.click("#signOut"); await page.waitForTimeout(300);
+    ok(/Sign in/.test(await page.$eval("#acctChip", e => e.textContent)), "Sign out returns the chip to Sign in");
+    await page.keyboard.press("Escape");
+  }
+  fs.rmSync(TMP, { recursive: true, force: true });
 
   /* ---------------- no console noise anywhere ---------------- */
   group("Console");

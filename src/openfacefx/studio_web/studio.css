@@ -425,6 +425,17 @@ textarea { resize:vertical; min-height:74px; line-height:1.45; }
 .acct-name { flex:1; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .acct-when { font-size:11px; }
 
+/* ---- Toasts: visible, non-blocking notices (announced via #srStatus) ------ */
+.toasts { position:fixed; right:16px; bottom:calc(var(--transport-h) + 12px); z-index:70;
+  display:flex; flex-direction:column; gap:8px; max-width:min(440px, calc(100vw - 32px)); pointer-events:none; }
+.toast { pointer-events:auto; background:var(--elev); color:var(--fg); border:1px solid var(--line-2);
+  border-left:3px solid var(--info); border-radius:var(--r-sm); padding:10px 14px; font-size:13px;
+  line-height:1.4; box-shadow:var(--shadow); cursor:pointer; animation:toast-in .18s ease-out; }
+.toast.error { border-left-color:var(--crit); }
+.toast.out { opacity:0; transition:opacity .2s; }
+@keyframes toast-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+@media (prefers-reduced-motion:reduce){ .toast { animation:none; } }
+
 /* ---- Transport ------------------------------------------------------- */
 .transport { display:flex; align-items:center; gap:12px; padding:0 16px;
   background:linear-gradient(0deg,var(--panel),var(--panel-2)); border-top:1px solid var(--line); }

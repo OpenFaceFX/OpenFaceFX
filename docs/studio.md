@@ -289,6 +289,15 @@ The image runs `openfacefx studio --host 0.0.0.0` — the native pipeline, accou
 from the **Account** chip to save projects; provider keys stay client-side (only
 ciphertext ever reaches the server).
 
+## Session restore — nothing is lost on a reload
+
+The workspace (actors → takes: transcript, settings, track, hand edits, audio) is
+autosaved in the browser (`localStorage`, `offx_session`) after every generate or
+edit, when the tab is hidden, and on unload, and restored on the next visit with a
+notice. If the storage quota refuses the audio clips, the rest is kept and the notice
+says so. **⋯ → Start a fresh workspace…** discards it. A saved *project* (below) is the
+durable, named copy — session restore is the safety net underneath it.
+
 ## Accounts, projects & multi-tenant SaaS
 
 The container above **is** the SaaS backend. Accounts, per-user project storage,

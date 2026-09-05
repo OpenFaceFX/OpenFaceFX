@@ -9,6 +9,15 @@ its `version` field.
 ## [Unreleased]
 
 ### Added
+- **The Studio remembers your session.** Closing or reloading the tab used to lose every
+  take that wasn't saved as a project. The workspace (actors → takes: transcript,
+  settings, track, hand edits, audio) is now autosaved in the browser after every
+  generate or edit, when the tab is hidden, and on unload, and restored on the next
+  visit with a notice ("Restored your last session — 3 takes"). If the browser's storage
+  quota refuses the audio clips, the rest is kept and the notice says so. **⋯ → Start a
+  fresh workspace…** discards it. Saving a project (Account & projects) remains the
+  durable, named copy. New `studio_web/session.js`.
+- **The light/dark theme choice is remembered** and applied before first paint.
 - **Live end-to-end / UX tests for the Studio** (`tests/e2e/`, Playwright + your own
   Chrome). Drives the real Studio against a running server and checks what the Python
   suite structurally cannot: every tab renders, every control has an accessible name,
@@ -17,11 +26,21 @@ its `version` field.
   canvases actually paint, text contrast and focus rings hold in both themes, the ⋯
   menu and the account dialog follow the ARIA patterns, the 3D head renders on demand,
   every control stays reachable at tablet width / 200 % zoom, every visible button
-  survives a click, every canvas editor is driven from the keyboard, and the console
-  stays clean. 100 checks. Not in CI — it needs a browser and a live server; see
-  `tests/e2e/README.md`.
+  survives a click, every canvas editor is driven from the keyboard, every exporter
+  yields a real download, a real WAV drives the spectrogram and playback, import / align /
+  batch / QA round-trip, the session and theme survive a reload, and the console stays
+  clean. 126 checks (132 with the opt-in account flow). Not in CI — it needs a browser
+  and a live server; see `tests/e2e/README.md`.
 
 ### Fixed
+- **Deleting a take or an actor asked nothing and could not be undone.** Both now confirm
+  first once there is a generated take to lose.
+- **The playhead froze when the audio clock did.** Audio is the transport's clock while a
+  clip plays, so a suspended or erroring `AudioContext` (autoplay policy before any
+  gesture, no output device, a device switch) left Play doing nothing. After 0.6 s without
+  audio progress the transport now drops the clip and continues on the frame clock.
+- **An empty transcript silently produced a 4-second silent take.** It still does (a
+  pose-only take is legitimate), but a notice now says so.
 - **The 3D preview burned GPU and battery while idle.** It ran a free-running 60 fps
   render loop from the moment the head loaded — on every tab, even with its canvas
   hidden, and with nothing moving. It now renders on demand: a frame is drawn only when
@@ -114,6 +133,12 @@ its `version` field.
   `elapsedTime` is seconds but shipped browsers have used milliseconds.
 
 ### Changed
+- **Results and errors are notices, not `alert()` dialogs.** Thirteen places — export,
+  import, align, generate and voice failures, batch results, model-load problems, "generate
+  a take first" — froze the whole app behind a browser dialog. They are now unobtrusive
+  toasts (errors stay 8 s, info 5 s, click to dismiss) that are also announced to screen
+  readers through the status region. Real decisions (replace hand edits, delete, start
+  fresh, forget the vault) still confirm.
 - **All API keys are now entered in one place — the Assistant's encrypted vault.** The
   Voice engine panel no longer has a key field: it keeps only non-secret preferences
   (engine, voice, rate) and reads the key back from the vault at call time. The vault

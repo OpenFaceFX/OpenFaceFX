@@ -91,7 +91,7 @@ jobs:
           # over-caches). Stamping the commit SHA onto the asset URLs makes each
           # build unique, so loading the (short-lived) HTML always pulls fresh code.
           CB="${GITHUB_SHA:0:8}"
-          sed -i -E "s#href=\"studio\.css\"#href=\"studio.css?v=$CB\"#; s#src=\"(studio|assistant|account|preview3d|webspeech|keyboard)\.js\"#src=\"\1.js?v=$CB\"#g" site/studio/index.html
+          sed -i -E "s#href=\"studio\.css\"#href=\"studio.css?v=$CB\"#; s#src=\"(studio|assistant|account|preview3d|webspeech|keyboard|session)\.js\"#src=\"\1.js?v=$CB\"#g" site/studio/index.html
           echo "Cache-busted Studio assets with $CB"
           # Landing page — the full marketing site (examples/landing.html): animated
           # hero, view cards, runtimes, AI/vault, exporters. Its CTAs point at the
