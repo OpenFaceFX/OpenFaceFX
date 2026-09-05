@@ -56,8 +56,30 @@
   }
 
   /* ---- modal --------------------------------------------------------- */
-  function openModal(view) { A.view = view || (A.native && !A.user ? "auth" : "projects"); $("#acctModal").hidden = false; render(); }
-  function closeModal() { $("#acctModal").hidden = true; }
+  /* A real modal dialog: remember who opened it, move focus inside, keep Tab
+   * inside (WCAG 2.1.2 / 2.4.3), and hand focus back on close. The markup
+   * carries role=dialog + aria-modal + aria-labelledby. */
+  const FOCUSABLE = "button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
+  const focusables = () => [...$("#acctModal").querySelectorAll(FOCUSABLE)].filter(e => e.offsetParent !== null);
+  function openModal(view) {
+    A.view = view || (A.native && !A.user ? "auth" : "projects");
+    A.opener = document.activeElement;
+    $("#acctModal").hidden = false; render();
+    const f = focusables(); (f.find(e => e.id !== "acctClose") || f[0] || $("#acctClose")).focus();
+  }
+  function closeModal() {
+    const m = $("#acctModal"); if (m.hidden) return;
+    m.hidden = true;
+    if (A.opener && A.opener.focus) A.opener.focus();
+    A.opener = null;
+  }
+  function trapTab(e) {
+    if (e.key !== "Tab") return;
+    const f = focusables(); if (!f.length) return;
+    const first = f[0], last = f[f.length - 1], cur = document.activeElement;
+    if (e.shiftKey && (cur === first || !$("#acctModal").contains(cur))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (cur === last || !$("#acctModal").contains(cur))) { e.preventDefault(); first.focus(); }
+  }
 
   function render() {
     const body = $("#acctBody"); if (!body) return;
@@ -68,16 +90,16 @@
   function renderAuth(body) {
     body.innerHTML = `
       <div class="acct-tabs">
-        <button class="acct-tab ${A.mode !== "register" ? "on" : ""}" data-mode="login">Sign in</button>
-        <button class="acct-tab ${A.mode === "register" ? "on" : ""}" data-mode="register">Create account</button>
+        <button class="acct-tab ${A.mode !== "register" ? "on" : ""}" data-mode="login" aria-pressed="${A.mode !== "register"}">Sign in</button>
+        <button class="acct-tab ${A.mode === "register" ? "on" : ""}" data-mode="register" aria-pressed="${A.mode === "register"}">Create account</button>
       </div>
       <form class="acct-form" id="authForm" autocomplete="on">
-        <label class="lbl">Email</label>
+        <label class="lbl" for="authEmail">Email</label>
         <input type="email" id="authEmail" required autocomplete="email" spellcheck="false">
-        <label class="lbl">Password</label>
+        <label class="lbl" for="authPass">Password</label>
         <input type="password" id="authPass" required minlength="8"
           autocomplete="${A.mode === "register" ? "new-password" : "current-password"}">
-        <p class="acct-err" id="authErr" hidden></p>
+        <p class="acct-err" id="authErr" role="alert" hidden></p>
         <button class="btn primary block" type="submit">${A.mode === "register" ? "Create account" : "Sign in"}</button>
       </form>
       <p class="enc-note"><b>🔒</b><span>Your password is hashed on the server; sessions are httpOnly cookies.
@@ -105,11 +127,11 @@
         : `<div class="acct-banner">You're signed out. <button class="btn sm" id="toAuth">Sign in</button> to sync projects.</div>`);
     body.innerHTML = `${banner}
       <div class="acct-save">
-        <input type="text" id="projName" placeholder="Project name" value="${esc(wsName())}" spellcheck="false">
+        <input type="text" id="projName" placeholder="Project name" aria-label="Project name" value="${esc(wsName())}" spellcheck="false">
         <button class="btn primary" id="projSave">${A.curId ? "Save" : "Save new"}</button>
         ${A.curId ? '<button class="btn sm" id="projSaveAs">Save as new</button>' : ""}
       </div>
-      <p class="acct-err" id="projErr" hidden></p>
+      <p class="acct-err" id="projErr" role="alert" hidden></p>
       <h4 class="acct-h">Your projects</h4>
       <ul class="acct-list" id="projList"><li class="dim">Loading…</li></ul>`;
     const so = $("#signOut"); if (so) so.onclick = signOut;
@@ -194,6 +216,7 @@
     $("#acctChip").onclick = () => openModal();
     $("#acctClose").onclick = closeModal;
     $("#acctModal").addEventListener("click", e => { if (e.target.id === "acctModal") closeModal(); });
+    $("#acctModal").addEventListener("keydown", trapTab);
     addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
   }
   if (document.readyState !== "loading") init(); else addEventListener("DOMContentLoaded", init);

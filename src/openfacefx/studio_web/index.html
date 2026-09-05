@@ -23,6 +23,8 @@
     <span class="brand-name"><b>Open</b>FaceFX</span>
     <span class="brand-sub">Studio</span>
   </h1>
+  <button class="btn ghost" id="railToggle" title="Show / hide the Generate panel"
+    aria-controls="railLeft" aria-expanded="true">◧</button>
 
   <div class="topbar-group io">
     <label class="field"><span>Actor</span>
@@ -31,15 +33,16 @@
     <label class="field"><span>Take</span>
       <select id="takeSelect" class="io-sel" title="Switch take"></select></label>
     <button class="btn ghost io-add" id="takeAdd" title="New take (duplicates current settings)">＋</button>
-    <button class="btn ghost io-add" id="ioMenuBtn" title="Rename / delete actor &amp; take">⋯</button>
+    <button class="btn ghost io-add" id="ioMenuBtn" title="Rename / delete actor &amp; take"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="ioMenu">⋯</button>
   </div>
-  <div class="io-menu" id="ioMenu" hidden>
-    <button data-act="take-dup">Duplicate take</button>
-    <button data-act="take-rename">Rename take…</button>
-    <button data-act="take-del">Delete take</button>
-    <div class="io-sep"></div>
-    <button data-act="actor-rename">Rename actor…</button>
-    <button data-act="actor-del">Delete actor</button>
+  <div class="io-menu" id="ioMenu" role="menu" aria-label="Actor and take actions" hidden>
+    <button role="menuitem" tabindex="-1" data-act="take-dup">Duplicate take</button>
+    <button role="menuitem" tabindex="-1" data-act="take-rename">Rename take…</button>
+    <button role="menuitem" tabindex="-1" data-act="take-del">Delete take</button>
+    <div class="io-sep" role="separator"></div>
+    <button role="menuitem" tabindex="-1" data-act="actor-rename">Rename actor…</button>
+    <button role="menuitem" tabindex="-1" data-act="actor-del">Delete actor</button>
   </div>
 
   <div class="topbar-spacer"></div>
@@ -367,7 +370,7 @@
   <button class="tp-btn play" id="tpPlay" title="Play / pause">▶</button>
   <button class="tp-btn" id="tpEnd" title="End">⏭</button>
   <button class="tp-btn" id="tpMute" title="Mute / unmute the take's audio" hidden>🔊</button>
-  <div class="scrub"><input type="range" id="scrub" min="0" max="1000" value="0"></div>
+  <div class="scrub"><input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Playhead position"></div>
   <span class="mono time" id="tpTime">00:00.000</span>
   <span class="mono dim" id="tpDur">/ 00:00.000</span>
   <span class="mono fpsread" id="fpsMeter" title="Live preview frame rate">—</span>
@@ -385,10 +388,10 @@
 </div>
 
 <!-- ===== Account / Projects modal (the SaaS surface) ===================== -->
-<div class="modal" id="acctModal" hidden>
+<div class="modal" id="acctModal" role="dialog" aria-modal="true" aria-labelledby="acctTitle" hidden>
   <div class="modal-card">
     <div class="modal-head">
-      <h3>Account &amp; projects</h3>
+      <h3 id="acctTitle">Account &amp; projects</h3>
       <button class="btn ghost" id="acctClose" title="Close">✕</button>
     </div>
     <div class="modal-body" id="acctBody"></div>

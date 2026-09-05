@@ -324,3 +324,39 @@ def test_export_fuz_bundles_lip_and_audio():
         f.write(data)
     lip, back = read_fuz(p)                                    # round-trips
     assert len(lip) > 0 and back == audio
+
+
+# --------------------------------------------------------------------------- #
+# Studio markup accessibility contract (static; the live checks are tests/e2e)
+# --------------------------------------------------------------------------- #
+
+def _web(name):
+    from importlib import resources
+    # explicit encoding: the page carries non-ASCII UI glyphs (Windows CI is cp1252)
+    return (resources.files("openfacefx") / "studio_web" / name).read_text(encoding="utf-8")
+
+
+def test_studio_markup_a11y_contract():
+    """The ARIA contracts the live E2E suite drives: the ⋯ menu button, the
+    account modal dialog, the transport slider, and on-demand 3D rendering."""
+    html = _web("index.html")
+    # menu button pattern (WAI-ARIA APG): button ↔ menu ↔ items
+    assert 'id="ioMenuBtn"' in html and 'aria-haspopup="menu"' in html
+    assert 'aria-controls="ioMenu"' in html and 'id="ioMenu" role="menu"' in html
+    assert html.count('role="menuitem"') == 5
+    # modal dialog, labelled by its own heading
+    assert 'id="acctModal" role="dialog" aria-modal="true" aria-labelledby="acctTitle"' in html
+    assert 'id="acctTitle"' in html
+    # the playhead slider is named, and spoken as time (set at runtime in studio.js)
+    assert 'id="scrub"' in html and 'aria-label="Playhead position"' in html
+    assert "aria-valuetext" in _web("studio.js")
+    # sign-in fields are labelled; auth / project errors are announced
+    acct = _web("account.js")
+    assert 'for="authEmail"' in acct and 'for="authPass"' in acct
+    assert acct.count('role="alert"') == 2
+    # the narrow-width rail drawer has a toggle that owns it
+    assert 'id="railToggle"' in html and 'aria-controls="railLeft"' in html
+    # the 3D preview renders on demand — the only rAF is scheduled by requestRender
+    p3d = _web("preview3d.js")
+    assert "function requestRender" in p3d
+    assert p3d.count("requestAnimationFrame(loop)") == 1

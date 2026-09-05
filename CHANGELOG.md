@@ -14,10 +14,27 @@ its `version` field.
   suite structurally cannot: every tab renders, every control has an accessible name,
   every canvas is named or marked decorative, no target is under WCAG's 24×24 minimum,
   the keyboard tabs pattern works, the primary Generate workflow produces a track, the
-  canvases actually paint, and the console stays clean. 56 checks. Not in CI — it needs
-  a browser and a live server; see `tests/e2e/README.md`.
+  canvases actually paint, text contrast and focus rings hold in both themes, the ⋯
+  menu and the account dialog follow the ARIA patterns, the 3D head renders on demand,
+  every control stays reachable at tablet width / 200 % zoom, every visible button
+  survives a click, and the console stays clean. 83 checks. Not in CI — it needs a
+  browser and a live server; see `tests/e2e/README.md`.
 
 ### Fixed
+- **The 3D preview burned GPU and battery while idle.** It ran a free-running 60 fps
+  render loop from the moment the head loaded — on every tab, even with its canvas
+  hidden, and with nothing moving. It now renders on demand: a frame is drawn only when
+  the take pushes new values, the camera moves (including while orbit damping settles),
+  the window resizes or a model loads. A hidden canvas is never rendered and is redrawn
+  the moment it is shown. Measured idle: 0 frames instead of ~60 per second.
+- **At tablet widths, or 200 % zoom on a laptop, the header and transport pushed their
+  controls off-screen** — account, theme, fps and the actor/take chips — and because the
+  page is `overflow:hidden` they were unreachable, not scrolled to. Below 900 px the top
+  bar and transport now wrap (WCAG 1.4.4 / 1.4.10). Below 860 px the Generate panel
+  becomes a drawer over the workspace; it was positioned against the viewport rather than
+  the workspace, so it also sat on top of the transport's play buttons. It is now
+  contained, and a ◧ toggle in the header folds it away so the preview and the controls
+  underneath are reachable.
 - **"Generate voice" and the ⚙ button rendered as light-grey pills in the dark UI.**
   `.filebtn` styled a border and colour but no background, so the two `<button>`s using
   it inherited the browser's default `buttonface` (#efefef) — the sibling `<label>`s
@@ -32,6 +49,20 @@ its `version` field.
   workable 2.5 s timeout) for deployments that serve the page statically but proxy `/api`.
 
 ### Accessibility
+- **The ⋯ actor/take menu is now a real menu button** (WAI-ARIA APG): `aria-haspopup` /
+  `aria-expanded` / `aria-controls` on the button, `role="menu"` with `menuitem`s; opening
+  moves focus into the menu, Arrow/Home/End move between items, Escape (or Tab) closes it
+  and returns focus to the button. It used to be a `<div>` of buttons toggled by click,
+  with no way to close it from the keyboard.
+- **The Account & projects panel is now a real modal dialog**: `role="dialog"`,
+  `aria-modal`, labelled by its heading; opening moves focus inside, Tab and Shift+Tab
+  stay within it (24 of 30 presses used to escape into the page behind), and closing
+  returns focus to the button that opened it. The sign-in fields gained real `<label>`s
+  and the error lines are `role="alert"`.
+- **The playhead slider had no accessible name** — the one control the per-tab audit
+  could not see, because it lives in the transport bar rather than a panel. It is now
+  "Playhead position", speaks its value as time (`00:01.250 of 00:04.000`) instead of
+  0–1000, and its hit band is the 24 px minimum.
 - **Every text colour now meets WCAG 1.4.3 AA in both themes** — measured live, 28
   failures down to 0. The status palette (`--good/--warn/--crit/--info`) had been tuned
   for the dark ground and never given light-theme values, so it rendered at 2.2–3.1:1 on

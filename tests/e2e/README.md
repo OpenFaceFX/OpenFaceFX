@@ -28,10 +28,30 @@ Run it before releasing anything that touches `studio_web/`.
 | Per tab (×9) | panel renders · every control has an accessible name · every canvas named or marked decorative · no target under 24×24 (WCAG 2.5.8) |
 | Primary workflow | type a transcript → Generate → a track with channels and keyframes |
 | Canvases | sample pixels to prove Curves / Phonemes / Face Graph actually paint |
+| Colour contrast | every visible text node vs its resolved background, both themes (WCAG 1.4.3) |
+| Focus visibility | real Tab presses — every stop shows a visible indicator (WCAG 2.4.7) |
+| Status messages | a live region exists and Generate is announced through it (WCAG 4.1.3) |
+| Header, rails, transport | the ~30 controls *outside* the tab panels are named and ≥24×24; the playhead slider speaks time |
+| Menu button | the ⋯ menu: ARIA menu pattern, Enter opens + focuses, Arrow/End move, Escape closes + restores focus |
+| Modal dialog | Account & projects: `role=dialog`/`aria-modal`/labelled, focus moves in, Tab and Shift+Tab trapped, Escape restores focus, password `<label>` |
+| Idle rendering | the 3D head draws **zero** frames while idle, never while its canvas is hidden, and one when shown again |
+| Reflow | no horizontal scroll at 1024; every control still reachable at 768 and 1024 (200 % zoom on a laptop) |
+| Button sweep | every visible, non-destructive button on every tab is clicked — no console error may follow |
 | Console | zero errors across the whole session |
 
 ## Bugs it has already caught
 
+- **The 3D preview rendered at 60 fps forever** — on every tab, canvas hidden or
+  not, nothing moving. Now on-demand (0 idle frames).
+- **The header and transport pushed controls off-screen below ~900 px** (tablet,
+  or 200 % zoom on a laptop) — and the page is `overflow:hidden`, so account,
+  theme and fps were unreachable, not merely scrolled away.
+- The playhead slider had no accessible name (it lives in the transport, which
+  the per-tab audit never saw) and announced 0–1000 instead of time.
+- The ⋯ actor/take menu had no ARIA menu semantics and no keyboard way to close it.
+- The Account & projects "modal" was a `<div>`: no `role=dialog`, focus never moved
+  in, Tab escaped to the page behind (24 of 30 presses), and closing dropped focus
+  on `<body>`. The password field had no `<label>`.
 - **The desktop Studio silently demoted itself to the browser runtime.** Native
   detection raced a `fetch("/api/health")` against a 600 ms timeout; the server
   answers in <1 ms, but that first request queues behind the page's own scripts

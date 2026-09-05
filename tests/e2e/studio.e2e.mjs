@@ -257,6 +257,171 @@ try {
   ok(reflow.overflow <= 1, "no horizontal scrolling at 1024px", `overflows by ${reflow.overflow}px`);
   await page.setViewportSize({ width: 1440, height: 900 });
 
+  /* ---------------- controls outside the tab panels ---------------- */
+  // The per-tab audit only sees the panels; the header, both rails and the
+  // transport hold ~30 more controls (this is where the unnamed slider hid).
+  group("Header, rails and transport");
+  await page.click('.tab[data-view="preview"]');
+  const outer = await page.evaluate(() => {
+    const visible = el => { const s = getComputedStyle(el), b = el.getBoundingClientRect();
+      return s.display !== "none" && s.visibility !== "hidden" && b.width > 0 && b.height > 0; };
+    const ctl = [...document.querySelectorAll("button,input,select,textarea,[tabindex]")].filter(e => visible(e) && !e.closest(".view"));
+    const named = e => e.type === "hidden" || !!((e.textContent || "").trim() || e.getAttribute("aria-label") || e.getAttribute("aria-labelledby") ||
+      e.getAttribute("title") || (e.id && document.querySelector(`label[for="${e.id}"]`)) || e.closest("label") || e.getAttribute("placeholder"));
+    const target = e => (e.tagName === "INPUT" && e.closest("label")) || e;
+    return { n: ctl.length,
+      unnamed: ctl.filter(e => !named(e)).map(e => e.tagName + "#" + e.id),
+      tiny: ctl.filter(e => { const b = target(e).getBoundingClientRect(); return b.height < 24 || b.width < 24; })
+        .map(e => { const b = target(e).getBoundingClientRect(); return `${e.id || e.tagName} ${Math.round(b.width)}x${Math.round(b.height)}`; }) };
+  });
+  report.outer = outer;
+  ok(outer.unnamed.length === 0, `every control outside the panels has an accessible name (${outer.n} checked)`, outer.unnamed.join(", "));
+  ok(outer.tiny.length === 0, "no header/rail/transport target under 24x24 (WCAG 2.5.8)", outer.tiny.join(" | "));
+  const vt = await page.$eval("#scrub", e => e.getAttribute("aria-valuetext") || "");
+  ok(/\d\d:\d\d\.\d{3} of \d\d:\d\d\.\d{3}/.test(vt), "the playhead slider speaks time, not 0–1000", `aria-valuetext="${vt}"`);
+
+  /* ---------------- the ⋯ menu is a menu button (WAI-ARIA APG) ---------------- */
+  group("Menu button (⋯ actor/take actions)");
+  const mb = await page.evaluate(() => { const b = document.getElementById("ioMenuBtn"), m = document.getElementById("ioMenu");
+    return { haspopup: b.getAttribute("aria-haspopup"), controls: b.getAttribute("aria-controls"),
+             role: m.getAttribute("role"), items: m.querySelectorAll("[role=menuitem]").length }; });
+  ok(mb.haspopup === "menu" && mb.controls === "ioMenu" && mb.role === "menu" && mb.items >= 5,
+     "button and menu carry the ARIA menu pattern", JSON.stringify(mb));
+  await page.focus("#ioMenuBtn"); await page.keyboard.press("Enter"); await page.waitForTimeout(80);
+  const opened = await page.evaluate(() => ({ expanded: document.getElementById("ioMenuBtn").getAttribute("aria-expanded"),
+    hidden: document.getElementById("ioMenu").hidden,
+    focus: document.activeElement?.getAttribute("role") + ":" + document.activeElement?.textContent.trim() }));
+  ok(opened.expanded === "true" && !opened.hidden && /^menuitem:/.test(opened.focus),
+     "Enter opens the menu and focuses the first item", JSON.stringify(opened));
+  await page.keyboard.press("ArrowDown");
+  const second = await page.evaluate(() => document.activeElement?.textContent.trim());
+  ok(second === "Rename take…", "ArrowDown moves to the next item", `focused "${second}"`);
+  await page.keyboard.press("End");
+  const lastItem = await page.evaluate(() => document.activeElement?.textContent.trim());
+  ok(lastItem === "Delete actor", "End jumps to the last item", `focused "${lastItem}"`);
+  await page.keyboard.press("Escape"); await page.waitForTimeout(80);
+  const closed = await page.evaluate(() => ({ expanded: document.getElementById("ioMenuBtn").getAttribute("aria-expanded"),
+    hidden: document.getElementById("ioMenu").hidden, focus: document.activeElement?.id }));
+  ok(closed.hidden && closed.expanded === "false" && closed.focus === "ioMenuBtn",
+     "Escape closes the menu and returns focus to the button", JSON.stringify(closed));
+
+  /* ---------------- the account modal is a modal dialog ---------------- */
+  group("Modal dialog (Account & projects)");
+  const dlg = await page.evaluate(() => { const m = document.getElementById("acctModal");
+    return { role: m.getAttribute("role"), modal: m.getAttribute("aria-modal"),
+             label: document.getElementById(m.getAttribute("aria-labelledby") || "")?.textContent.trim() }; });
+  ok(dlg.role === "dialog" && dlg.modal === "true" && !!dlg.label, "role=dialog, aria-modal, labelled by its heading", JSON.stringify(dlg));
+  await page.focus("#acctChip"); await page.keyboard.press("Enter"); await page.waitForTimeout(150);
+  const inDlg = await page.evaluate(() => ({ open: !document.getElementById("acctModal").hidden,
+    inside: !!document.activeElement?.closest("#acctModal"), focus: document.activeElement?.id || document.activeElement?.tagName }));
+  ok(inDlg.open && inDlg.inside, "opening moves focus into the dialog", JSON.stringify(inDlg));
+  let leaked = 0;
+  for (let i = 0; i < 25; i++) { await page.keyboard.press("Tab");
+    if (!(await page.evaluate(() => !!document.activeElement?.closest("#acctModal")))) leaked++; }
+  ok(leaked === 0, "Tab never leaves the dialog (focus is trapped)", `${leaked}/25 presses escaped`);
+  for (let i = 0; i < 6; i++) { await page.keyboard.press("Shift+Tab");
+    if (!(await page.evaluate(() => !!document.activeElement?.closest("#acctModal")))) leaked++; }
+  ok(leaked === 0, "Shift+Tab never leaves the dialog either", `${leaked} presses escaped`);
+  const pwLabel = await page.evaluate(() => document.getElementById("authPass") ? !!document.querySelector('label[for="authPass"]') : "n/a");
+  ok(pwLabel === true || pwLabel === "n/a", "the password field has a real <label>", `labelled: ${pwLabel}`);
+  await page.keyboard.press("Escape"); await page.waitForTimeout(80);
+  const back = await page.evaluate(() => ({ closed: document.getElementById("acctModal").hidden, focus: document.activeElement?.id }));
+  ok(back.closed && back.focus === "acctChip", "Escape closes the dialog and returns focus to the opener", JSON.stringify(back));
+
+  /* ---------------- the 3D preview renders on demand ---------------- */
+  // It used to run a free 60 fps loop — on every tab, even with its canvas hidden.
+  group("Idle rendering");
+  await page.click('.tab[data-view="preview"]'); await page.waitForTimeout(600);
+  const has3d = await page.evaluate(() => !!(window.Preview3D && window.Preview3D.ready));
+  if (has3d) {
+    const idle = await page.evaluate(async () => { const a = window.Preview3D.frames;
+      await new Promise(r => setTimeout(r, 1500)); return window.Preview3D.frames - a; });
+    ok(idle <= 2, `an idle 3D preview draws no frames (${idle} in 1.5 s)`);
+    await page.click('.tab[data-view="curves"]'); await page.waitForTimeout(300);
+    const hidden = await page.evaluate(async () => { const a = window.Preview3D.frames;
+      const s = document.getElementById("scrub"); s.value = 400; s.dispatchEvent(new Event("input"));   // a redraw while hidden
+      await new Promise(r => setTimeout(r, 500)); return window.Preview3D.frames - a; });
+    ok(hidden === 0, `a hidden 3D canvas is never rendered (${hidden} frames drawn on the Curves tab)`);
+    const before = await page.evaluate(() => window.Preview3D.frames);
+    await page.click('.tab[data-view="preview"]'); await page.waitForTimeout(300);
+    const after = await page.evaluate(() => window.Preview3D.frames);
+    ok(after > before, "returning to the Preview tab draws a frame", `${before} → ${after}`);
+    report.idleFrames = { idle, hidden, shown: after - before };
+  } else ok(true, "no WebGL preview in this browser — skipped");
+
+  /* ---------------- narrow windows: nothing pushed off-screen ---------------- */
+  // body is overflow:hidden, so a control past the right edge is simply gone
+  // (this is what 200% zoom on a laptop looks like). A control inside a
+  // horizontally scrollable strip (the tab bar) counts as reachable.
+  group("Reflow at tablet width / 200% zoom");
+  for (const w of [768, 1024]) {
+    await page.setViewportSize({ width: w, height: 800 }); await page.waitForTimeout(300);
+    // below 860px the Generate panel is a drawer over the workspace — fold it away the
+    // way a user would; everything behind it must then be reachable
+    const drawer = await page.evaluate(() => { const t = document.getElementById("railToggle");
+      return !!t && getComputedStyle(t).display !== "none"; });
+    if (drawer) { await page.click("#railToggle"); await page.waitForTimeout(250); }
+    const r = await page.evaluate(() => {
+      const de = document.documentElement;
+      const scrollable = el => { for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+        const o = getComputedStyle(n).overflowX; if ((o === "auto" || o === "scroll") && n.scrollWidth > n.clientWidth + 1) return true; } return false; };
+      // a point outside a clipping ancestor is scrolled away, not covered
+      const clipped = (e, x, y) => { for (let n = e.parentElement; n && n !== document.body; n = n.parentElement) {
+        const o = getComputedStyle(n); if (o.overflowX !== "visible" || o.overflowY !== "visible") { const c = n.getBoundingClientRect();
+          if (x < c.left || x > c.right || y < c.top || y > c.bottom) return true; } } return false; };
+      const ctl = [...document.querySelectorAll("button,select,input,textarea")].filter(e => { const s = getComputedStyle(e), b = e.getBoundingClientRect();
+        return s.display !== "none" && s.visibility !== "hidden" && b.width > 0 && b.height > 0; });
+      const lost = ctl.filter(e => { const b = e.getBoundingClientRect(); return (b.right > de.clientWidth + 1 || b.left < -1) && !scrollable(e); })
+        .map(e => e.id || e.className);
+      // covered: something else sits on top of the control's centre (an overlay, a drawer)
+      const covered = [];
+      for (const e of ctl) { const b = e.getBoundingClientRect(), x = b.left + b.width / 2, y = b.top + b.height / 2;
+        if (x < 0 || y < 0 || x > de.clientWidth || y > de.clientHeight || clipped(e, x, y)) continue;
+        const hit = document.elementFromPoint(x, y);
+        if (hit && !(e.contains(hit) || hit.contains(e))) covered.push((e.id || e.className) + " under " + (hit.id ? "#" + hit.id : hit.tagName + "." + String(hit.className).split(" ")[0])); }
+      return { lost: [...new Set(lost)], covered: [...new Set(covered)] };
+    });
+    report[`reach${w}`] = r;
+    ok(r.lost.length === 0, `${w}px: every control stays on screen`, r.lost.slice(0, 8).join(", "));
+    ok(r.covered.length === 0, `${w}px: no control is hidden under another element`, r.covered.slice(0, 8).join(", "));
+    if (drawer) { await page.click("#railToggle"); await page.waitForTimeout(150); }
+  }
+  await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(200);
+
+  /* ---------------- every button does something without throwing ---------------- */
+  // Destructive ones (delete/remove/✕/−) are skipped; browser dialogs are
+  // auto-dismissed by Playwright. Elements are re-resolved before every click
+  // because several panels re-render themselves.
+  group("Every visible button survives a click");
+  const sweepErrs = [];
+  let clicked = 0;
+  for (const v of views) {
+    await page.click(`.tab[data-view="${v}"]`); await page.waitForTimeout(150);
+    const n = await page.evaluate(view => document.querySelector(`.view[data-view="${view}"]`).querySelectorAll("button").length, v);
+    for (let i = 0; i < n; i++) {
+      const info = await page.evaluate(([view, idx]) => {
+        const b = document.querySelector(`.view[data-view="${view}"]`).querySelectorAll("button")[idx];
+        if (!b) return null;
+        const s = getComputedStyle(b), r = b.getBoundingClientRect();
+        const vis = s.display !== "none" && s.visibility !== "hidden" && r.width > 0 && r.height > 0 && !b.disabled;
+        const text = (b.textContent || b.title || "").trim();
+        if (!vis || (/delete|remove|✕|−/i.test(text) && !/key/i.test(text))) return null;
+        b.scrollIntoView({ block: "nearest" });
+        const q = b.getBoundingClientRect();
+        return { text, x: q.left + q.width / 2, y: q.top + q.height / 2 };
+      }, [v, i]);
+      if (!info) continue;
+      const e0 = consoleErrors.length;
+      await page.mouse.click(info.x, info.y); await page.waitForTimeout(250); clicked++;
+      if (consoleErrors.length > e0) sweepErrs.push(`${v}: "${info.text}" → ${consoleErrors[e0]}`);
+      await page.evaluate(() => { document.getElementById("acctModal").hidden = true; document.getElementById("ioMenu").hidden = true; });
+      if (await page.evaluate(view => !document.querySelector(`.view[data-view="${view}"]`).classList.contains("active"), v)) {
+        await page.click(`.tab[data-view="${v}"]`); await page.waitForTimeout(100); }
+    }
+  }
+  report.sweep = { clicked, errors: sweepErrs };
+  ok(sweepErrs.length === 0, `${clicked} buttons clicked across ${views.length} tabs without a console error`, sweepErrs.slice(0, 5).join(" | "));
+
   /* ---------------- no console noise anywhere ---------------- */
   group("Console");
   report.consoleErrors = consoleErrors;

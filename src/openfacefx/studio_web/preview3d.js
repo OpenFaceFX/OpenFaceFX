@@ -15,7 +15,7 @@ const CDN_BASIS = "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/
 const MODEL = "assets/facecap.glb";
 
 const P = {
-  ready: false, active: false,
+  ready: false, active: false, frames: 0,
   renderer: null, scene: null, camera: null, controls: null,
   meshes: [], head: null, morphs: {}, pose: { pitch: 0, yaw: 0, roll: 0 },
 };
@@ -73,13 +73,14 @@ async function init() {
     P.controls.rotateSpeed = 0.6;
     // real zoom range is set model-relative in frame(); these are placeholders
     P.controls.minDistance = 0.05; P.controls.maxDistance = 100;
+    P.controls.addEventListener("change", requestRender);   // orbit / pan / zoom (and damping) → redraw
 
     const gltf = await makeLoader().loadAsync(MODEL);
     if (!installHead(gltf)) return;                  // unexpected model -> keep SVG
     frame();
     P.ready = true;
     window.dispatchEvent(new Event("preview3d-ready"));
-    loop();
+    requestRender();
     addEventListener("resize", resize);
   } catch (e) {
     // any failure (offline CDN, decoder, WebGL) -> silent fallback to the SVG
@@ -120,6 +121,7 @@ function resize() {
   const c = P.renderer.domElement, w = c.clientWidth || 1, h = c.clientHeight || 1;
   P.renderer.setSize(w, h, false);
   P.camera.aspect = w / h; P.camera.updateProjectionMatrix();
+  requestRender();
 }
 
 function applyMorphs() {
@@ -132,12 +134,22 @@ function applyMorphs() {
   if (P.head) P.head.rotation.set(P.pose.pitch, P.pose.yaw, P.pose.roll);   // animation head pose (small angles)
 }
 
+/* Render on demand, not on a free-running 60 fps loop. A frame is drawn only when
+ * something changed: the take pushed new values (update), the camera moved
+ * (OrbitControls "change", which keeps firing while damping settles), a resize,
+ * or a model swap. An idle Studio — or one on a tab where this canvas is hidden —
+ * costs nothing on the GPU. */
+let rafId = 0;
+function requestRender() { if (P.ready && !rafId) rafId = requestAnimationFrame(loop); }
 function loop() {
+  rafId = 0;
   if (!P.ready) return;
+  const c = P.renderer.domElement;
+  if (c.hidden || !c.clientWidth) return;           // hidden (2D mode / another tab): the next show redraws
   applyMorphs();
-  P.controls.update();
+  P.controls.update();                              // dispatches "change" while still damping → next frame
   P.renderer.render(P.scene, P.camera);
-  requestAnimationFrame(loop);
+  P.frames++;
 }
 
 /* public: studio.js pushes the frame's values here.
@@ -160,6 +172,7 @@ function update(arkit, gestures, pose) {
   set("browInnerUp", brow); set("browOuterUpLeft", (g.browOuterUp || brow)); set("browOuterUpRight", (g.browOuterUp || brow));
   P.morphs = m;
   if (pose) P.pose = pose;
+  requestRender();
 }
 
 // Swap the previewed head at runtime — a URL string or an ArrayBuffer (a .glb the
@@ -174,12 +187,13 @@ async function loadModel(source) {
     else gltf = await new Promise((res, rej) => makeLoader().parse(source, "", res, rej));
     if (!installHead(gltf)) return false;
     frame();
-    if (!P.ready) { P.ready = true; window.dispatchEvent(new Event("preview3d-ready")); loop(); }
+    if (!P.ready) { P.ready = true; window.dispatchEvent(new Event("preview3d-ready")); }
+    requestRender();
     return true;
   } catch (e) { console.warn("[preview3d] loadModel failed:", e); return false; }
 }
 
 function setActive(on) { P.active = on; if (on) resize(); }
 
-window.Preview3D = { get ready() { return P.ready; }, update, setActive, resize, reframe, zoom, loadModel };
+window.Preview3D = { get ready() { return P.ready; }, get frames() { return P.frames; }, update, setActive, resize, reframe, zoom, loadModel };
 init();

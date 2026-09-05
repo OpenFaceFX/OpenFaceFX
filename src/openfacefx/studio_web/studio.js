@@ -1119,11 +1119,27 @@ function wireIO(){
   $("#actorSelect").onchange=e=>switchActor(+e.target.value);
   $("#takeSelect").onchange=e=>{ const v=+e.target.value; if(v>=0) switchTake(v); };
   $("#actorAdd").onclick=addActor; $("#takeAdd").onclick=addTake;
-  const menu=$("#ioMenu");
-  $("#ioMenuBtn").onclick=e=>{ e.stopPropagation(); const b=e.currentTarget.getBoundingClientRect();
-    menu.style.top=(b.bottom+4)+"px"; menu.style.right=(innerWidth-b.right)+"px"; menu.hidden=!menu.hidden; };
-  menu.onclick=e=>{ e.stopPropagation(); const act=e.target.dataset.act; if(!act)return; menu.hidden=true; ioAction(act); };
-  addEventListener("click",()=>{ if(menu) menu.hidden=true; });
+  /* ⋯ is a WAI-ARIA menu button: aria-expanded tracks state, opening moves focus
+   * into the menu, Arrow/Home/End move between items, Escape (or Tab) closes and
+   * hands focus back to the button. The markup carries the roles. */
+  const menu=$("#ioMenu"), mbtn=$("#ioMenuBtn"), items=()=>$$("#ioMenu [role=menuitem]");
+  const setMenu=(open,focusAt)=>{
+    const inside=menu.contains(document.activeElement);
+    if(open){ const b=mbtn.getBoundingClientRect(); menu.style.top=(b.bottom+4)+"px"; menu.style.right=(innerWidth-b.right)+"px"; }
+    menu.hidden=!open; mbtn.setAttribute("aria-expanded",String(open));
+    if(open&&focusAt!=null){ const it=items(); it[(focusAt+it.length)%it.length].focus(); }
+    else if(!open&&inside) mbtn.focus(); };
+  mbtn.onclick=e=>{ e.stopPropagation(); setMenu(menu.hidden,0); };
+  mbtn.onkeydown=e=>{ if(e.key==="ArrowDown"||e.key==="ArrowUp"){ e.preventDefault(); setMenu(true,e.key==="ArrowDown"?0:-1); } };
+  menu.onkeydown=e=>{ const it=items(), i=it.indexOf(document.activeElement), go=n=>{ e.preventDefault(); it[(n+it.length)%it.length].focus(); };
+    if(e.key==="ArrowDown") go(i+1); else if(e.key==="ArrowUp") go(i-1); else if(e.key==="Home") go(0); else if(e.key==="End") go(it.length-1);
+    else if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); setMenu(false); }
+    else if(e.key==="Tab") setMenu(false); };
+  menu.onclick=e=>{ e.stopPropagation(); const act=e.target.dataset.act; if(!act)return; setMenu(false); mbtn.focus(); ioAction(act); };
+  addEventListener("click",()=>{ if(menu&&!menu.hidden) setMenu(false); });
+  // narrow windows: the Generate rail is a drawer over the workspace — this folds it away
+  const rt=$("#railToggle"); if(rt) rt.onclick=()=>{ const collapsed=document.body.classList.toggle("rail-collapsed");
+    rt.setAttribute("aria-expanded",String(!collapsed)); dispatchEvent(new Event("resize")); };
   refreshIO();
 }
 
@@ -2405,8 +2421,9 @@ async function refreshAudio(){
   } else if(btn) btn.hidden=true;
 }
 function audioSeek(){ if(S.playing && S.audioBuf) startAudioAt(S.t); }   // re-cue playing audio to the new spot
-function setScrub(){ $("#scrub").value=Math.round(1000*(S.duration?S.t/S.duration:0)); }
-$("#scrub").oninput=e=>{ if(!S.duration)return; S.t=S.duration*e.target.value/1000; audioSeek(); drawAll(); };
+function setScrub(){ $("#scrub").value=Math.round(1000*(S.duration?S.t/S.duration:0)); scrubSpeak(); }
+function scrubSpeak(){ $("#scrub").setAttribute("aria-valuetext",fmt(S.t)+" of "+fmt(S.duration)); }   // the slider speaks time, not 0–1000
+$("#scrub").oninput=e=>{ if(!S.duration)return; S.t=S.duration*e.target.value/1000; scrubSpeak(); audioSeek(); drawAll(); };
 $("#tpStart").onclick=()=>{S.t=0;setScrub();audioSeek();drawAll();};
 $("#tpEnd").onclick=()=>{S.t=S.duration;setScrub();audioSeek();drawAll();};
 $("#tpPlay").onclick=togglePlay; $("#tpPlay").textContent="▶";
